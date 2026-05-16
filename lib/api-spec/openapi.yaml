@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: ai
+    description: AI-powered operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /translate:
+    post:
+      operationId: translateText
+      tags: [ai]
+      summary: AI-powered text translation
+      description: Translates manga descriptions and speech bubble text using Gemini AI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranslateRequest"
+      responses:
+        "200":
+          description: Translated text
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranslateResponse"
+        "500":
+          description: Translation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +60,36 @@ components:
           type: string
       required:
         - status
-
+    TranslateRequest:
+      type: object
+      required:
+        - text
+        - targetLanguage
+      properties:
+        text:
+          type: string
+          description: The text to translate
+        targetLanguage:
+          type: string
+          description: Target language code (en, es, pt, fr, de, ja, ko, zh)
+        context:
+          type: string
+          description: Optional context to improve translation quality
+    TranslateResponse:
+      type: object
+      required:
+        - translatedText
+      properties:
+        translatedText:
+          type: string
+          description: The translated text
+        sourceLanguage:
+          type: string
+          description: Detected source language
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string

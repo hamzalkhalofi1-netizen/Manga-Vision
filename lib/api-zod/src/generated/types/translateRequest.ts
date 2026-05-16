@@ -5,9 +5,6 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-export interface HealthStatus {
-  status: string;
-}
 
 export interface TranslateRequest {
   /** The text to translate */
@@ -17,15 +14,3 @@ export interface TranslateRequest {
   /** Optional context to improve translation quality */
   context?: string;
 }
-
-export interface TranslateResponse {
-  /** The translated text */
-  translatedText: string;
-  /** Detected source language */
-  sourceLanguage?: string;
-}
-
-export interface ErrorResponse {
-  error: string;
-}
-
