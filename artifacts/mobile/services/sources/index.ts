@@ -1,8 +1,10 @@
 import { MangaSource } from "./types";
 import { mangadexSource } from "./mangadex";
+import { comickSource } from "./comick";
 
 export const ALL_SOURCES: MangaSource[] = [
   mangadexSource,
+  comickSource,
   {
     id: "mangaplus",
     name: "MANGA Plus",
@@ -27,18 +29,6 @@ export const ALL_SOURCES: MangaSource[] = [
     async getChapters() { return []; },
     async getChapterPages() { return []; },
   },
-  {
-    id: "comick",
-    name: "Comick",
-    baseUrl: "https://comick.io",
-    isEnabled: false,
-    async search() { return []; },
-    async getTrending() { return []; },
-    async getLatestUpdates() { return []; },
-    async getMangaDetails(id) { return { id, title: "", coverUrl: "", sourceId: "comick" }; },
-    async getChapters() { return []; },
-    async getChapterPages() { return []; },
-  },
 ];
 
 export const sourceMap: Record<string, MangaSource> = Object.fromEntries(
@@ -49,5 +39,5 @@ export function getSource(id: string): MangaSource {
   return sourceMap[id] ?? mangadexSource;
 }
 
-export { mangadexSource };
+export { mangadexSource, comickSource };
 export * from "./types";

@@ -55,7 +55,9 @@ export default function MangaScreen() {
         setManga(m);
         setChapters(c);
       })
-      .catch(() => {})
+      .catch((err) => {
+        console.error("Failed to load manga details:", err);
+      })
       .finally(() => setLoading(false));
   }, [mangaId, sourceId]);
 
