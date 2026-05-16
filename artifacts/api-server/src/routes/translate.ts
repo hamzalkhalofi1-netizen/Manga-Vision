@@ -12,6 +12,7 @@ const LANGUAGE_NAMES: Record<string, string> = {
   ja: "Japanese",
   ko: "Korean",
   zh: "Chinese (Simplified)",
+  ar: "Arabic",
 };
 
 router.post("/", async (req, res) => {

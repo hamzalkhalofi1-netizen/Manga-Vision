@@ -8,7 +8,7 @@ import React, {
 } from "react";
 
 export type ReadingMode = "vertical" | "horizontal";
-export type TargetLanguage = "en" | "es" | "pt" | "fr" | "de" | "ja" | "ko" | "zh";
+export type TargetLanguage = "en" | "es" | "pt" | "fr" | "de" | "ja" | "ko" | "zh" | "ar";
 
 export interface ReaderSettings {
   readingMode: ReadingMode;

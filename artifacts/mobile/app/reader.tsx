@@ -6,15 +6,13 @@ import { router, useLocalSearchParams } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Dimensions,
-  Modal,
+  FlatList,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,6 +22,12 @@ import { useColors } from "@/hooks/useColors";
 import { getSource } from "@/services/sources";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
+
+type TranslationResult = {
+  found: boolean;
+  texts: Array<{ original: string; translated: string; type: string; speaker: string | null }>;
+  summary: string;
+};
 
 export default function ReaderScreen() {
   const colors = useColors();
@@ -36,19 +40,21 @@ export default function ReaderScreen() {
     sourceId: string;
   }>();
 
-  const { readerSettings, incrementTranslationCount } = useSettings();
+  const { readerSettings, updateReaderSettings, incrementTranslationCount } = useSettings();
   const { saveProgress } = useLibrary();
 
   const [pages, setPages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showControls, setShowControls] = useState(true);
   const [currentPage, setCurrentPage] = useState(0);
-  const [translateModal, setTranslateModal] = useState(false);
-  const [translateInput, setTranslateInput] = useState("");
-  const [translateResult, setTranslateResult] = useState("");
+
   const [translating, setTranslating] = useState(false);
+  const [translationResult, setTranslationResult] = useState<TranslationResult | null>(null);
+  const [showTranslationPanel, setShowTranslationPanel] = useState(false);
 
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flatListRef = useRef<FlatList>(null);
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
   const bottomPadding = Platform.OS === "web" ? 34 : insets.bottom;
@@ -57,10 +63,23 @@ export default function ReaderScreen() {
     if (!params.chapterId) return;
     const source = getSource(params.sourceId || "mangadex");
     setLoading(true);
+    setError(null);
+    setPages([]);
+    setCurrentPage(0);
+    setTranslationResult(null);
     source
       .getChapterPages(params.chapterId)
-      .then((p) => setPages(p))
-      .catch(() => setPages([]))
+      .then((p) => {
+        if (!p || p.length === 0) {
+          setError("No pages found for this chapter");
+        } else {
+          setPages(p.filter((u) => typeof u === "string" && u.startsWith("http")));
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to load chapter pages:", err);
+        setError("Failed to load chapter. Please try again.");
+      })
       .finally(() => setLoading(false));
   }, [params.chapterId, params.sourceId]);
 
@@ -76,51 +95,72 @@ export default function ReaderScreen() {
     }
   }, [currentPage, params.mangaId, params.chapterId, params.chapterNum, saveProgress]);
 
-  const handleTap = useCallback(() => {
-    setShowControls((prev) => {
-      const next = !prev;
-      if (next) {
-        if (controlsTimer.current) clearTimeout(controlsTimer.current);
-        controlsTimer.current = setTimeout(() => setShowControls(false), 3500);
-      }
-      return next;
-    });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const resetControlsTimer = useCallback(() => {
+    if (controlsTimer.current) clearTimeout(controlsTimer.current);
+    controlsTimer.current = setTimeout(() => setShowControls(false), 3500);
   }, []);
 
+  const handleTap = useCallback(() => {
+    if (showTranslationPanel) {
+      setShowTranslationPanel(false);
+      return;
+    }
+    setShowControls((prev) => {
+      if (!prev) resetControlsTimer();
+      return !prev;
+    });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [showTranslationPanel, resetControlsTimer]);
+
   useEffect(() => {
-    controlsTimer.current = setTimeout(() => setShowControls(false), 3000);
+    resetControlsTimer();
     return () => {
       if (controlsTimer.current) clearTimeout(controlsTimer.current);
     };
-  }, []);
+  }, [resetControlsTimer]);
 
-  const handleTranslate = async () => {
-    if (!translateInput.trim()) return;
+  const handleTranslateCurrentPage = useCallback(async () => {
+    const pageUrl = pages[currentPage];
+    if (!pageUrl) return;
+
     setTranslating(true);
-    setTranslateResult("");
+    setTranslationResult(null);
+    setShowTranslationPanel(true);
+    if (controlsTimer.current) clearTimeout(controlsTimer.current);
+    setShowControls(false);
+
     try {
       const domain = process.env.EXPO_PUBLIC_DOMAIN;
-      const res = await fetch(`https://${domain}/api/translate`, {
+      const res = await fetch(`https://${domain}/api/translate-image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          text: translateInput,
+          imageUrl: pageUrl,
           targetLanguage: readerSettings.targetLanguage,
-          context: `Manga speech bubble text from "${params.mangaTitle}", chapter ${params.chapterNum}. Preserve character tone, emotion, and dramatic impact.`,
         }),
       });
-      if (!res.ok) throw new Error("Failed");
-      const data = await res.json();
-      setTranslateResult(data.translatedText);
+      if (!res.ok) throw new Error(`Translation failed: ${res.status}`);
+      const data: TranslationResult = await res.json();
+      setTranslationResult(data);
       incrementTranslationCount();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
-      Alert.alert("Translation failed", "Could not connect to AI. Check your connection.");
+    } catch (err) {
+      console.error("Image translation error:", err);
+      setTranslationResult({
+        found: false,
+        texts: [],
+        summary: "Translation failed. Please check your connection and try again.",
+      });
     } finally {
       setTranslating(false);
     }
-  };
+  }, [pages, currentPage, readerSettings.targetLanguage, incrementTranslationCount]);
+
+  const toggleReadingMode = useCallback(() => {
+    const newMode = readerSettings.readingMode === "vertical" ? "horizontal" : "vertical";
+    updateReaderSettings({ readingMode: newMode });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }, [readerSettings.readingMode, updateReaderSettings]);
 
   if (loading) {
     return (
@@ -133,26 +173,41 @@ export default function ReaderScreen() {
     );
   }
 
-  if (!pages.length) {
+  if (error || !pages.length) {
     return (
       <View style={[styles.loader, { backgroundColor: "#000" }]}>
         <Ionicons name="alert-circle-outline" size={48} color={colors.mutedForeground} />
         <Text style={[styles.loaderText, { color: colors.mutedForeground }]}>
-          No pages available
+          {error || "No pages available"}
         </Text>
-        <Pressable onPress={() => router.back()}>
-          <Text style={{ color: colors.primary, marginTop: 12 }}>Go Back</Text>
+        <Pressable onPress={() => router.back()} style={styles.backPressable}>
+          <Text style={{ color: colors.primary, fontSize: 15 }}>Go Back</Text>
         </Pressable>
       </View>
     );
   }
 
+  const isVertical = readerSettings.readingMode === "vertical";
+
   return (
     <View style={styles.container}>
       <Pressable style={{ flex: 1 }} onPress={handleTap}>
-        {readerSettings.readingMode === "vertical" ? (
-          <ScrollView
-            style={{ flex: 1 }}
+        {isVertical ? (
+          <FlatList
+            ref={flatListRef}
+            data={pages}
+            keyExtractor={(uri, idx) => `${uri}-${idx}`}
+            renderItem={({ item: uri }) => (
+              <View style={styles.webtoonPage}>
+                <Image
+                  source={{ uri }}
+                  style={styles.webtoonImage}
+                  contentFit="contain"
+                  transition={200}
+                  onError={() => console.warn("Failed to load page:", uri)}
+                />
+              </View>
+            )}
             showsVerticalScrollIndicator={false}
             scrollEventThrottle={16}
             onScroll={(e) => {
@@ -160,54 +215,62 @@ export default function ReaderScreen() {
               const estimatedPage = Math.floor(y / SCREEN_H);
               if (estimatedPage !== currentPage) setCurrentPage(Math.max(0, estimatedPage));
             }}
-          >
-            {pages.map((uri, idx) => (
-              <Image
-                key={`${uri}-${idx}`}
-                source={{ uri }}
-                style={{ width: SCREEN_W, aspectRatio: 0.7 }}
-                contentFit="contain"
-                transition={200}
-              />
-            ))}
-            <View style={{ height: 40 }} />
-          </ScrollView>
+            removeClippedSubviews
+            maxToRenderPerBatch={3}
+            windowSize={5}
+            initialNumToRender={2}
+            getItemLayout={(_, index) => ({
+              length: Math.round(SCREEN_W / 0.7),
+              offset: Math.round(SCREEN_W / 0.7) * index,
+              index,
+            })}
+            ListFooterComponent={<View style={{ height: 60 }} />}
+          />
         ) : (
-          <ScrollView
+          <FlatList
+            ref={flatListRef}
+            data={pages}
             horizontal
             pagingEnabled
+            keyExtractor={(uri, idx) => `${uri}-${idx}`}
+            renderItem={({ item: uri }) => (
+              <View style={styles.horizontalPage}>
+                <Image
+                  source={{ uri }}
+                  style={styles.horizontalImage}
+                  contentFit="contain"
+                  transition={200}
+                  onError={() => console.warn("Failed to load page:", uri)}
+                />
+              </View>
+            )}
             showsHorizontalScrollIndicator={false}
             scrollEventThrottle={16}
             onScroll={(e) => {
               const page = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
-              if (page !== currentPage) setCurrentPage(page);
+              if (page !== currentPage) setCurrentPage(Math.max(0, page));
             }}
-          >
-            {pages.map((uri, idx) => (
-              <Image
-                key={`${uri}-${idx}`}
-                source={{ uri }}
-                style={{ width: SCREEN_W, height: SCREEN_H }}
-                contentFit="contain"
-                transition={200}
-              />
-            ))}
-          </ScrollView>
+            removeClippedSubviews
+            maxToRenderPerBatch={3}
+            windowSize={5}
+            getItemLayout={(_, index) => ({
+              length: SCREEN_W,
+              offset: SCREEN_W * index,
+              index,
+            })}
+          />
         )}
       </Pressable>
 
       {/* Top Controls */}
       {showControls && (
         <LinearGradient
-          colors={["rgba(0,0,0,0.9)", "rgba(0,0,0,0.5)", "transparent"]}
+          colors={["rgba(0,0,0,0.92)", "rgba(0,0,0,0.5)", "transparent"]}
           style={[styles.topOverlay, { paddingTop: topPadding + 8 }]}
           pointerEvents="box-none"
         >
           <View style={styles.topBar}>
-            <Pressable
-              onPress={() => router.back()}
-              style={styles.controlBtn}
-            >
+            <Pressable onPress={() => router.back()} style={styles.controlBtn}>
               <Ionicons name="arrow-back" size={22} color="#fff" />
             </Pressable>
             <View style={styles.topTitle}>
@@ -216,9 +279,9 @@ export default function ReaderScreen() {
               </Text>
               <Text style={styles.topSubTitle}>Ch. {params.chapterNum}</Text>
             </View>
-            <View style={styles.topRight}>
+            <View style={[styles.pageNumBadge, { backgroundColor: "rgba(255,255,255,0.15)" }]}>
               <Text style={styles.pageNum}>
-                {currentPage + 1}/{pages.length}
+                {currentPage + 1} / {pages.length}
               </Text>
             </View>
           </View>
@@ -228,132 +291,180 @@ export default function ReaderScreen() {
       {/* Bottom Controls */}
       {showControls && (
         <LinearGradient
-          colors={["transparent", "rgba(0,0,0,0.7)", "rgba(0,0,0,0.95)"]}
+          colors={["transparent", "rgba(0,0,0,0.75)", "rgba(0,0,0,0.97)"]}
           style={[styles.bottomOverlay, { paddingBottom: bottomPadding + 8 }]}
           pointerEvents="box-none"
         >
           <View style={styles.bottomBar}>
             <Pressable
-              style={[styles.modeBtn, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: 8 }]}
-              onPress={() => {}}
+              onPress={toggleReadingMode}
+              style={[styles.iconBtn, { backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 12 }]}
             >
               <Ionicons
-                name={readerSettings.readingMode === "vertical" ? "phone-portrait-outline" : "phone-landscape-outline"}
-                size={18}
-                color={colors.foreground}
+                name={isVertical ? "phone-portrait-outline" : "phone-landscape-outline"}
+                size={20}
+                color="#fff"
               />
+              <Text style={styles.iconBtnLabel}>{isVertical ? "Webtoon" : "Manga"}</Text>
             </Pressable>
+
             <Pressable
-              onPress={() => setTranslateModal(true)}
-              style={[
-                styles.aiBtn,
-                { backgroundColor: colors.primary, borderRadius: 20 },
-              ]}
+              onPress={handleTranslateCurrentPage}
+              disabled={translating}
+              style={[styles.aiBtn, { backgroundColor: colors.primary, borderRadius: 22 }]}
             >
-              <Ionicons name="sparkles" size={16} color="#fff" />
-              <Text style={styles.aiBtnText}>AI Translate</Text>
+              {translating ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Ionicons name="sparkles" size={18} color="#fff" />
+              )}
+              <Text style={styles.aiBtnText}>
+                {translating ? "Analyzing..." : "AI Translate"}
+              </Text>
             </Pressable>
+
             <Pressable
-              style={[styles.modeBtn, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: 8 }]}
               onPress={() => router.back()}
+              style={[styles.iconBtn, { backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 12 }]}
             >
-              <Ionicons name="list" size={18} color={colors.foreground} />
+              <Ionicons name="list-outline" size={20} color="#fff" />
+              <Text style={styles.iconBtnLabel}>Chapters</Text>
             </Pressable>
           </View>
         </LinearGradient>
       )}
 
-      {/* AI Translate Modal */}
-      <Modal
-        visible={translateModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setTranslateModal(false)}
-      >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={() => setTranslateModal(false)}
-        />
+      {/* AI Translation Panel */}
+      {showTranslationPanel && (
         <View
           style={[
-            styles.modalSheet,
-            {
-              backgroundColor: colors.card,
-              borderTopLeftRadius: 20,
-              borderTopRightRadius: 20,
-              paddingBottom: bottomPadding + 16,
-            },
+            styles.translationPanel,
+            { backgroundColor: colors.card, paddingBottom: bottomPadding + 16 },
           ]}
+          pointerEvents="box-none"
         >
-          <View style={[styles.modalHandle, { backgroundColor: colors.border }]} />
-          <View style={styles.modalHeader}>
-            <Ionicons name="sparkles" size={20} color={colors.primary} />
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-              AI Speech Bubble Translator
-            </Text>
+          <View style={styles.panelHandle}>
+            <View style={[styles.handleBar, { backgroundColor: colors.border }]} />
           </View>
-          <Text style={[styles.modalDesc, { color: colors.mutedForeground }]}>
-            Paste text from a speech bubble and get an AI-powered translation that preserves the character's tone and emotion.
-          </Text>
-          <TextInput
-            value={translateInput}
-            onChangeText={setTranslateInput}
-            placeholder="Paste original speech bubble text here..."
-            placeholderTextColor={colors.mutedForeground}
-            style={[
-              styles.modalInput,
-              {
-                backgroundColor: colors.background,
-                color: colors.foreground,
-                borderColor: colors.border,
-                borderRadius: colors.radius,
-              },
-            ]}
-            multiline
-            numberOfLines={4}
-          />
-          {translateResult ? (
-            <View
-              style={[
-                styles.resultBox,
-                { backgroundColor: `${colors.primary}15`, borderColor: `${colors.primary}30`, borderRadius: colors.radius },
-              ]}
+
+          <View style={styles.panelHeader}>
+            <Ionicons name="sparkles" size={18} color={colors.primary} />
+            <Text style={[styles.panelTitle, { color: colors.foreground }]}>
+              AI Translation — Page {currentPage + 1}
+            </Text>
+            <Pressable
+              onPress={() => setShowTranslationPanel(false)}
+              style={styles.panelClose}
             >
-              <Text style={[styles.resultLabel, { color: colors.primary }]}>
-                Translated
-              </Text>
-              <Text style={[styles.resultText, { color: colors.foreground }]}>
-                {translateResult}
+              <Ionicons name="close" size={20} color={colors.mutedForeground} />
+            </Pressable>
+          </View>
+
+          {translating ? (
+            <View style={styles.panelLoading}>
+              <ActivityIndicator color={colors.primary} size="large" />
+              <Text style={[styles.panelLoadingText, { color: colors.mutedForeground }]}>
+                Analyzing image and extracting text...
               </Text>
             </View>
+          ) : translationResult ? (
+            <ScrollView
+              style={styles.panelScroll}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ gap: 10 }}
+            >
+              {translationResult.summary ? (
+                <View
+                  style={[
+                    styles.summaryBox,
+                    { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}25` },
+                  ]}
+                >
+                  <Text style={[styles.summaryLabel, { color: colors.primary }]}>
+                    PAGE SUMMARY
+                  </Text>
+                  <Text style={[styles.summaryText, { color: colors.foreground }]}>
+                    {translationResult.summary}
+                  </Text>
+                </View>
+              ) : null}
+
+              {!translationResult.found || translationResult.texts.length === 0 ? (
+                <View style={styles.noTextBox}>
+                  <Ionicons name="text-outline" size={32} color={colors.mutedForeground} />
+                  <Text style={[styles.noTextLabel, { color: colors.mutedForeground }]}>
+                    No readable text detected on this page
+                  </Text>
+                </View>
+              ) : (
+                translationResult.texts.map((item, idx) => (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.textCard,
+                      { backgroundColor: colors.background, borderColor: colors.border },
+                    ]}
+                  >
+                    <View style={styles.textCardHeader}>
+                      <View
+                        style={[
+                          styles.typeBadge,
+                          { backgroundColor: typeColor(item.type, colors.primary) + "22" },
+                        ]}
+                      >
+                        <Text style={[styles.typeLabel, { color: typeColor(item.type, colors.primary) }]}>
+                          {item.type?.toUpperCase() ?? "TEXT"}
+                        </Text>
+                      </View>
+                      {item.speaker && (
+                        <Text style={[styles.speakerText, { color: colors.mutedForeground }]}>
+                          {item.speaker}
+                        </Text>
+                      )}
+                    </View>
+                    <Text style={[styles.originalText, { color: colors.mutedForeground }]}>
+                      {item.original}
+                    </Text>
+                    <View style={[styles.divider, { backgroundColor: colors.border }]} />
+                    <Text
+                      style={[
+                        styles.translatedText,
+                        { color: colors.foreground },
+                        readerSettings.targetLanguage === "ar" && styles.rtlText,
+                      ]}
+                    >
+                      {item.translated}
+                    </Text>
+                  </View>
+                ))
+              )}
+
+              <Pressable
+                onPress={handleTranslateCurrentPage}
+                style={[styles.retranslateBtn, { borderColor: colors.primary, borderRadius: 12 }]}
+              >
+                <Ionicons name="refresh-outline" size={16} color={colors.primary} />
+                <Text style={[styles.retranslateTxt, { color: colors.primary }]}>
+                  Re-translate
+                </Text>
+              </Pressable>
+            </ScrollView>
           ) : null}
-          <Pressable
-            onPress={handleTranslate}
-            disabled={translating || !translateInput.trim()}
-            style={[
-              styles.translateSubmit,
-              {
-                backgroundColor:
-                  translating || !translateInput.trim()
-                    ? colors.muted
-                    : colors.primary,
-                borderRadius: colors.radius,
-              },
-            ]}
-          >
-            {translating ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Ionicons name="sparkles" size={18} color="#fff" />
-            )}
-            <Text style={styles.translateSubmitText}>
-              {translating ? "Translating..." : "Translate"}
-            </Text>
-          </Pressable>
         </View>
-      </Modal>
+      )}
     </View>
   );
+}
+
+function typeColor(type: string, primary: string): string {
+  switch (type) {
+    case "speech": return "#4CAF50";
+    case "thought": return "#2196F3";
+    case "sfx": return "#FF9800";
+    case "sign": return "#9C27B0";
+    case "narration": return "#00BCD4";
+    default: return primary;
+  }
 }
 
 const styles = StyleSheet.create({
@@ -365,10 +476,35 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    gap: 12,
+    gap: 14,
   },
   loaderText: {
     fontSize: 15,
+    textAlign: "center",
+    paddingHorizontal: 32,
+  },
+  backPressable: {
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    marginTop: 4,
+  },
+  webtoonPage: {
+    width: SCREEN_W,
+    alignItems: "center",
+  },
+  webtoonImage: {
+    width: SCREEN_W,
+    aspectRatio: 0.7,
+  },
+  horizontalPage: {
+    width: SCREEN_W,
+    height: SCREEN_H,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  horizontalImage: {
+    width: SCREEN_W,
+    height: SCREEN_H,
   },
   topOverlay: {
     position: "absolute",
@@ -400,105 +536,189 @@ const styles = StyleSheet.create({
   topSubTitle: {
     color: "rgba(255,255,255,0.6)",
     fontSize: 12,
+    marginTop: 1,
   },
-  topRight: {
-    alignItems: "flex-end",
+  pageNumBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
   },
   pageNum: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 13,
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 12,
+    fontWeight: "500" as const,
   },
   bottomOverlay: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    paddingTop: 40,
+    paddingTop: 50,
   },
   bottomBar: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+    gap: 12,
   },
-  modeBtn: {
-    width: 44,
-    height: 44,
+  iconBtn: {
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 3,
+    minWidth: 64,
+  },
+  iconBtnLabel: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 10,
+    fontWeight: "500" as const,
   },
   aiBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    justifyContent: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 13,
     gap: 8,
+    maxWidth: 200,
   },
   aiBtnText: {
     color: "#fff",
     fontSize: 15,
     fontWeight: "600" as const,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
+  translationPanel: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    maxHeight: SCREEN_H * 0.72,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 20,
   },
-  modalSheet: {
-    padding: 20,
-    gap: 14,
+  panelHandle: {
+    alignItems: "center",
+    paddingTop: 10,
+    paddingBottom: 4,
   },
-  modalHandle: {
+  handleBar: {
     width: 40,
     height: 4,
     borderRadius: 2,
-    alignSelf: "center",
-    marginBottom: 4,
   },
-  modalHeader: {
+  panelHeader: {
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: 18,
+    paddingVertical: 12,
     gap: 10,
   },
-  modalTitle: {
-    fontSize: 17,
+  panelTitle: {
+    flex: 1,
+    fontSize: 16,
     fontWeight: "600" as const,
   },
-  modalDesc: {
+  panelClose: {
+    padding: 4,
+  },
+  panelLoading: {
+    alignItems: "center",
+    paddingVertical: 40,
+    gap: 16,
+  },
+  panelLoadingText: {
+    fontSize: 14,
+    textAlign: "center",
+  },
+  panelScroll: {
+    paddingHorizontal: 16,
+    maxHeight: SCREEN_H * 0.55,
+  },
+  summaryBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    gap: 6,
+  },
+  summaryLabel: {
+    fontSize: 10,
+    fontWeight: "700" as const,
+    letterSpacing: 1,
+  },
+  summaryText: {
     fontSize: 13,
     lineHeight: 20,
   },
-  modalInput: {
-    borderWidth: 1,
-    padding: 12,
+  noTextBox: {
+    alignItems: "center",
+    paddingVertical: 32,
+    gap: 10,
+  },
+  noTextLabel: {
     fontSize: 14,
-    minHeight: 100,
-    textAlignVertical: "top",
+    textAlign: "center",
   },
-  resultBox: {
-    padding: 12,
+  textCard: {
+    borderRadius: 12,
     borderWidth: 1,
-    gap: 6,
+    padding: 12,
+    gap: 8,
   },
-  resultLabel: {
-    fontSize: 11,
-    fontWeight: "600" as const,
-    letterSpacing: 0.5,
+  textCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
   },
-  resultText: {
+  typeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  typeLabel: {
+    fontSize: 9,
+    fontWeight: "700" as const,
+    letterSpacing: 0.8,
+  },
+  speakerText: {
+    fontSize: 12,
+    fontStyle: "italic" as const,
+  },
+  originalText: {
+    fontSize: 13,
+    lineHeight: 19,
+    fontStyle: "italic" as const,
+  },
+  divider: {
+    height: 1,
+  },
+  translatedText: {
     fontSize: 15,
     lineHeight: 22,
+    fontWeight: "500" as const,
   },
-  translateSubmit: {
+  rtlText: {
+    textAlign: "right",
+    writingDirection: "rtl",
+  },
+  retranslateBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    height: 48,
+    paddingVertical: 12,
+    borderWidth: 1,
     gap: 8,
+    marginBottom: 8,
   },
-  translateSubmitText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600" as const,
+  retranslateTxt: {
+    fontSize: 14,
+    fontWeight: "500" as const,
   },
 });

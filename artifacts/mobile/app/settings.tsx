@@ -18,6 +18,7 @@ type Language = { code: string; label: string };
 
 const LANGUAGES: Language[] = [
   { code: "en", label: "English" },
+  { code: "ar", label: "العربية" },
   { code: "es", label: "Español" },
   { code: "pt", label: "Português" },
   { code: "fr", label: "Français" },

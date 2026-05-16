@@ -10,60 +10,90 @@ const proxyBase = isWeb
   : BASE;
 
 function coverUrl(mangaId: string, fileName: string): string {
+  if (!mangaId || !fileName) return "";
   if (isWeb) {
     return `https://${process.env.EXPO_PUBLIC_DOMAIN}/api/manga-proxy/uploads/${mangaId}/${fileName}.512.jpg`;
   }
   return `${COVERS}/${mangaId}/${fileName}.512.jpg`;
 }
 
-function parseMangaData(data: Record<string, unknown>): Manga {
-  const attrs = data.attributes as Record<string, unknown>;
-  const titleObj = (attrs.title as Record<string, string>) || {};
+function safeStr(val: unknown, fallback = ""): string {
+  if (typeof val === "string" && val.trim()) return val.trim();
+  return fallback;
+}
+
+function parseMangaData(data: unknown): Manga {
+  if (!data || typeof data !== "object") {
+    return { id: "", title: "Unknown", coverUrl: "", sourceId: "mangadex" };
+  }
+  const item = data as Record<string, unknown>;
+  const attrs = (item.attributes && typeof item.attributes === "object"
+    ? item.attributes
+    : {}) as Record<string, unknown>;
+
+  const titleObj = (attrs.title && typeof attrs.title === "object"
+    ? attrs.title
+    : {}) as Record<string, string>;
   const title =
-    titleObj.en ||
-    titleObj["ja-ro"] ||
-    (Object.values(titleObj)[0] as string) ||
+    safeStr(titleObj.en) ||
+    safeStr(titleObj["ja-ro"]) ||
+    safeStr(Object.values(titleObj)[0]) ||
     "Unknown";
 
-  const descObj = (attrs.description as Record<string, string>) || {};
+  const descObj = (attrs.description && typeof attrs.description === "object"
+    ? attrs.description
+    : {}) as Record<string, string>;
   const description =
-    descObj.en || (Object.values(descObj)[0] as string) || "";
+    safeStr(descObj.en) || safeStr(Object.values(descObj)[0]);
 
-  const relationships = (data.relationships as Array<Record<string, unknown>>) || [];
-  const coverRel = relationships.find((r) => r.type === "cover_art");
-  const authorRel = relationships.find((r) => r.type === "author");
+  const relationships = Array.isArray(item.relationships) ? item.relationships : [];
+  const coverRel = relationships.find(
+    (r): r is Record<string, unknown> =>
+      r !== null && typeof r === "object" && (r as Record<string, unknown>).type === "cover_art"
+  );
+  const authorRel = relationships.find(
+    (r): r is Record<string, unknown> =>
+      r !== null && typeof r === "object" && (r as Record<string, unknown>).type === "author"
+  );
 
-  const coverFile = coverRel
-    ? ((coverRel.attributes as Record<string, string>)?.fileName ?? "")
-    : "";
+  const coverAttrs = (coverRel?.attributes && typeof coverRel.attributes === "object"
+    ? coverRel.attributes
+    : {}) as Record<string, string>;
+  const coverFile = safeStr(coverAttrs.fileName);
 
-  const tags = (attrs.tags as Array<Record<string, unknown>>) || [];
-  const genres = tags
+  const tags = Array.isArray(attrs.tags) ? attrs.tags : [];
+  const genres = (tags as unknown[])
+    .filter((t): t is Record<string, unknown> => t !== null && typeof t === "object")
     .filter((t) => {
-      const ta = t.attributes as Record<string, unknown>;
+      const ta = (t.attributes && typeof t.attributes === "object" ? t.attributes : {}) as Record<string, unknown>;
       return ta?.group === "genre";
     })
     .map((t) => {
-      const ta = t.attributes as Record<string, unknown>;
-      const name = ta.name as Record<string, string>;
-      return name?.en || (Object.values(name || {})[0] as string) || "";
+      const ta = (t.attributes && typeof t.attributes === "object" ? t.attributes : {}) as Record<string, unknown>;
+      const name = (ta.name && typeof ta.name === "object" ? ta.name : {}) as Record<string, string>;
+      return safeStr(name?.en) || safeStr(Object.values(name || {})[0]);
     })
-    .filter(Boolean);
+    .filter(Boolean) as string[];
 
-  const ratingObj = attrs.rating as Record<string, number> | undefined;
+  const ratingObj = (attrs.rating && typeof attrs.rating === "object"
+    ? attrs.rating
+    : {}) as Record<string, number>;
+  const authorAttrs = (authorRel?.attributes && typeof authorRel.attributes === "object"
+    ? authorRel.attributes
+    : {}) as Record<string, string>;
 
   return {
-    id: data.id as string,
-    title: String(title),
-    coverUrl: coverFile ? coverUrl(data.id as string, coverFile) : "",
+    id: safeStr(item.id as string) || String(item.id ?? ""),
+    title,
+    coverUrl: coverFile ? coverUrl(safeStr(item.id as string), coverFile) : "",
     sourceId: "mangadex",
-    status: attrs.status as Manga["status"],
-    rating: ratingObj?.average,
-    description: String(description),
+    status: safeStr(attrs.status as string) as Manga["status"] || undefined,
+    rating: typeof ratingObj?.average === "number" ? ratingObj.average : undefined,
+    description,
     genres,
-    author: (authorRel?.attributes as Record<string, string>)?.name,
-    year: attrs.year as number | undefined,
-    contentRating: attrs.contentRating as string | undefined,
+    author: safeStr(authorAttrs.name) || undefined,
+    year: typeof attrs.year === "number" ? attrs.year : undefined,
+    contentRating: safeStr(attrs.contentRating as string) || undefined,
   };
 }
 
@@ -76,8 +106,12 @@ async function apiFetch(path: string): Promise<Record<string, unknown>> {
       headers: { Accept: "application/json" },
       signal: controller.signal,
     });
-    if (!res.ok) throw new Error(`MangaDex API error: ${res.status}`);
-    return res.json();
+    if (!res.ok) throw new Error(`MangaDex API error: ${res.status} for ${path}`);
+    const json = await res.json();
+    if (json.result === "error") {
+      throw new Error(`MangaDex error: ${json.errors?.[0]?.detail ?? "Unknown error"}`);
+    }
+    return json;
   } finally {
     clearTimeout(timeout);
   }
@@ -103,9 +137,7 @@ export const mangadexSource: MangaSource = {
       { "includes[]": ["cover_art", "author"], "contentRating[]": ["safe", "suggestive"] }
     );
     const data = await apiFetch(`/manga?${qs}`);
-    return ((data.data as unknown[]) || []).map((d) =>
-      parseMangaData(d as Record<string, unknown>)
-    );
+    return ((data.data as unknown[]) || []).map(parseMangaData).filter((m) => m.id);
   },
 
   async getTrending(page = 0): Promise<Manga[]> {
@@ -114,9 +146,7 @@ export const mangadexSource: MangaSource = {
       { "includes[]": ["cover_art", "author"], "contentRating[]": ["safe", "suggestive"] }
     );
     const data = await apiFetch(`/manga?${qs}`);
-    return ((data.data as unknown[]) || []).map((d) =>
-      parseMangaData(d as Record<string, unknown>)
-    );
+    return ((data.data as unknown[]) || []).map(parseMangaData).filter((m) => m.id);
   },
 
   async getLatestUpdates(page = 0): Promise<Manga[]> {
@@ -125,21 +155,23 @@ export const mangadexSource: MangaSource = {
       { "includes[]": ["cover_art", "author"], "contentRating[]": ["safe", "suggestive"] }
     );
     const data = await apiFetch(`/manga?${qs}`);
-    return ((data.data as unknown[]) || []).map((d) =>
-      parseMangaData(d as Record<string, unknown>)
-    );
+    return ((data.data as unknown[]) || []).map(parseMangaData).filter((m) => m.id);
   },
 
   async getMangaDetails(id: string): Promise<Manga> {
+    if (!id) throw new Error("Manga ID is required");
     const qs = buildParams(
       {},
       { "includes[]": ["cover_art", "author", "artist"] }
     );
     const data = await apiFetch(`/manga/${id}?${qs}`);
-    return parseMangaData(data.data as Record<string, unknown>);
+    const manga = parseMangaData(data.data);
+    if (!manga.id) throw new Error("Failed to parse manga details");
+    return manga;
   },
 
   async getChapters(mangaId: string): Promise<Chapter[]> {
+    if (!mangaId) return [];
     const qs = buildParams(
       { limit: "100", "order[chapter]": "desc" },
       { "translatedLanguage[]": ["en"], "includes[]": ["scanlation_group"] }
@@ -148,33 +180,47 @@ export const mangadexSource: MangaSource = {
     const chapters: Chapter[] = [];
     const seen = new Set<string>();
 
-    for (const c of (data.data as Array<Record<string, unknown>>) || []) {
-      const attrs = c.attributes as Record<string, unknown>;
-      const num = (attrs.chapter as string) || "?";
+    for (const c of (data.data as Array<unknown>) || []) {
+      if (!c || typeof c !== "object") continue;
+      const item = c as Record<string, unknown>;
+      const attrs = (item.attributes && typeof item.attributes === "object"
+        ? item.attributes : {}) as Record<string, unknown>;
+      const num = safeStr(attrs.chapter as string) || "?";
       if (seen.has(num)) continue;
       seen.add(num);
 
-      const rels = (c.relationships as Array<Record<string, unknown>>) || [];
-      const groupRel = rels.find((r) => r.type === "scanlation_group");
+      const rels = Array.isArray(item.relationships) ? item.relationships : [];
+      const groupRel = rels.find(
+        (r): r is Record<string, unknown> =>
+          r !== null && typeof r === "object" && (r as Record<string, unknown>).type === "scanlation_group"
+      );
+      const groupAttrs = (groupRel?.attributes && typeof groupRel.attributes === "object"
+        ? groupRel.attributes : {}) as Record<string, string>;
 
       chapters.push({
-        id: c.id as string,
+        id: safeStr(item.id as string),
         number: num,
-        title: attrs.title as string | undefined,
-        publishedAt: attrs.publishAt as string,
-        pages: attrs.pages as number | undefined,
-        translatedLanguage: attrs.translatedLanguage as string | undefined,
-        scanlator: (groupRel?.attributes as Record<string, string>)?.name,
+        title: safeStr(attrs.title as string) || undefined,
+        publishedAt: safeStr(attrs.publishAt as string),
+        pages: typeof attrs.pages === "number" ? attrs.pages : undefined,
+        translatedLanguage: safeStr(attrs.translatedLanguage as string) || undefined,
+        scanlator: safeStr(groupAttrs.name) || undefined,
       });
     }
     return chapters;
   },
 
   async getChapterPages(chapterId: string): Promise<string[]> {
+    if (!chapterId) return [];
     const data = await apiFetch(`/at-home/server/${chapterId}`);
-    const baseUrl = data.baseUrl as string;
-    const chapter = data.chapter as Record<string, unknown>;
-    const files = (chapter.data as string[]) || [];
-    return files.map((file) => `${baseUrl}/data/${chapter.hash as string}/${file}`);
+    const baseUrl = safeStr(data.baseUrl as string);
+    const chapter = (data.chapter && typeof data.chapter === "object"
+      ? data.chapter : {}) as Record<string, unknown>;
+    const hash = safeStr(chapter.hash as string);
+    const files = Array.isArray(chapter.data) ? chapter.data : [];
+    if (!baseUrl || !hash) return [];
+    return files
+      .filter((f): f is string => typeof f === "string" && f.length > 0)
+      .map((file) => `${baseUrl}/data/${hash}/${file}`);
   },
 };
