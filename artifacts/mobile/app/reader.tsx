@@ -25,11 +25,21 @@ import { useSettings } from "@/context/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { getSource } from "@/services/sources";
 import MangaPage, { TextRegion } from "@/components/MangaPage";
+import {
+  translationQueue,
+  QueueProgress,
+  OnPageTranslated,
+} from "@/services/translationQueue";
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
+const { width: SCREEN_W } = Dimensions.get("window");
 
 type PageTranslations = Record<number, TextRegion[]>;
-type TranslationStatus = "idle" | "loading" | "done" | "error";
+
+// ─── Viewability config (defined outside component to avoid recreation) ──────
+const VIEWABILITY_CONFIG = {
+  itemVisiblePercentThreshold: 60,
+  minimumViewTime: 150,
+};
 
 export default function ReaderScreen() {
   const colors = useColors();
@@ -42,61 +52,70 @@ export default function ReaderScreen() {
     sourceId: string;
   }>();
 
-  const { readerSettings, updateReaderSettings, incrementTranslationCount } = useSettings();
+  const { readerSettings, updateReaderSettings, incrementTranslationCount } =
+    useSettings();
   const { saveProgress } = useLibrary();
 
+  // ── Page state ────────────────────────────────────────────────────────────
   const [pages, setPages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showControls, setShowControls] = useState(true);
-  const [currentPage, setCurrentPage] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Per-page translation state
-  const [pageTranslations, setPageTranslations] = useState<PageTranslations>({});
-  const [translationStatus, setTranslationStatus] = useState<TranslationStatus>("idle");
-  const [translationSummary, setTranslationSummary] = useState<string>("");
+  // ── Reader state ──────────────────────────────────────────────────────────
+  const [currentPage, setCurrentPage] = useState(0);
+  const [showControls, setShowControls] = useState(true);
   const [overlayVisible, setOverlayVisible] = useState(true);
 
-  // Heights cache for FlatList getItemLayout in vertical mode
-  const pageSizes = useRef<Record<number, number>>({});
+  // ── Translation state ─────────────────────────────────────────────────────
+  const [pageTranslations, setPageTranslations] = useState<PageTranslations>({});
+  const [singlePageTranslating, setSinglePageTranslating] = useState(false);
 
-  const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // ── Queue state ───────────────────────────────────────────────────────────
+  const [queueProgress, setQueueProgress] = useState<QueueProgress | null>(null);
+  const [statusBanner, setStatusBanner] = useState<string>("");
+  const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Refs ──────────────────────────────────────────────────────────────────
   const flatListRef = useRef<FlatList>(null);
+  const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentPageRef = useRef(0);
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
   const bottomPadding = Platform.OS === "web" ? 34 : insets.bottom;
   const isVertical = readerSettings.readingMode === "vertical";
   const isRTL = readerSettings.targetLanguage === "ar";
+  const apiBase = `https://${process.env.EXPO_PUBLIC_DOMAIN}`;
 
-  // ── Load pages ────────────────────────────────────────────────────────────
+  // ─── Load pages ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!params.chapterId) return;
     const source = getSource(params.sourceId || "mangadex");
+
     setLoading(true);
-    setError(null);
+    setLoadError(null);
     setPages([]);
     setCurrentPage(0);
     setPageTranslations({});
-    setTranslationStatus("idle");
+    setQueueProgress(null);
+    translationQueue.cancel();
 
     source
       .getChapterPages(params.chapterId)
       .then((p) => {
-        const valid = (p || []).filter((u) => typeof u === "string" && u.startsWith("http"));
+        const valid = (p || []).filter(
+          (u) => typeof u === "string" && u.startsWith("http")
+        );
         if (valid.length === 0) {
-          setError("No pages available for this chapter.");
+          setLoadError("No pages found for this chapter.");
         } else {
           setPages(valid);
         }
       })
-      .catch((err) => {
-        console.error("Failed to load pages:", err);
-        setError("Failed to load chapter. Please try again.");
-      })
+      .catch(() => setLoadError("Failed to load chapter. Please try again."))
       .finally(() => setLoading(false));
   }, [params.chapterId, params.sourceId]);
 
-  // ── Save progress ─────────────────────────────────────────────────────────
+  // ─── Save reading progress ─────────────────────────────────────────────────
   useEffect(() => {
     if (params.mangaId && params.chapterId && params.chapterNum) {
       saveProgress({
@@ -107,9 +126,15 @@ export default function ReaderScreen() {
         timestamp: Date.now(),
       });
     }
-  }, [currentPage, params.mangaId, params.chapterId, params.chapterNum, saveProgress]);
+  }, [
+    currentPage,
+    params.mangaId,
+    params.chapterId,
+    params.chapterNum,
+    saveProgress,
+  ]);
 
-  // ── Controls timer ────────────────────────────────────────────────────────
+  // ─── Auto-hide controls ────────────────────────────────────────────────────
   const resetControlsTimer = useCallback(() => {
     if (controlsTimer.current) clearTimeout(controlsTimer.current);
     controlsTimer.current = setTimeout(() => setShowControls(false), 3500);
@@ -130,88 +155,151 @@ export default function ReaderScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [resetControlsTimer]);
 
-  // ── Viewability tracking ──────────────────────────────────────────────────
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 40,
-    minimumViewTime: 100,
-  });
-
+  // ─── Viewability tracking — the ACCURATE active page tracker ──────────────
+  // Uses itemVisiblePercentThreshold: 60 so the active page is always the
+  // one dominating the viewport (≥60% visible), never a guess from offsets.
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      if (viewableItems.length > 0 && viewableItems[0].index != null) {
-        setCurrentPage(viewableItems[0].index);
+      if (viewableItems.length === 0) return;
+
+      // Pick the item with the highest visibility fraction
+      let bestIdx = viewableItems[0].index ?? 0;
+      let bestFrac = (viewableItems[0] as ViewToken & { percentVisible?: number }).percentVisible ?? 0;
+      for (const item of viewableItems) {
+        const frac = (item as ViewToken & { percentVisible?: number }).percentVisible ?? 0;
+        if (frac > bestFrac && item.index != null) {
+          bestFrac = frac;
+          bestIdx = item.index;
+        }
+      }
+
+      if (bestIdx !== currentPageRef.current) {
+        currentPageRef.current = bestIdx;
+        setCurrentPage(bestIdx);
       }
     }
   );
 
-  // ── Toggle reading mode ───────────────────────────────────────────────────
-  const toggleMode = useCallback(() => {
-    const next = readerSettings.readingMode === "vertical" ? "horizontal" : "vertical";
-    updateReaderSettings({ readingMode: next });
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  }, [readerSettings.readingMode, updateReaderSettings]);
+  // ─── Show status banner briefly ────────────────────────────────────────────
+  const showBanner = useCallback((msg: string, ms = 4000) => {
+    setStatusBanner(msg);
+    if (bannerTimer.current) clearTimeout(bannerTimer.current);
+    bannerTimer.current = setTimeout(() => setStatusBanner(""), ms);
+  }, []);
 
-  // ── AI Translate current page ─────────────────────────────────────────────
-  const handleTranslate = useCallback(async () => {
-    const pageUrl = pages[currentPage];
+  // ─── Translate SINGLE current page ────────────────────────────────────────
+  const handleTranslatePage = useCallback(async () => {
+    const pageUrl = pages[currentPageRef.current];
     if (!pageUrl) return;
 
-    // If already translated, toggle overlay
-    if (pageTranslations[currentPage]) {
-      setOverlayVisible((prev) => !prev);
+    const idx = currentPageRef.current;
+
+    // If already translated, toggle overlay on/off
+    if (pageTranslations[idx] !== undefined) {
+      setOverlayVisible((v) => !v);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       return;
     }
 
-    setTranslationStatus("loading");
+    setSinglePageTranslating(true);
     setShowControls(false);
-    if (controlsTimer.current) clearTimeout(controlsTimer.current);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      const domain = process.env.EXPO_PUBLIC_DOMAIN;
-      const res = await fetch(`https://${domain}/api/translate-image`, {
+      const res = await fetch(`${apiBase}/api/translate-image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           imageUrl: pageUrl,
           targetLanguage: readerSettings.targetLanguage,
         }),
+        signal: AbortSignal.timeout(30000),
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
 
-      if (data.regions && data.regions.length > 0) {
-        setPageTranslations((prev) => ({ ...prev, [currentPage]: data.regions }));
-        setOverlayVisible(true);
-        setTranslationSummary(data.summary ?? "");
-        incrementTranslationCount();
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      const data = await res.json();
+      const regions: TextRegion[] = data.regions ?? [];
+
+      setPageTranslations((prev) => ({ ...prev, [idx]: regions }));
+      setOverlayVisible(true);
+      incrementTranslationCount();
+
+      if (regions.length === 0) {
+        showBanner(data.summary ?? "No text detected on this page.");
       } else {
-        setTranslationSummary(data.summary ?? "No text detected on this page.");
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        showBanner(`Found ${regions.length} text region${regions.length > 1 ? "s" : ""}. ${data.summary ?? ""}`);
       }
-      setTranslationStatus("done");
-    } catch (err) {
-      console.error("Translation error:", err);
-      setTranslationStatus("error");
-      setTranslationSummary("Translation failed. Check connection and try again.");
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      showBanner("Translation failed. Please try again.");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setSinglePageTranslating(false);
+    }
+  }, [
+    pages,
+    pageTranslations,
+    apiBase,
+    readerSettings.targetLanguage,
+    incrementTranslationCount,
+    showBanner,
+  ]);
+
+  // ─── Translate ENTIRE CHAPTER (sequential queue) ──────────────────────────
+  const handleTranslateChapter = useCallback(async () => {
+    if (translationQueue.isRunning) {
+      translationQueue.cancel();
+      showBanner("Translation cancelled.");
+      setQueueProgress(null);
+      return;
     }
 
-    // Show summary banner briefly then clear
-    setTimeout(() => {
-      setTranslationStatus("idle");
-      setTranslationSummary("");
-    }, 4000);
-  }, [pages, currentPage, pageTranslations, readerSettings.targetLanguage, incrementTranslationCount]);
+    if (pages.length === 0) return;
 
-  // ── Height cache for getItemLayout ────────────────────────────────────────
-  const handlePageHeightKnown = useCallback((index: number, height: number) => {
-    pageSizes.current[index] = height;
-  }, []);
+    setOverlayVisible(true);
+    setShowControls(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
-  // ── Render item ───────────────────────────────────────────────────────────
+    const onPageTranslated: OnPageTranslated = (pageIndex, regions, summary) => {
+      setPageTranslations((prev) => ({ ...prev, [pageIndex]: regions }));
+      if (regions.length > 0) incrementTranslationCount();
+    };
+
+    await translationQueue.start({
+      pages,
+      targetLanguage: readerSettings.targetLanguage,
+      apiBase,
+      onPageTranslated,
+      onProgress: (progress) => {
+        setQueueProgress(progress);
+      },
+      onComplete: (stats) => {
+        setQueueProgress(null);
+        showBanner(
+          `Done! ${stats.completed} pages translated${stats.failed > 0 ? `, ${stats.failed} failed` : ""}.`,
+          5000
+        );
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      },
+    });
+  }, [
+    pages,
+    apiBase,
+    readerSettings.targetLanguage,
+    incrementTranslationCount,
+    showBanner,
+  ]);
+
+  // ─── Toggle reading mode ───────────────────────────────────────────────────
+  const toggleMode = useCallback(() => {
+    updateReaderSettings({
+      readingMode: readerSettings.readingMode === "vertical" ? "horizontal" : "vertical",
+    });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }, [readerSettings.readingMode, updateReaderSettings]);
+
+  // ─── FlatList render item ──────────────────────────────────────────────────
   const renderItem = useCallback(
     ({ item: uri, index }: { item: string; index: number }) => (
       <Pressable onPress={handleTap} style={{ width: SCREEN_W }}>
@@ -220,20 +308,22 @@ export default function ReaderScreen() {
           regions={pageTranslations[index]}
           showOverlay={overlayVisible}
           isRTL={isRTL}
-          onHeightKnown={(h) => handlePageHeightKnown(index, h)}
         />
       </Pressable>
     ),
-    [handleTap, pageTranslations, overlayVisible, isRTL, handlePageHeightKnown]
+    [handleTap, pageTranslations, overlayVisible, isRTL]
   );
 
-  const keyExtractor = useCallback((uri: string, idx: number) => `${uri}-${idx}`, []);
+  const keyExtractor = useCallback(
+    (uri: string, idx: number) => `${uri}-${idx}`,
+    []
+  );
 
-  // ── Derived state ─────────────────────────────────────────────────────────
-  const hasTranslation = !!pageTranslations[currentPage];
-  const isTranslating = translationStatus === "loading";
+  // ─── Derived ───────────────────────────────────────────────────────────────
+  const hasTranslation = pageTranslations[currentPage] !== undefined;
+  const isQueueRunning = queueProgress?.isRunning ?? false;
 
-  // ── Loading / Error states ────────────────────────────────────────────────
+  // ─── Loading / Error ───────────────────────────────────────────────────────
   if (loading) {
     return (
       <View style={[styles.centered, { backgroundColor: "#000" }]}>
@@ -245,14 +335,14 @@ export default function ReaderScreen() {
     );
   }
 
-  if (error || pages.length === 0) {
+  if (loadError || pages.length === 0) {
     return (
       <View style={[styles.centered, { backgroundColor: "#000" }]}>
         <Ionicons name="alert-circle-outline" size={52} color={colors.mutedForeground} />
         <Text style={[styles.centeredText, { color: colors.mutedForeground }]}>
-          {error ?? "No pages found"}
+          {loadError ?? "No pages found"}
         </Text>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => router.back()} style={styles.backPressable}>
           <Text style={{ color: colors.primary, fontSize: 15, fontWeight: "600" as const }}>
             ← Go Back
           </Text>
@@ -263,7 +353,7 @@ export default function ReaderScreen() {
 
   return (
     <View style={styles.root}>
-      {/* ── Pages ── */}
+      {/* ── Pages ─────────────────────────────────────────────────────────── */}
       <FlatList
         ref={flatListRef}
         data={pages}
@@ -275,26 +365,24 @@ export default function ReaderScreen() {
         showsHorizontalScrollIndicator={false}
         scrollEventThrottle={16}
         onViewableItemsChanged={onViewableItemsChanged.current}
-        viewabilityConfig={viewabilityConfig.current}
+        viewabilityConfig={VIEWABILITY_CONFIG}
         removeClippedSubviews={Platform.OS !== "web"}
         maxToRenderPerBatch={3}
         windowSize={5}
         initialNumToRender={2}
-        // Static getItemLayout for horizontal mode only (pages are SCREEN_W wide)
         getItemLayout={
           !isVertical
-            ? (_, index) => ({ length: SCREEN_W, offset: SCREEN_W * index, index })
+            ? (_, i) => ({ length: SCREEN_W, offset: SCREEN_W * i, index: i })
             : undefined
         }
         ListFooterComponent={isVertical ? <View style={{ height: 80 }} /> : null}
         style={styles.list}
-        contentContainerStyle={isVertical ? undefined : undefined}
       />
 
-      {/* ── Top bar ── */}
+      {/* ── Top controls ──────────────────────────────────────────────────── */}
       {showControls && (
         <LinearGradient
-          colors={["rgba(0,0,0,0.88)", "rgba(0,0,0,0.45)", "transparent"]}
+          colors={["rgba(0,0,0,0.90)", "rgba(0,0,0,0.45)", "transparent"]}
           style={[styles.topOverlay, { paddingTop: topPadding + 8 }]}
           pointerEvents="box-none"
         >
@@ -310,60 +398,86 @@ export default function ReaderScreen() {
               <Text style={styles.topSub}>Ch. {params.chapterNum}</Text>
             </View>
 
-            <View style={[styles.pageBadge, { backgroundColor: "rgba(255,255,255,0.18)" }]}>
-              <Text style={styles.pageBadgeText}>
-                {currentPage + 1} / {pages.length}
+            {/* Translate Chapter button in top-right */}
+            <Pressable
+              onPress={handleTranslateChapter}
+              style={[
+                styles.chapterTranslateBtn,
+                {
+                  backgroundColor: isQueueRunning
+                    ? "rgba(220,50,50,0.85)"
+                    : "rgba(255,255,255,0.15)",
+                },
+              ]}
+            >
+              {isQueueRunning ? (
+                <>
+                  <ActivityIndicator color="#fff" size="small" style={{ width: 14, height: 14 }} />
+                  <Text style={styles.chapterTranslateTxt}>
+                    {queueProgress?.completed}/{pages.length}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Ionicons name="language-outline" size={14} color="#fff" />
+                  <Text style={styles.chapterTranslateTxt}>
+                    {Object.keys(pageTranslations).length > 0 ? "More" : "All"}
+                  </Text>
+                </>
+              )}
+            </Pressable>
+
+            <View style={[styles.pageBadge, { backgroundColor: "rgba(255,255,255,0.16)" }]}>
+              <Text style={styles.pageBadgeTxt}>
+                {currentPage + 1}/{pages.length}
               </Text>
             </View>
           </View>
+
+          {/* Queue progress bar */}
+          {isQueueRunning && (
+            <View style={styles.progressBarTrack}>
+              <View
+                style={[
+                  styles.progressBarFill,
+                  {
+                    backgroundColor: colors.primary,
+                    width: `${queueProgress?.percentDone ?? 0}%` as unknown as number,
+                  },
+                ]}
+              />
+            </View>
+          )}
         </LinearGradient>
       )}
 
-      {/* ── Translation status banner ── */}
-      {(isTranslating || translationSummary) && (
+      {/* ── Status banner ─────────────────────────────────────────────────── */}
+      {statusBanner !== "" && (
         <View
-          style={[
-            styles.statusBanner,
-            {
-              top: topPadding + 70,
-              backgroundColor:
-                translationStatus === "error"
-                  ? "rgba(200,40,40,0.92)"
-                  : "rgba(20,20,20,0.92)",
-            },
-          ]}
+          style={[styles.banner, { top: topPadding + 72 }]}
           pointerEvents="none"
         >
-          {isTranslating ? (
-            <View style={styles.statusRow}>
-              <ActivityIndicator color={colors.primary} size="small" />
-              <Text style={[styles.statusText, { color: "#fff" }]}>
-                Scanning page for text...
-              </Text>
-            </View>
-          ) : (
-            <Text style={[styles.statusText, { color: "#fff" }]} numberOfLines={3}>
-              {translationSummary}
-            </Text>
-          )}
+          <Text style={styles.bannerText} numberOfLines={3}>
+            {statusBanner}
+          </Text>
         </View>
       )}
 
-      {/* ── Bottom bar ── */}
+      {/* ── Bottom controls ────────────────────────────────────────────────── */}
       {showControls && (
         <LinearGradient
-          colors={["transparent", "rgba(0,0,0,0.7)", "rgba(0,0,0,0.96)"]}
+          colors={["transparent", "rgba(0,0,0,0.72)", "rgba(0,0,0,0.97)"]}
           style={[styles.bottomOverlay, { paddingBottom: bottomPadding + 8 }]}
           pointerEvents="box-none"
         >
           <View style={styles.bottomBar}>
-            {/* Mode toggle */}
+            {/* Reading mode */}
             <Pressable
               onPress={toggleMode}
-              style={[styles.sideBtn, { backgroundColor: "rgba(255,255,255,0.12)" }]}
+              style={[styles.sideBtn, { backgroundColor: "rgba(255,255,255,0.13)" }]}
             >
               <Ionicons
-                name={isVertical ? "albums-outline" : "phone-portrait-outline"}
+                name={isVertical ? "albums-outline" : "book-outline"}
                 size={19}
                 color="#fff"
               />
@@ -372,56 +486,63 @@ export default function ReaderScreen() {
               </Text>
             </Pressable>
 
-            {/* AI Translate */}
+            {/* AI Translate current page */}
             <Pressable
-              onPress={handleTranslate}
-              disabled={isTranslating}
+              onPress={handleTranslatePage}
+              disabled={singlePageTranslating}
               style={[
                 styles.aiBtn,
                 {
-                  backgroundColor: hasTranslation
-                    ? overlayVisible
+                  backgroundColor:
+                    hasTranslation && overlayVisible
                       ? colors.primary
-                      : "rgba(255,255,255,0.18)"
-                    : colors.primary,
-                  opacity: isTranslating ? 0.7 : 1,
+                      : hasTranslation
+                      ? "rgba(255,255,255,0.18)"
+                      : colors.primary,
+                  opacity: singlePageTranslating ? 0.75 : 1,
                 },
               ]}
             >
-              {isTranslating ? (
+              {singlePageTranslating ? (
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
                 <Ionicons
-                  name={hasTranslation && overlayVisible ? "eye-outline" : "sparkles"}
+                  name={
+                    hasTranslation && overlayVisible
+                      ? "eye-outline"
+                      : hasTranslation
+                      ? "eye-off-outline"
+                      : "sparkles"
+                  }
                   size={17}
                   color="#fff"
                 />
               )}
-              <Text style={styles.aiBtnText}>
-                {isTranslating
+              <Text style={styles.aiBtnTxt}>
+                {singlePageTranslating
                   ? "Scanning..."
+                  : hasTranslation && overlayVisible
+                  ? "Hide"
                   : hasTranslation
-                  ? overlayVisible
-                    ? "Hide Translation"
-                    : "Show Translation"
-                  : "AI Translate"}
+                  ? "Show"
+                  : "Translate"}
               </Text>
             </Pressable>
 
-            {/* Chapters */}
+            {/* Chapters list */}
             <Pressable
               onPress={() => router.back()}
-              style={[styles.sideBtn, { backgroundColor: "rgba(255,255,255,0.12)" }]}
+              style={[styles.sideBtn, { backgroundColor: "rgba(255,255,255,0.13)" }]}
             >
               <Ionicons name="list-outline" size={19} color="#fff" />
               <Text style={styles.sideBtnLabel}>Chapters</Text>
             </Pressable>
           </View>
 
-          {/* Page dots (horizontal mode only, up to 12 pages) */}
+          {/* Page dots (horizontal, ≤24 pages) */}
           {!isVertical && pages.length <= 24 && (
             <View style={styles.dots}>
-              {pages.slice(0, 24).map((_, i) => (
+              {pages.map((_, i) => (
                 <View
                   key={i}
                   style={[
@@ -430,8 +551,8 @@ export default function ReaderScreen() {
                       backgroundColor:
                         i === currentPage
                           ? colors.primary
-                          : "rgba(255,255,255,0.3)",
-                      width: i === currentPage ? 16 : 6,
+                          : "rgba(255,255,255,0.28)",
+                      width: i === currentPage ? 18 : 6,
                     },
                   ]}
                 />
@@ -445,14 +566,8 @@ export default function ReaderScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  list: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
+  root: { flex: 1, backgroundColor: "#000" },
+  list: { flex: 1, backgroundColor: "#000" },
   centered: {
     flex: 1,
     alignItems: "center",
@@ -465,7 +580,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 22,
   },
-  backBtn: {
+  backPressable: {
     paddingHorizontal: 24,
     paddingVertical: 10,
   },
@@ -475,12 +590,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     paddingBottom: 36,
+    gap: 8,
   },
   topBar: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 14,
-    gap: 10,
+    gap: 8,
   },
   iconTouch: {
     width: 38,
@@ -488,10 +604,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  topCenter: {
-    flex: 1,
-    gap: 1,
-  },
+  topCenter: { flex: 1, gap: 1 },
   topTitle: {
     color: "#fff",
     fontSize: 14,
@@ -501,40 +614,60 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.55)",
     fontSize: 11,
   },
+  chapterTranslateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  chapterTranslateTxt: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "600" as const,
+  },
   pageBadge: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 10,
   },
-  pageBadgeText: {
+  pageBadgeTxt: {
     color: "rgba(255,255,255,0.9)",
     fontSize: 12,
     fontWeight: "600" as const,
   },
-  statusBanner: {
+  progressBarTrack: {
+    height: 3,
+    marginHorizontal: 14,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  progressBarFill: {
+    height: 3,
+    borderRadius: 2,
+  },
+  banner: {
     position: "absolute",
     left: 16,
     right: 16,
+    backgroundColor: "rgba(16,16,16,0.92)",
     borderRadius: 12,
     padding: 12,
   },
-  statusRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  statusText: {
+  bannerText: {
+    color: "#fff",
     fontSize: 13,
     lineHeight: 18,
-    flex: 1,
   },
   bottomOverlay: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    paddingTop: 48,
-    gap: 12,
+    paddingTop: 50,
+    gap: 10,
   },
   bottomBar: {
     flexDirection: "row",
@@ -545,11 +678,11 @@ const styles = StyleSheet.create({
   sideBtn: {
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 10,
     borderRadius: 12,
     gap: 3,
-    minWidth: 66,
+    minWidth: 62,
   },
   sideBtnLabel: {
     color: "rgba(255,255,255,0.8)",
@@ -565,9 +698,9 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     gap: 8,
   },
-  aiBtnText: {
+  aiBtnTxt: {
     color: "#fff",
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "700" as const,
   },
   dots: {
