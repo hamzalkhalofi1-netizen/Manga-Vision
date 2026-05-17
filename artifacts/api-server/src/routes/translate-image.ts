@@ -27,15 +27,14 @@ router.post("/", async (req, res) => {
   }
 
   const langName = LANGUAGE_NAMES[targetLanguage] ?? targetLanguage;
+  const isRTL = targetLanguage === "ar";
 
   try {
-    let imageData: string;
-    let mimeType: string;
-
     const upstream = await fetch(imageUrl, {
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; MangaVerse/1.0)",
         "Referer": "https://mangadex.org/",
+        "Accept": "image/*",
       },
       signal: AbortSignal.timeout(20000),
     });
@@ -46,44 +45,58 @@ router.post("/", async (req, res) => {
     }
 
     const buffer = await upstream.arrayBuffer();
-    imageData = Buffer.from(buffer).toString("base64");
-    mimeType = upstream.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
+    const imageData = Buffer.from(buffer).toString("base64");
+    const mimeType = (upstream.headers.get("content-type")?.split(";")[0] ?? "image/jpeg") as
+      | "image/jpeg"
+      | "image/png"
+      | "image/webp";
 
-    const prompt = `You are an expert manga/manhwa/webtoon text extractor and localizer.
+    const prompt = `You are a professional manga/manhwa OCR and localization engine.
 
-Analyze this manga/manhwa page image and find ALL text in:
-- Speech bubbles (round or square)
-- Thought bubbles
-- Narrative text boxes
-- Signs, labels, and titles
-- Sound effects (onomatopoeia)
+TASK: Analyze this manga/manhwa page. For EVERY piece of text (speech bubbles, thought bubbles, sound effects, signs, narration boxes, title cards) do the following:
 
-For each piece of text found, translate it to ${langName}.
+1. LOCATE the text using normalized coordinates:
+   - x: left edge of the text container (0.0 = image left, 1.0 = image right)
+   - y: top edge of the text container (0.0 = image top, 1.0 = image bottom)
+   - w: width of the text container (fraction of image width)
+   - h: height of the text container (fraction of image height)
+   - IMPORTANT: estimate the bubble BODY area (excluding the tail/pointer), where text actually sits
+   - Be precise — use visual cues like panel borders and character positions
 
-Return a JSON object with this exact structure:
+2. DETECT bubble background:
+   - bgColor: hex color of the bubble interior (e.g. "#ffffff" for white, "#000000" for dark bubbles)
+   - textColor: hex color the translated text should be (black on white bubbles, white on dark bubbles)
+
+3. TRANSLATE the original text to ${langName}:
+   - Preserve emotional intensity, character personality, humor, drama
+   - ${isRTL ? "Arabic text must be natural, energetic, manga-localized — NOT robotic. Use proper MSA with emotional flair." : "Use natural idiomatic " + langName}
+   - Sound effects (SFX): transliterate phonetically OR use equivalent ${langName} SFX
+   - Keep exclamations, ellipsis, emphasis
+
+Return ONLY this valid JSON (absolutely no markdown, no backticks, no extra text):
 {
   "found": true,
-  "texts": [
+  "regions": [
     {
-      "original": "the original text as it appears",
-      "translated": "the ${langName} translation",
-      "type": "speech|thought|narration|sfx|sign",
-      "speaker": "character name if identifiable or null"
+      "original": "original text",
+      "translated": "${langName} translation",
+      "x": 0.05,
+      "y": 0.03,
+      "w": 0.42,
+      "h": 0.11,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": "character name or null",
+      "emphasis": false
     }
   ],
-  "summary": "1-2 sentence plot summary of what's happening in this page"
+  "summary": "1-2 sentence description of what's happening on this page"
 }
 
-If no text is found, return: { "found": false, "texts": [], "summary": "No text detected in this page" }
+Type values: "speech" | "thought" | "sfx" | "sign" | "narration" | "title"
 
-Translation rules:
-- Preserve emotional tone, character personality and dramatic impact
-- Use natural, idiomatic ${langName} — never robotic
-- For Arabic: use right-to-left text naturally with proper diacritics
-- Preserve exclamations and sound effect energy
-- Keep honorifics where culturally appropriate
-
-Return ONLY valid JSON, no markdown code blocks, no extra text.`;
+If NO text found: { "found": false, "regions": [], "summary": "No text on this page" }`;
 
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
@@ -91,23 +104,31 @@ Return ONLY valid JSON, no markdown code blocks, no extra text.`;
         {
           role: "user",
           parts: [
-            {
-              inlineData: {
-                mimeType: mimeType as "image/jpeg" | "image/png" | "image/webp",
-                data: imageData,
-              },
-            },
+            { inlineData: { mimeType, data: imageData } },
             { text: prompt },
           ],
         },
       ],
-      config: { maxOutputTokens: 4096 },
+      config: { maxOutputTokens: 8192 },
     });
 
     const raw = response.text?.trim() ?? "";
+
     let parsed: {
       found: boolean;
-      texts: Array<{ original: string; translated: string; type: string; speaker: string | null }>;
+      regions: Array<{
+        original: string;
+        translated: string;
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+        type: string;
+        bgColor: string;
+        textColor: string;
+        speaker: string | null;
+        emphasis: boolean;
+      }>;
       summary: string;
     };
 
@@ -116,10 +137,31 @@ Return ONLY valid JSON, no markdown code blocks, no extra text.`;
     } catch {
       const match = raw.match(/\{[\s\S]*\}/);
       if (match) {
-        parsed = JSON.parse(match[0]);
+        try {
+          parsed = JSON.parse(match[0]);
+        } catch {
+          parsed = { found: false, regions: [], summary: "Could not parse AI response" };
+        }
       } else {
-        parsed = { found: false, texts: [], summary: "Could not parse translation results" };
+        parsed = { found: false, regions: [], summary: "No parseable response from AI" };
       }
+    }
+
+    // Sanitize: clamp coordinates to valid range
+    if (parsed.regions) {
+      parsed.regions = parsed.regions
+        .filter((r) => r && typeof r.x === "number" && typeof r.y === "number")
+        .map((r) => ({
+          ...r,
+          x: Math.max(0, Math.min(0.99, r.x)),
+          y: Math.max(0, Math.min(0.99, r.y)),
+          w: Math.max(0.02, Math.min(1 - r.x, r.w)),
+          h: Math.max(0.02, Math.min(1 - r.y, r.h)),
+          bgColor: r.bgColor || "#ffffff",
+          textColor: r.textColor || "#000000",
+          emphasis: r.emphasis || false,
+          speaker: r.speaker || null,
+        }));
     }
 
     res.json(parsed);

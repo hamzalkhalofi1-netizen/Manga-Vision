@@ -1,0 +1,421 @@
+The current Chapter Reader and AI Translation system must be COMPLETELY REFACTORED immediately.
+
+The existing implementation is unacceptable because:
+- Translation is detached from the manga image
+- Reading immersion is broken
+- The reader layout contains black side bars
+- The manhwa panels are not rendered edge-to-edge
+
+The new implementation must behave like a professional real-time scanlation engine.
+
+# CRITICAL REFACTOR — AI OVERLAY TRANSLATION SYSTEM
+
+The translation system must NO LONGER:
+- Use bottom sheets
+- Use floating text lists
+- Use external translation panels
+- Render detached subtitles
+
+Instead:
+
+The translated text MUST appear DIRECTLY INSIDE the manga/manhwa image itself.
+
+# REQUIRED PIPELINE
+
+Implement the following rendering pipeline:
+
+1. OCR Detection
+- Detect all speech bubble text
+- Detect exact coordinates
+- Return:
+  - bounding boxes
+  - polygons
+  - rotation angle
+  - bubble dimensions
+
+Example structure:
+```ts
+{
+  text: "こんにちは",
+  bbox: {
+    x: 120,
+    y: 240,
+    width: 180,
+    height: 90
+  },
+  polygon: [...]
+}
+
+2. AI Translation
+
+
+
+Send OCR text to Gemini API
+
+Preserve:
+
+emotion
+
+intensity
+
+humor
+
+personality
+
+dramatic tone
+
+
+
+Arabic translation must feel:
+
+natural
+
+energetic
+
+manga-style localized
+
+NOT robotic
+
+
+3. Dynamic Inpainting Layer (VERY IMPORTANT)
+
+
+
+Before rendering translated text:
+
+Create a Canvas layer OR Skia rendering layer
+
+Detect the average background color inside the speech bubble
+
+Mask/remove the original foreign text
+
+Fill the bubble naturally
+
+Preserve:
+
+gradients
+
+texture
+
+bubble borders
+
+shadows
+
+
+
+The user must NOT see the original Japanese/Korean text anymore.
+
+This should visually simulate professional manga scanlation.
+
+4. Overlay Translation Rendering
+
+
+
+Render the translated Arabic text DIRECTLY inside the original speech bubble location.
+
+Requirements:
+
+center aligned
+
+dynamic font sizing
+
+auto line wrapping
+
+adaptive spacing
+
+preserve readability
+
+support RTL Arabic
+
+support bold manga emphasis
+
+support vertical bubble fitting
+
+
+The text renderer must:
+
+automatically shrink font size if overflow occurs
+
+respect bubble padding
+
+avoid clipping
+
+
+5. Layered Rendering Architecture
+
+
+
+Required rendering stack:
+
+Original Manga Image
+        ↓
+Inpainting Mask Layer
+        ↓
+Translated Arabic Text Overlay
+        ↓
+Gesture Layer
+
+Use:
+
+react-native-skia OR
+
+expo-gl + canvas rendering OR
+
+SVG overlay system
+
+
+The overlay must remain perfectly synced during:
+
+zoom
+
+pan
+
+orientation changes
+
+scrolling
+
+
+FULL-WIDTH EDGE-TO-EDGE WEBTOON READER (CRITICAL)
+
+The current reader layout is WRONG.
+
+The reader currently:
+
+centers images
+
+leaves huge black bars
+
+wastes screen space
+
+ruins webtoon immersion
+
+
+This MUST be fixed immediately.
+
+REQUIRED READER LAYOUT
+
+The vertical reader must become:
+
+full-width
+
+edge-to-edge
+
+seamless
+
+optimized for webtoon reading
+
+
+IMAGE COMPONENT RULES
+
+Modify ALL manga/manhwa page rendering logic.
+
+The image container MUST:
+
+width: Dimensions.get('window').width
+
+The image itself MUST:
+
+stretch to full screen width
+
+preserve aspect ratio
+
+remove ALL horizontal margins
+
+remove ALL side paddings
+
+eliminate black bars
+
+
+REQUIRED IMAGE CONFIGURATION
+
+Use:
+
+resizeMode="contain"
+
+OR dynamically calculate:
+
+const aspectRatio = imageWidth / imageHeight;
+const calculatedHeight = screenWidth / aspectRatio;
+
+Then render:
+
+<Image
+  source={{ uri: page.url }}
+  style={{
+    width: screenWidth,
+    height: calculatedHeight,
+  }}
+/>
+
+REMOVE ALL SIDE GAPS
+
+The following MUST be removed:
+
+horizontal padding
+
+centered containers
+
+maxWidth wrappers
+
+black background gutters
+
+unnecessary SafeArea spacing
+
+
+The manga panels must visually flow: EDGE TO EDGE.
+
+REQUIRED SCROLL EXPERIENCE
+
+The vertical reader should feel like:
+
+Webtoon
+
+Mihon/TachiyomiSY
+
+Premium manga apps
+
+
+Requirements:
+
+smooth infinite scrolling
+
+aggressive preloading
+
+image virtualization
+
+memory optimization
+
+buttery scroll performance
+
+
+CHAPTER READER REFACTOR
+
+Completely rewrite:
+
+ChapterReader.tsx
+
+ReaderPage.tsx
+
+TranslationOverlay.tsx
+
+OCR renderer
+
+Bubble overlay engine
+
+
+IMPLEMENTATION REQUIREMENTS
+
+Use:
+
+React Native
+
+Expo
+
+TypeScript
+
+
+Preferred rendering:
+
+react-native-skia
+
+
+Preferred list virtualization:
+
+FlashList OR
+
+RecyclerListView
+
+
+REQUIRED COMPONENTS
+
+Generate production-ready code for:
+
+1. ChapterReader.tsx
+
+
+2. MangaPage.tsx
+
+
+3. TranslationOverlay.tsx
+
+
+4. BubbleRenderer.tsx
+
+
+5. OCRProcessor.ts
+
+
+6. InpaintingEngine.ts
+
+
+7. TranslationService.ts
+
+
+8. DynamicTextFitter.ts
+
+
+9. FullWidthImage.tsx
+
+
+10. ReaderGestureLayer.tsx
+
+
+
+PERFORMANCE REQUIREMENTS
+
+The system must:
+
+support hundreds of pages
+
+avoid memory leaks
+
+lazy-load overlays
+
+cache translated pages
+
+support low-end Android devices
+
+maintain 60fps scrolling
+
+
+TRANSLATION VISUAL QUALITY
+
+The final result MUST visually resemble:
+
+professional manga scanlations
+
+official localized webtoons
+
+native Arabic manga releases
+
+
+The user should feel like: the manga was originally written in Arabic.
+
+OUTPUT FORMAT
+
+Provide:
+
+production-ready React Native Expo TypeScript code
+
+complete component implementations
+
+Skia rendering examples
+
+OCR overlay rendering logic
+
+image scaling logic
+
+edge-to-edge reader implementation
+
+dynamic Arabic text fitting algorithms
+
+overlay synchronization logic
+
+performance optimizations
+
+clean folder structure
+
+
+Focus heavily on REAL IMPLEMENTATION CODE.
+
+Avoid long theoretical explanations.
