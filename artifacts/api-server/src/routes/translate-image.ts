@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { ai } from "@workspace/integrations-gemini-ai";
+import { ai, createUserGeminiClient } from "@workspace/integrations-gemini-ai";
 
 const router = Router();
 
@@ -27,10 +27,13 @@ router.post("/", async (req, res) => {
     return;
   }
 
-  if (!imageData || imageData.length < 100) {
+  if (imageData.length < 100) {
     res.status(400).json({ error: "imageData is empty or too short" });
     return;
   }
+
+  const userKey = req.headers["x-gemini-key"] as string | undefined;
+  const client = userKey ? createUserGeminiClient(userKey) : ai;
 
   const langName = LANGUAGE_NAMES[targetLanguage] ?? targetLanguage;
   const isRTL = targetLanguage === "ar";
@@ -87,7 +90,7 @@ Type values: "speech" | "thought" | "sfx" | "sign" | "narration" | "title"
 If NO text found: { "found": false, "regions": [], "summary": "No text on this page" }`;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await client.models.generateContent({
       model: "gemini-2.5-flash",
       contents: [
         {
@@ -153,7 +156,12 @@ If NO text found: { "found": false, "regions": [], "summary": "No text on this p
     }
 
     res.json(parsed);
-  } catch (err) {
+  } catch (err: unknown) {
+    const anyErr = err as { status?: number; message?: string };
+    if (anyErr?.status === 429) {
+      res.status(429).json({ error: "rate_limited", retryAfter: 70 });
+      return;
+    }
     req.log?.error({ err }, "Image translation failed");
     res.status(500).json({ error: "Translation service unavailable" });
   }

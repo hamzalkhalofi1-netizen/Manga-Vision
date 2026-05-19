@@ -36,9 +36,11 @@ interface QueueParams {
   pages: string[];
   targetLanguage: string;
   apiBase: string;
+  userApiKey?: string | null;
   onPageTranslated: OnPageTranslated;
   onProgress: OnProgressUpdate;
   onComplete: (stats: { completed: number; failed: number }) => void;
+  onRateLimited?: () => void;
 }
 
 const DELAY_BETWEEN_MS = 1000;
@@ -73,7 +75,7 @@ class TranslationQueueManager {
     this.abortController = new AbortController();
     this._isRunning = true;
 
-    const { pages, targetLanguage, apiBase, onPageTranslated, onProgress, onComplete } = params;
+    const { pages, targetLanguage, apiBase, userApiKey, onPageTranslated, onProgress, onComplete, onRateLimited } = params;
 
     let completed = 0;
     let failed = 0;
@@ -105,11 +107,14 @@ class TranslationQueueManager {
         try {
           const payload = await fetchImageAsBase64(pages[i]);
 
+          const headers: Record<string, string> = { "Content-Type": "application/json" };
+          if (userApiKey) headers["X-Gemini-Key"] = userApiKey;
+
           const res = await fetchWithTimeout(
             `${apiBase}/api/translate-image`,
             {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers,
               body: JSON.stringify({
                 imageData: payload.imageData,
                 mimeType: payload.mimeType,
@@ -119,6 +124,10 @@ class TranslationQueueManager {
             PAGE_TIMEOUT_MS
           );
 
+          if (res.status === 429) {
+            onRateLimited?.();
+            throw new Error("rate_limited");
+          }
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
           const data = await res.json();

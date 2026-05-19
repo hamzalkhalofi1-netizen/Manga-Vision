@@ -31,6 +31,7 @@ import {
   OnPageTranslated,
 } from "@/services/translationQueue";
 import { fetchImageAsBase64 } from "@/services/imageToBase64";
+import { useTokens } from "@/context/TokenContext";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -55,6 +56,7 @@ export default function ReaderScreen() {
 
   const { readerSettings, updateReaderSettings, incrementTranslationCount } =
     useSettings();
+  const { getActiveKey, markRateLimited, activeTokenId } = useTokens();
   const { saveProgress } = useLibrary();
 
   // ── Page state ────────────────────────────────────────────────────────────
@@ -207,12 +209,15 @@ export default function ReaderScreen() {
 
     try {
       const payload = await fetchImageAsBase64(pageUrl);
+      const userKey = getActiveKey();
+      const reqHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (userKey) reqHeaders["X-Gemini-Key"] = userKey;
 
       const res = await new Promise<Response>((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error("Request timed out")), 60000);
         fetch(`${apiBase}/api/translate-image`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: reqHeaders,
           body: JSON.stringify({
             imageData: payload.imageData,
             mimeType: payload.mimeType,
@@ -224,6 +229,11 @@ export default function ReaderScreen() {
         );
       });
 
+      if (res.status === 429 && activeTokenId) {
+        markRateLimited(activeTokenId, 70_000);
+        showBanner("API key rate limited. Add another key in Settings.");
+        return;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data = await res.json();
@@ -279,6 +289,7 @@ export default function ReaderScreen() {
       pages,
       targetLanguage: readerSettings.targetLanguage,
       apiBase,
+      userApiKey: getActiveKey(),
       onPageTranslated,
       onProgress: (progress) => {
         setQueueProgress(progress);
@@ -291,6 +302,10 @@ export default function ReaderScreen() {
         );
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       },
+      onRateLimited: () => {
+        if (activeTokenId) markRateLimited(activeTokenId, 70_000);
+        showBanner("API key rate limited. Add another key in Settings.", 6000);
+      },
     });
   }, [
     pages,
@@ -298,6 +313,9 @@ export default function ReaderScreen() {
     readerSettings.targetLanguage,
     incrementTranslationCount,
     showBanner,
+    getActiveKey,
+    markRateLimited,
+    activeTokenId,
   ]);
 
   // ─── Toggle reading mode ───────────────────────────────────────────────────

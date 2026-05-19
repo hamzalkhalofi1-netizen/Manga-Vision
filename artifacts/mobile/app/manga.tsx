@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChapterItem } from "@/components/ChapterItem";
 import { useLibrary } from "@/context/LibraryContext";
 import { useSettings } from "@/context/SettingsContext";
+import { useTokens } from "@/context/TokenContext";
 import { useColors } from "@/hooks/useColors";
 import { getSource } from "@/services/sources";
 import { Chapter, LibraryStatus, Manga } from "@/services/sources/types";
@@ -35,6 +36,7 @@ export default function MangaScreen() {
   const params = useLocalSearchParams<{ mangaId: string; sourceId: string }>();
   const { addToLibrary, removeFromLibrary, isInLibrary, getEntry, getProgress } = useLibrary();
   const { readerSettings, activeSourceId, incrementTranslationCount } = useSettings();
+  const { getActiveKey, markRateLimited, activeTokenId } = useTokens();
 
   const [manga, setManga] = useState<Manga | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -92,15 +94,24 @@ export default function MangaScreen() {
     setTranslating(true);
     try {
       const domain = process.env.EXPO_PUBLIC_DOMAIN;
+      const userKey = getActiveKey();
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (userKey) headers["X-Gemini-Key"] = userKey;
+
       const res = await fetch(`https://${domain}/api/translate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           text: manga.description,
           targetLanguage: readerSettings.targetLanguage,
           context: `Manga/manhwa description for: ${manga.title}. Genre: ${manga.genres?.join(", ")}`,
         }),
       });
+      if (res.status === 429) {
+        if (activeTokenId) markRateLimited(activeTokenId, 70_000);
+        Alert.alert("Rate Limited", "This API key hit its limit. Add another key in Settings.");
+        return;
+      }
       if (!res.ok) throw new Error("Translation failed");
       const data = await res.json();
       setTranslatedDesc(data.translatedText);

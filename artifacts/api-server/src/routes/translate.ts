@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { ai } from "@workspace/integrations-gemini-ai";
+import { ai, createUserGeminiClient } from "@workspace/integrations-gemini-ai";
 
 const router = Router();
 
@@ -32,6 +32,9 @@ router.post("/", async (req, res) => {
     return;
   }
 
+  const userKey = req.headers["x-gemini-key"] as string | undefined;
+  const client = userKey ? createUserGeminiClient(userKey) : ai;
+
   const langName = LANGUAGE_NAMES[targetLanguage] ?? targetLanguage;
 
   const prompt = `You are an expert manga and manhwa localizer with deep knowledge of anime culture, Japanese/Korean storytelling conventions, and emotional nuance in comics.
@@ -53,7 +56,7 @@ ${text}
 Return ONLY the translated text with no preamble, no explanations, no quotes around it.`;
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await client.models.generateContent({
       model: "gemini-2.5-flash",
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: { maxOutputTokens: 8192 },
@@ -66,11 +69,13 @@ Return ONLY the translated text with no preamble, no explanations, no quotes aro
       return;
     }
 
-    res.json({
-      translatedText,
-      sourceLanguage: "auto",
-    });
-  } catch (err) {
+    res.json({ translatedText, sourceLanguage: "auto" });
+  } catch (err: unknown) {
+    const anyErr = err as { status?: number; message?: string };
+    if (anyErr?.status === 429) {
+      res.status(429).json({ error: "rate_limited", retryAfter: 70 });
+      return;
+    }
     req.log?.error({ err }, "Translation failed");
     res.status(500).json({ error: "Translation service unavailable" });
   }
