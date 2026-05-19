@@ -56,7 +56,15 @@ export default function ReaderScreen() {
 
   const { readerSettings, updateReaderSettings, incrementTranslationCount } =
     useSettings();
-  const { getActiveKey, markRateLimited, activeTokenId } = useTokens();
+  const { tokens, activeTokenId, markRateLimited } = useTokens();
+
+  // Always compute the live active key directly from state — no closure risk
+  const getLiveKey = (): string | null => {
+    if (!activeTokenId) return null;
+    const token = tokens.find((t) => t.id === activeTokenId);
+    if (!token || token.isRateLimited) return null;
+    return token.key;
+  };
   const { saveProgress } = useLibrary();
 
   // ── Page state ────────────────────────────────────────────────────────────
@@ -209,7 +217,7 @@ export default function ReaderScreen() {
 
     try {
       const payload = await fetchImageAsBase64(pageUrl);
-      const userKey = getActiveKey();
+      const userKey = getLiveKey();
       const reqHeaders: Record<string, string> = { "Content-Type": "application/json" };
       if (userKey) reqHeaders["X-Gemini-Key"] = userKey;
 
@@ -263,6 +271,9 @@ export default function ReaderScreen() {
     readerSettings.targetLanguage,
     incrementTranslationCount,
     showBanner,
+    tokens,
+    activeTokenId,
+    markRateLimited,
   ]);
 
   // ─── Translate ENTIRE CHAPTER (sequential queue) ──────────────────────────
@@ -289,7 +300,7 @@ export default function ReaderScreen() {
       pages,
       targetLanguage: readerSettings.targetLanguage,
       apiBase,
-      userApiKey: getActiveKey(),
+      userApiKey: getLiveKey(),
       onPageTranslated,
       onProgress: (progress) => {
         setQueueProgress(progress);
@@ -313,9 +324,9 @@ export default function ReaderScreen() {
     readerSettings.targetLanguage,
     incrementTranslationCount,
     showBanner,
-    getActiveKey,
-    markRateLimited,
+    tokens,
     activeTokenId,
+    markRateLimited,
   ]);
 
   // ─── Toggle reading mode ───────────────────────────────────────────────────
