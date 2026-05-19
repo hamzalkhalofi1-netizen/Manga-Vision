@@ -16,42 +16,30 @@ const LANGUAGE_NAMES: Record<string, string> = {
 };
 
 router.post("/", async (req, res) => {
-  const { imageUrl, targetLanguage } = req.body as {
-    imageUrl?: string;
+  const { imageData, mimeType, targetLanguage } = req.body as {
+    imageData?: string;
+    mimeType?: string;
     targetLanguage?: string;
   };
 
-  if (!imageUrl || !targetLanguage) {
-    res.status(400).json({ error: "imageUrl and targetLanguage are required" });
+  if (!imageData || !targetLanguage) {
+    res.status(400).json({ error: "imageData and targetLanguage are required" });
+    return;
+  }
+
+  if (!imageData || imageData.length < 100) {
+    res.status(400).json({ error: "imageData is empty or too short" });
     return;
   }
 
   const langName = LANGUAGE_NAMES[targetLanguage] ?? targetLanguage;
   const isRTL = targetLanguage === "ar";
+  const resolvedMime = (mimeType?.split(";")[0] ?? "image/jpeg") as
+    | "image/jpeg"
+    | "image/png"
+    | "image/webp";
 
-  try {
-    const upstream = await fetch(imageUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; MangaVerse/1.0)",
-        "Referer": "https://mangadex.org/",
-        "Accept": "image/*",
-      },
-      signal: AbortSignal.timeout(20000),
-    });
-
-    if (!upstream.ok) {
-      res.status(502).json({ error: `Failed to fetch image: ${upstream.status}` });
-      return;
-    }
-
-    const buffer = await upstream.arrayBuffer();
-    const imageData = Buffer.from(buffer).toString("base64");
-    const mimeType = (upstream.headers.get("content-type")?.split(";")[0] ?? "image/jpeg") as
-      | "image/jpeg"
-      | "image/png"
-      | "image/webp";
-
-    const prompt = `You are a professional manga/manhwa OCR and localization engine.
+  const prompt = `You are a professional manga/manhwa OCR and localization engine.
 
 TASK: Analyze this manga/manhwa page. For EVERY piece of text (speech bubbles, thought bubbles, sound effects, signs, narration boxes, title cards) do the following:
 
@@ -98,13 +86,14 @@ Type values: "speech" | "thought" | "sfx" | "sign" | "narration" | "title"
 
 If NO text found: { "found": false, "regions": [], "summary": "No text on this page" }`;
 
+  try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: [
         {
           role: "user",
           parts: [
-            { inlineData: { mimeType, data: imageData } },
+            { inlineData: { mimeType: resolvedMime, data: imageData } },
             { text: prompt },
           ],
         },
@@ -147,7 +136,6 @@ If NO text found: { "found": false, "regions": [], "summary": "No text on this p
       }
     }
 
-    // Sanitize: clamp coordinates to valid range
     if (parsed.regions) {
       parsed.regions = parsed.regions
         .filter((r) => r && typeof r.x === "number" && typeof r.y === "number")

@@ -30,6 +30,7 @@ import {
   QueueProgress,
   OnPageTranslated,
 } from "@/services/translationQueue";
+import { fetchImageAsBase64 } from "@/services/imageToBase64";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -205,13 +206,16 @@ export default function ReaderScreen() {
     setShowControls(false);
 
     try {
+      const payload = await fetchImageAsBase64(pageUrl);
+
       const res = await new Promise<Response>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("Request timed out")), 30000);
+        const timer = setTimeout(() => reject(new Error("Request timed out")), 60000);
         fetch(`${apiBase}/api/translate-image`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            imageUrl: pageUrl,
+            imageData: payload.imageData,
+            mimeType: payload.mimeType,
             targetLanguage: readerSettings.targetLanguage,
           }),
         }).then(

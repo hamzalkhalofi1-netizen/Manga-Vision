@@ -1,3 +1,5 @@
+import { fetchImageAsBase64 } from "./imageToBase64";
+
 export interface TextRegion {
   original: string;
   translated: string;
@@ -39,9 +41,9 @@ interface QueueParams {
   onComplete: (stats: { completed: number; failed: number }) => void;
 }
 
-const DELAY_BETWEEN_MS = 700;
-const MAX_RETRIES = 2;
-const PAGE_TIMEOUT_MS = 35_000;
+const DELAY_BETWEEN_MS = 1000;
+const MAX_RETRIES = 3;
+const PAGE_TIMEOUT_MS = 45_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -101,13 +103,16 @@ class TranslationQueueManager {
         if (this.abortController.signal.aborted) break;
 
         try {
+          const payload = await fetchImageAsBase64(pages[i]);
+
           const res = await fetchWithTimeout(
             `${apiBase}/api/translate-image`,
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                imageUrl: pages[i],
+                imageData: payload.imageData,
+                mimeType: payload.mimeType,
                 targetLanguage,
               }),
             },
@@ -128,7 +133,7 @@ class TranslationQueueManager {
           completed++;
         } catch (err) {
           if (attempt < MAX_RETRIES - 1) {
-            await sleep(1200);
+            await sleep(1500 * (attempt + 1));
           } else {
             failed++;
             console.warn(`[TranslationQueue] Page ${i} failed after ${MAX_RETRIES} attempts`, err);
