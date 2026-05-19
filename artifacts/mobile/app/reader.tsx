@@ -30,7 +30,6 @@ import {
   QueueProgress,
   OnPageTranslated,
 } from "@/services/translationQueue";
-import { fetchImageAsBase64 } from "@/services/imageToBase64";
 import { useTokens } from "@/context/TokenContext";
 
 const { width: SCREEN_W } = Dimensions.get("window");
@@ -216,7 +215,6 @@ export default function ReaderScreen() {
     setShowControls(false);
 
     try {
-      const payload = await fetchImageAsBase64(pageUrl);
       const userKey = getLiveKey();
       const reqHeaders: Record<string, string> = { "Content-Type": "application/json" };
       if (userKey) reqHeaders["X-Gemini-Key"] = userKey;
@@ -227,8 +225,7 @@ export default function ReaderScreen() {
           method: "POST",
           headers: reqHeaders,
           body: JSON.stringify({
-            imageData: payload.imageData,
-            mimeType: payload.mimeType,
+            imageUrl: pageUrl,
             targetLanguage: readerSettings.targetLanguage,
           }),
         }).then(

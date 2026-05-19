@@ -1,5 +1,3 @@
-import { fetchImageAsBase64 } from "./imageToBase64";
-
 export interface TextRegion {
   original: string;
   translated: string;
@@ -43,9 +41,9 @@ interface QueueParams {
   onRateLimited?: () => void;
 }
 
-const DELAY_BETWEEN_MS = 1000;
-const MAX_RETRIES = 3;
-const PAGE_TIMEOUT_MS = 45_000;
+const DELAY_BETWEEN_MS = 800;
+const MAX_RETRIES = 2;
+const PAGE_TIMEOUT_MS = 60_000;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -75,7 +73,16 @@ class TranslationQueueManager {
     this.abortController = new AbortController();
     this._isRunning = true;
 
-    const { pages, targetLanguage, apiBase, userApiKey, onPageTranslated, onProgress, onComplete, onRateLimited } = params;
+    const {
+      pages,
+      targetLanguage,
+      apiBase,
+      userApiKey,
+      onPageTranslated,
+      onProgress,
+      onComplete,
+      onRateLimited,
+    } = params;
 
     let completed = 0;
     let failed = 0;
@@ -94,30 +101,31 @@ class TranslationQueueManager {
 
     emit(null);
 
+    // ── Strict sequential loop — one page fully awaited before the next ────────
     for (let i = 0; i < pages.length; i++) {
       if (this.abortController.signal.aborted) break;
 
       emit(i);
 
+      const pageUrl = pages[i];
       let success = false;
 
       for (let attempt = 0; attempt < MAX_RETRIES && !success; attempt++) {
         if (this.abortController.signal.aborted) break;
 
         try {
-          const payload = await fetchImageAsBase64(pages[i]);
-
           const headers: Record<string, string> = { "Content-Type": "application/json" };
           if (userApiKey) headers["X-Gemini-Key"] = userApiKey;
 
+          // Send the CDN URL directly — the server fetches and encodes it.
+          // This avoids client-side CORS/fetch issues with the manga CDN.
           const res = await fetchWithTimeout(
             `${apiBase}/api/translate-image`,
             {
               method: "POST",
               headers,
               body: JSON.stringify({
-                imageData: payload.imageData,
-                mimeType: payload.mimeType,
+                imageUrl: pageUrl,
                 targetLanguage,
               }),
             },
@@ -126,30 +134,34 @@ class TranslationQueueManager {
 
           if (res.status === 429) {
             onRateLimited?.();
-            throw new Error("rate_limited");
+            // Stop the whole queue — key is exhausted
+            this.abortController?.abort();
+            break;
           }
+
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
           const data = await res.json();
 
-          if (data.regions?.length > 0) {
-            onPageTranslated(i, data.regions, data.summary ?? "");
-          } else {
-            onPageTranslated(i, [], data.summary ?? "");
-          }
+          onPageTranslated(
+            i,
+            data.regions?.length > 0 ? data.regions : [],
+            data.summary ?? ""
+          );
 
           success = true;
           completed++;
         } catch (err) {
+          console.warn(`[TranslationQueue] Page ${i} attempt ${attempt + 1} failed:`, err);
           if (attempt < MAX_RETRIES - 1) {
             await sleep(1500 * (attempt + 1));
           } else {
             failed++;
-            console.warn(`[TranslationQueue] Page ${i} failed after ${MAX_RETRIES} attempts`, err);
           }
         }
       }
 
+      // Wait between pages to avoid RESOURCE_EXHAUSTED from Gemini
       if (!this.abortController.signal.aborted && i < pages.length - 1) {
         await sleep(DELAY_BETWEEN_MS);
       }
