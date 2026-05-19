@@ -205,14 +205,19 @@ export default function ReaderScreen() {
     setShowControls(false);
 
     try {
-      const res = await fetch(`${apiBase}/api/translate-image`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          imageUrl: pageUrl,
-          targetLanguage: readerSettings.targetLanguage,
-        }),
-        signal: AbortSignal.timeout(30000),
+      const res = await new Promise<Response>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("Request timed out")), 30000);
+        fetch(`${apiBase}/api/translate-image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            imageUrl: pageUrl,
+            targetLanguage: readerSettings.targetLanguage,
+          }),
+        }).then(
+          (r) => { clearTimeout(timer); resolve(r); },
+          (e) => { clearTimeout(timer); reject(e); }
+        );
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);

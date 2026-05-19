@@ -47,6 +47,16 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Request timed out")), timeoutMs);
+    fetch(url, options).then(
+      (res) => { clearTimeout(timer); resolve(res); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
 class TranslationQueueManager {
   private abortController: AbortController | null = null;
   private _isRunning = false;
@@ -91,15 +101,18 @@ class TranslationQueueManager {
         if (this.abortController.signal.aborted) break;
 
         try {
-          const res = await fetch(`${apiBase}/api/translate-image`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              imageUrl: pages[i],
-              targetLanguage,
-            }),
-            signal: AbortSignal.timeout(PAGE_TIMEOUT_MS),
-          });
+          const res = await fetchWithTimeout(
+            `${apiBase}/api/translate-image`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                imageUrl: pages[i],
+                targetLanguage,
+              }),
+            },
+            PAGE_TIMEOUT_MS
+          );
 
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -108,7 +121,6 @@ class TranslationQueueManager {
           if (data.regions?.length > 0) {
             onPageTranslated(i, data.regions, data.summary ?? "");
           } else {
-            // Still mark as "translated" even if no text found
             onPageTranslated(i, [], data.summary ?? "");
           }
 
@@ -124,7 +136,6 @@ class TranslationQueueManager {
         }
       }
 
-      // Throttle between pages (skip delay after last page or if cancelled)
       if (!this.abortController.signal.aborted && i < pages.length - 1) {
         await sleep(DELAY_BETWEEN_MS);
       }
@@ -152,5 +163,4 @@ class TranslationQueueManager {
   }
 }
 
-// Singleton — shared across the reader session
 export const translationQueue = new TranslationQueueManager();
