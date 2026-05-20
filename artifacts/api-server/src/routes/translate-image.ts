@@ -16,22 +16,22 @@ const LANGUAGE_NAMES: Record<string, string> = {
 };
 
 const CDN_HEADERS: Record<string, string> = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Referer": "https://mangadex.org/",
-  "Accept": "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  Referer: "https://mangadex.org/",
+  Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
 };
-
-const VISION_MODEL = "gemini-2.5-flash";
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 6000;
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function fetchImageAsBase64(imageUrl: string): Promise<{ data: string; mimeType: string }> {
+async function fetchImageAsBase64(
+  imageUrl: string
+): Promise<{ data: string; mimeType: string }> {
   const res = await fetch(imageUrl, { headers: CDN_HEADERS });
-  if (!res.ok) throw new Error(`CDN fetch failed: ${res.status} ${imageUrl}`);
+  if (!res.ok)
+    throw new Error(`CDN fetch failed with status ${res.status}: ${imageUrl}`);
   const buf = await res.arrayBuffer();
   const contentType = res.headers.get("content-type") ?? "image/jpeg";
   const mimeType = contentType.split(";")[0].trim();
@@ -56,98 +56,92 @@ router.post("/", async (req, res) => {
     return;
   }
 
-  // ── Resolve image data ────────────────────────────────────────────────────
-  let finalImageData: string;
-  let finalMimeType: string;
+  // ── Resolve image (server-side fetch beats client-side CORS issues) ────────
+  let finalData: string;
+  let finalMime: string;
 
   if (imageUrl) {
     try {
       const fetched = await fetchImageAsBase64(imageUrl);
-      finalImageData = fetched.data;
-      finalMimeType = fetched.mimeType;
+      finalData = fetched.data;
+      finalMime = fetched.mimeType;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      req.log?.error({ err }, `Server-side image fetch failed: ${msg}`);
-      res.status(502).json({ error: `Could not fetch image: ${msg}` });
+      req.log?.error({ err }, "Server CDN fetch failed");
+      res.status(502).json({ error: `Image fetch failed: ${msg}` });
       return;
     }
   } else {
-    finalImageData = imageData!;
-    finalMimeType = (mimeType?.split(";")[0] ?? "image/jpeg").trim();
+    finalData = imageData!;
+    finalMime = (mimeType?.split(";")[0] ?? "image/jpeg").trim();
   }
 
-  if (!finalImageData || finalImageData.length < 100) {
-    res.status(400).json({ error: "imageData is empty or too short" });
+  if (finalData.length < 100) {
+    res.status(400).json({ error: "Image data is empty or too short" });
     return;
   }
 
-  // ── Select Gemini client ──────────────────────────────────────────────────
+  // ── Pick Gemini client (user key bypasses shared quota) ───────────────────
   const userKey = req.headers["x-gemini-key"] as string | undefined;
   const client = userKey ? createUserGeminiClient(userKey) : ai;
 
   const langName = LANGUAGE_NAMES[targetLanguage] ?? targetLanguage;
   const isRTL = targetLanguage === "ar";
-  const resolvedMime = (finalMimeType as "image/jpeg" | "image/png" | "image/webp") ?? "image/jpeg";
+  const resolvedMime = finalMime as "image/jpeg" | "image/png" | "image/webp";
 
   const prompt = `You are a professional manga/manhwa OCR and localization engine.
 
-TASK: Analyze this manga/manhwa page. For EVERY piece of text (speech bubbles, thought bubbles, sound effects, signs, narration boxes, title cards) do the following:
+TASK: Analyze this manga/manhwa page image. For EVERY visible piece of text — speech bubbles, thought bubbles, sound effects, signs, narration boxes, title cards — do ALL of the following:
 
-1. LOCATE the text using normalized coordinates:
-   - x: left edge of the text container (0.0 = image left, 1.0 = image right)
-   - y: top edge of the text container (0.0 = image top, 1.0 = image bottom)
-   - w: width of the text container (fraction of image width)
-   - h: height of the text container (fraction of image height)
-   - IMPORTANT: estimate the bubble BODY area (excluding the tail/pointer), where text actually sits
-   - Be precise — use visual cues like panel borders and character positions
+1. LOCATE using normalized coordinates (0.0–1.0):
+   - x: left edge of bubble body (excluding tail)
+   - y: top edge of bubble body
+   - w: width as fraction of image width
+   - h: height as fraction of image height
 
-2. DETECT bubble background:
-   - bgColor: hex color of the bubble interior (e.g. "#ffffff" for white, "#000000" for dark bubbles)
-   - textColor: hex color the translated text should be (black on white bubbles, white on dark bubbles)
+2. DETECT colors:
+   - bgColor: hex of bubble interior (e.g. "#ffffff" white, "#000000" black)
+   - textColor: contrasting text color (black on light bubbles, white on dark)
 
-3. TRANSLATE the original text to ${langName}:
-   - Preserve emotional intensity, character personality, humor, drama
-   - ${isRTL ? "Arabic text must be natural, energetic, manga-localized — NOT robotic. Use proper MSA with emotional flair." : "Use natural idiomatic " + langName}
-   - Sound effects (SFX): transliterate phonetically OR use equivalent ${langName} SFX
-   - Keep exclamations, ellipsis, emphasis
+3. TRANSLATE original text to ${langName}:
+   - ${isRTL ? "Write natural, energetic Arabic — manga-localized, NOT robotic. Proper MSA with emotional flair." : `Use natural idiomatic ${langName}`}
+   - Sound effects: transliterate or use equivalent ${langName} SFX
+   - Preserve emphasis, exclamations, ellipsis
 
-Return ONLY this valid JSON (absolutely no markdown, no backticks, no extra text):
+Return ONLY valid JSON — no markdown, no backticks, no commentary:
 {
   "found": true,
   "regions": [
     {
-      "original": "original text",
+      "original": "source text",
       "translated": "${langName} translation",
-      "x": 0.05,
-      "y": 0.03,
-      "w": 0.42,
-      "h": 0.11,
+      "x": 0.05, "y": 0.03, "w": 0.42, "h": 0.11,
       "type": "speech",
       "bgColor": "#ffffff",
       "textColor": "#000000",
-      "speaker": "character name or null",
+      "speaker": null,
       "emphasis": false
     }
   ],
-  "summary": "1-2 sentence description of what's happening on this page"
+  "summary": "One sentence describing what happens on this page."
 }
 
-Type values: "speech" | "thought" | "sfx" | "sign" | "narration" | "title"
+Types: "speech" | "thought" | "sfx" | "sign" | "narration" | "title"
+If no text found: { "found": false, "regions": [], "summary": "No text on this page" }`;
 
-If NO text found: { "found": false, "regions": [], "summary": "No text on this page" }`;
+  // ── Strict sequential call with retry on transient 503 ────────────────────
+  const MODEL = "gemini-2.5-flash";
+  const MAX_ATTEMPTS = 4;
 
-  // ── Try each model in order, fallback on 503 overload ────────────────────
-  let lastErr: unknown;
-
-  for (const model of VISION_MODELS) {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       const response = await client.models.generateContent({
-        model,
+        model: MODEL,
         contents: [
           {
             role: "user",
             parts: [
-              { inlineData: { mimeType: resolvedMime, data: finalImageData } },
+              { inlineData: { mimeType: resolvedMime, data: finalData } },
               { text: prompt },
             ],
           },
@@ -179,15 +173,19 @@ If NO text found: { "found": false, "regions": [], "summary": "No text on this p
         parsed = JSON.parse(raw);
       } catch {
         const match = raw.match(/\{[\s\S]*\}/);
-        if (match) {
-          try {
-            parsed = JSON.parse(match[0]);
-          } catch {
-            parsed = { found: false, regions: [], summary: "Could not parse AI response" };
-          }
-        } else {
-          parsed = { found: false, regions: [], summary: "No parseable response from AI" };
-        }
+        parsed = match
+          ? (() => {
+              try {
+                return JSON.parse(match[0]);
+              } catch {
+                return {
+                  found: false,
+                  regions: [],
+                  summary: "Could not parse AI response",
+                };
+              }
+            })()
+          : { found: false, regions: [], summary: "No parseable response" };
       }
 
       if (parsed.regions) {
@@ -201,11 +199,15 @@ If NO text found: { "found": false, "regions": [], "summary": "No text on this p
             h: Math.max(0.02, Math.min(1 - r.y, r.h)),
             bgColor: r.bgColor || "#ffffff",
             textColor: r.textColor || "#000000",
-            emphasis: r.emphasis || false,
+            emphasis: !!r.emphasis,
             speaker: r.speaker || null,
           }));
       }
 
+      req.log?.info(
+        { model: MODEL, attempt, regions: parsed.regions?.length ?? 0 },
+        "Image translation success"
+      );
       res.json(parsed);
       return;
     } catch (err: unknown) {
@@ -216,22 +218,25 @@ If NO text found: { "found": false, "regions": [], "summary": "No text on this p
         return;
       }
 
-      // 503 overload — retry same model up to MAX_503_RETRIES, then try next
-      if (anyErr?.status === 503) {
-        req.log?.warn({ model, err }, `Model ${model} overloaded, trying next`);
-        lastErr = err;
-        continue; // try next model in list
+      if (anyErr?.status === 503 && attempt < MAX_ATTEMPTS) {
+        const delay = attempt * 5000;
+        req.log?.warn(
+          { model: MODEL, attempt, delay },
+          `Gemini overloaded, retrying in ${delay}ms`
+        );
+        await sleep(delay);
+        continue;
       }
 
-      req.log?.error({ model, err }, "Image translation failed");
-      res.status(500).json({ error: "Translation service unavailable" });
+      const errMsg =
+        anyErr?.message ?? (err instanceof Error ? err.message : String(err));
+      req.log?.error({ model: MODEL, attempt, err }, "Image translation failed");
+      res.status(500).json({
+        error: `Translation failed after ${attempt} attempt(s): ${errMsg}`,
+      });
       return;
     }
   }
-
-  // All models exhausted
-  req.log?.error({ lastErr }, "All vision models unavailable");
-  res.status(503).json({ error: "Gemini vision service is temporarily overloaded. Please retry in a moment." });
 });
 
 export default router;

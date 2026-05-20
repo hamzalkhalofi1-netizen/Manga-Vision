@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
+  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -84,6 +85,22 @@ export default function ReaderScreen() {
   const [queueProgress, setQueueProgress] = useState<QueueProgress | null>(null);
   const [statusBanner, setStatusBanner] = useState<string>("");
   const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Error modal state ─────────────────────────────────────────────────────
+  const [errorModal, setErrorModal] = useState<{ visible: boolean; title: string; message: string }>({
+    visible: false,
+    title: "",
+    message: "",
+  });
+
+  const showErrorModal = useCallback((title: string, message: string) => {
+    setErrorModal({ visible: true, title, message });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  }, []);
+
+  const dismissErrorModal = useCallback(() => {
+    setErrorModal((prev) => ({ ...prev, visible: false }));
+  }, []);
 
   // ── Refs ──────────────────────────────────────────────────────────────────
   const flatListRef = useRef<FlatList>(null);
@@ -255,9 +272,9 @@ export default function ReaderScreen() {
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
-      showBanner("Translation failed. Please try again.");
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      showErrorModal(`Page ${idx + 1} Translation Failed`, errMsg);
     } finally {
       setSinglePageTranslating(false);
     }
@@ -314,6 +331,9 @@ export default function ReaderScreen() {
         if (activeTokenId) markRateLimited(activeTokenId, 70_000);
         showBanner("API key rate limited. Add another key in Settings.", 6000);
       },
+      onPageError: (pageIndex, errMsg) => {
+        showErrorModal(`Page ${pageIndex + 1} Failed`, errMsg);
+      },
     });
   }, [
     pages,
@@ -321,6 +341,7 @@ export default function ReaderScreen() {
     readerSettings.targetLanguage,
     incrementTranslationCount,
     showBanner,
+    showErrorModal,
     tokens,
     activeTokenId,
     markRateLimited,
@@ -596,6 +617,31 @@ export default function ReaderScreen() {
           )}
         </LinearGradient>
       )}
+
+      {/* ── Error Modal ────────────────────────────────────────────────────── */}
+      <Modal
+        visible={errorModal.visible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={dismissErrorModal}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalIcon}>⚠️</Text>
+              <Text style={styles.modalTitle}>{errorModal.title}</Text>
+            </View>
+            <View style={styles.modalDivider} />
+            <Text style={styles.modalMessage} selectable>
+              {errorModal.message}
+            </Text>
+            <Pressable onPress={dismissErrorModal} style={styles.modalOkBtn}>
+              <Text style={styles.modalOkTxt}>OK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -748,5 +794,63 @@ const styles = StyleSheet.create({
   dot: {
     height: 6,
     borderRadius: 3,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+  modalBox: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: "#1a1a1a",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    overflow: "hidden",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 14,
+    gap: 10,
+  },
+  modalIcon: {
+    fontSize: 20,
+  },
+  modalTitle: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700" as const,
+    lineHeight: 22,
+  },
+  modalDivider: {
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    marginHorizontal: 0,
+  },
+  modalMessage: {
+    color: "#e84057",
+    fontSize: 13,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    lineHeight: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  modalOkBtn: {
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.08)",
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  modalOkTxt: {
+    color: "#e84057",
+    fontSize: 16,
+    fontWeight: "700" as const,
   },
 });

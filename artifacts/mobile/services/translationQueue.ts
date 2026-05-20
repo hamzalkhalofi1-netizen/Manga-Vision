@@ -39,6 +39,7 @@ interface QueueParams {
   onProgress: OnProgressUpdate;
   onComplete: (stats: { completed: number; failed: number }) => void;
   onRateLimited?: () => void;
+  onPageError?: (pageIndex: number, errorMessage: string) => void;
 }
 
 const DELAY_BETWEEN_MS = 800;
@@ -82,6 +83,7 @@ class TranslationQueueManager {
       onProgress,
       onComplete,
       onRateLimited,
+      onPageError,
     } = params;
 
     let completed = 0;
@@ -139,7 +141,14 @@ class TranslationQueueManager {
             break;
           }
 
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          if (!res.ok) {
+            let detail = `HTTP ${res.status}`;
+            try {
+              const body = await res.json();
+              if (body?.error) detail = `${detail}: ${body.error}`;
+            } catch {}
+            throw new Error(detail);
+          }
 
           const data = await res.json();
 
@@ -152,11 +161,13 @@ class TranslationQueueManager {
           success = true;
           completed++;
         } catch (err) {
-          console.warn(`[TranslationQueue] Page ${i} attempt ${attempt + 1} failed:`, err);
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.warn(`[TranslationQueue] Page ${i} attempt ${attempt + 1} failed: ${errMsg}`);
           if (attempt < MAX_RETRIES - 1) {
             await sleep(1500 * (attempt + 1));
           } else {
             failed++;
+            onPageError?.(i, errMsg);
           }
         }
       }
