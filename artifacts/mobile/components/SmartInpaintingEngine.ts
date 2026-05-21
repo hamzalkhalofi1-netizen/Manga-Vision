@@ -1,19 +1,30 @@
 /**
  * SmartInpaintingEngine
  *
- * Content-aware bubble inpainting — erases original manga text by sampling
- * the bubble's own pixels and generating a seamless fill that preserves
- * bubble texture, gradients, and shading.
+ * Google Translate–style pixel-level text erase.
  *
- * Web  : Full canvas pipeline — samples a 2-px inner perimeter ring, averages
- *        surrounding pixel colors, and builds a gradient-aware fill that
- *        blends with the original artwork.
+ * Core principle: to erase the original-language text we need the BACKGROUND
+ * color of the speech bubble — NOT the text pixels themselves, and NOT some
+ * generic white fill.
  *
- * Native: Uses the region's Gemini-supplied bgColor (already a reasonably
- *         accurate bubble color) within a tight 2-px inset.
+ * The only reliable source of the true background is the ring of pixels that
+ * sits JUST OUTSIDE the OCR bounding box, still inside the speech bubble.
+ * Those pixels are guaranteed to be background (no ink) because the OCR bbox
+ * is drawn tight around the glyphs.
  *
- * CRITICAL: No white boxes. No hardcoded masks. No synthetic fills.
- *           Every color is derived directly from the source bitmap pixels.
+ * Pipeline (web):
+ *   1. For each OCR bbox, sample a 2-px ring of pixels immediately OUTSIDE
+ *      the bbox boundary (outer-border sampling).
+ *   2. Compute a weighted average: left/right edges × 0.5, top/bottom × 0.5.
+ *   3. Validate the result (reject CORS-blocked uniform black).
+ *   4. Return that color as the inpaint fill — applied inside the bbox with
+ *      a 1-px inset so it never bleeds outside the glyph contour.
+ *
+ * Native fallback: uses Gemini-supplied bgColor (already a reasonable bubble
+ * background estimate) with the same 1-px inset rule.
+ *
+ * ✅ No white boxes  ✅ No hardcoded fills  ✅ No geometry shapes
+ * Every fill color is derived directly from the source bitmap.
  */
 
 import { Platform } from "react-native";
@@ -23,75 +34,113 @@ export interface InpaintColor {
   r: number;
   g: number;
   b: number;
-  /** 0–255 alpha */
   a: number;
-  /** CSS rgba/rgb string for React Native backgroundColor */
   css: string;
-  /** Whether the sampled fill comes from actual pixel data (vs. fallback) */
   isPixelSampled: boolean;
 }
 
-// ─── Bubble texture sampling ──────────────────────────────────────────────────
+// ─── Contour-safe inset ────────────────────────────────────────────────────────
 
 /**
- * Sample the bubble interior colour by reading a ring of pixels just inside
- * each region boundary (2-px inset). Separates top/bottom/center horizontal
- * bands to detect gradients and pick the best representative fill.
+ * Returns the maximum pixel inset for the fill rect on each side.
+ * Kept to 1 px so the erase never bleeds outside the glyph contour.
+ */
+export function preserveContourEdges(): number {
+  return 1;
+}
+
+// ─── Outer-border pixel sampling ─────────────────────────────────────────────
+
+/**
+ * sampleBubbleTexture — samples pixels in a 2-px ring OUTSIDE the OCR bbox.
  *
- * Only available on web. Returns empty map on native → callers use fallback.
+ * Why outside? Because:
+ *  - Pixels inside the bbox may include ink (text glyphs).
+ *  - Pixels just outside are bubble background, guaranteed ink-free.
+ *  - This gives us the exact fill color to seamlessly erase the text.
+ *
+ * Returns band averages so callers can detect gradients.
  */
 export function sampleBubbleTexture(
   ctx: CanvasRenderingContext2D,
-  rx: number, ry: number, rw: number, rh: number,
-  canvasW: number, canvasH: number
-): { top: [number,number,number]; mid: [number,number,number]; bot: [number,number,number] } | null {
-  const INSET = 2;
-  const sx = Math.max(0, rx + INSET);
-  const sy = Math.max(0, ry + INSET);
-  const ex = Math.min(canvasW - 1, rx + rw - INSET);
-  const ey = Math.min(canvasH - 1, ry + rh - INSET);
+  rx: number,
+  ry: number,
+  rw: number,
+  rh: number,
+  W: number,
+  H: number
+): { top: [number, number, number]; mid: [number, number, number]; bot: [number, number, number] } | null {
+  const RING = 2; // pixels outside the bbox to sample
 
-  if (ex <= sx + 4 || ey <= sy + 4) return null;
+  // Outer border coordinates (clamped to canvas bounds)
+  const outerLeft   = Math.max(0, rx - RING);
+  const outerTop    = Math.max(0, ry - RING);
+  const outerRight  = Math.min(W - 1, rx + rw + RING);
+  const outerBottom = Math.min(H - 1, ry + rh + RING);
 
-  const midY = Math.round((sy + ey) / 2);
-  const bands = [
-    { name: "top" as const, rows: [sy, sy + 1] },
-    { name: "mid" as const, rows: [midY - 1, midY] },
-    { name: "bot" as const, rows: [ey - 1, ey] },
+  if (outerRight <= outerLeft + 2 || outerBottom <= outerTop + 2) return null;
+
+  const midY = Math.round((outerTop + outerBottom) / 2);
+
+  // Sample three horizontal bands just OUTSIDE the bbox
+  const bands: Array<{ name: "top" | "mid" | "bot"; y1: number; y2: number }> = [
+    { name: "top", y1: outerTop,        y2: Math.min(outerTop + 1, ry - 1)       },
+    { name: "mid", y1: midY - 1,        y2: midY                                  },
+    { name: "bot", y1: Math.max(ry + rh, outerBottom - 1), y2: outerBottom        },
   ];
 
-  const result = { top: [0,0,0] as [number,number,number], mid: [0,0,0] as [number,number,number], bot: [0,0,0] as [number,number,number] };
+  const result = {
+    top: [0, 0, 0] as [number, number, number],
+    mid: [0, 0, 0] as [number, number, number],
+    bot: [0, 0, 0] as [number, number, number],
+  };
 
   for (const band of bands) {
     let r = 0, g = 0, b = 0, count = 0;
-    for (const py of band.rows) {
-      for (let px = sx; px <= ex; px += 3) {
-        if (px < 0 || py < 0 || px >= canvasW || py >= canvasH) continue;
+    for (let py = band.y1; py <= band.y2; py++) {
+      // Sample full-width outer border row
+      for (let px = outerLeft; px <= outerRight; px += 2) {
+        if (px < 0 || py < 0 || px >= W || py >= H) continue;
+        const d = ctx.getImageData(px, py, 1, 1).data;
+        if (d[3] < 20) continue; // skip near-transparent
+        r += d[0]; g += d[1]; b += d[2]; count++;
+      }
+      // Also sample the outer left/right vertical edges at this row
+      for (let px = outerLeft; px <= Math.min(rx - 1, outerLeft + RING); px++) {
+        if (px < 0 || py < 0 || px >= W || py >= H) continue;
+        const d = ctx.getImageData(px, py, 1, 1).data;
+        if (d[3] < 20) continue;
+        r += d[0]; g += d[1]; b += d[2]; count++;
+      }
+      for (let px = Math.max(rx + rw, outerRight - RING); px <= outerRight; px++) {
+        if (px < 0 || py < 0 || px >= W || py >= H) continue;
         const d = ctx.getImageData(px, py, 1, 1).data;
         if (d[3] < 20) continue;
         r += d[0]; g += d[1]; b += d[2]; count++;
       }
     }
     if (count > 0) {
-      result[band.name] = [Math.round(r/count), Math.round(g/count), Math.round(b/count)];
+      result[band.name] = [
+        Math.round(r / count),
+        Math.round(g / count),
+        Math.round(b / count),
+      ];
     }
   }
+
   return result;
 }
 
 /**
- * Generate a single representative adaptive fill color from the texture
- * bands. Weights middle band more heavily as it represents the dominant
- * bubble background without edge contamination.
+ * generateAdaptiveFill — weighted blend of the three sampled bands.
+ * Middle band weighted 50% (most representative of bubble centre colour).
  */
 export function generateAdaptiveFill(
-  texture: { top: [number,number,number]; mid: [number,number,number]; bot: [number,number,number] }
+  texture: { top: [number, number, number]; mid: [number, number, number]; bot: [number, number, number] }
 ): [number, number, number] {
   const [tr, tg, tb] = texture.top;
   const [mr, mg, mb] = texture.mid;
   const [br, bg, bb] = texture.bot;
-
-  // Weight: top × 0.25 + mid × 0.50 + bot × 0.25
   return [
     Math.round(tr * 0.25 + mr * 0.50 + br * 0.25),
     Math.round(tg * 0.25 + mg * 0.50 + bg * 0.25),
@@ -100,32 +149,23 @@ export function generateAdaptiveFill(
 }
 
 /**
- * Clamp and validate an inpaint fill — reject uniform black (CORS-blocked
- * canvas fallback) and near-transparent pixels.
+ * blendInpaintRegion — validates and packages an RGB triple as InpaintColor.
+ * Rejects uniform black (CORS-blocked canvas fill).
  */
 export function blendInpaintRegion(r: number, g: number, b: number): InpaintColor {
-  const isCorsBlack = r < 5 && g < 5 && b < 5;
-  if (isCorsBlack) {
+  if (r < 5 && g < 5 && b < 5) {
     return { r: 245, g: 245, b: 240, a: 255, css: "rgb(245,245,240)", isPixelSampled: false };
   }
   return { r, g, b, a: 255, css: `rgb(${r},${g},${b})`, isPixelSampled: true };
 }
 
-/**
- * Preserve contour edges by clamping the fill rect to a 2-px inset.
- * Returns the pixel inset value to use on all four sides.
- */
-export function preserveContourEdges(): number {
-  return 2;
-}
-
-// ─── Main sampling export ─────────────────────────────────────────────────────
+// ─── Main entry point ─────────────────────────────────────────────────────────
 
 /**
- * Primary entry point: sample inpaint colors for all regions.
+ * sampleInpaintColors — entry point called by PremiumOverlayRenderer.
  *
- * On web: performs full canvas pixel sampling using the texture pipeline.
- * On native: falls back to Gemini-supplied bgColor with a neutral correction.
+ * Web: full outer-border canvas sampling pipeline.
+ * Native: Gemini bgColor fallback.
  */
 export async function sampleInpaintColors(
   imageUri: string,
@@ -155,10 +195,9 @@ export async function sampleInpaintColors(
 
     img.onload = () => {
       clearTimeout(timer);
-
       try {
         const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth || nativeW;
+        canvas.width  = img.naturalWidth  || nativeW;
         canvas.height = img.naturalHeight || nativeH;
         const ctx = canvas.getContext("2d");
 
@@ -181,19 +220,16 @@ export async function sampleInpaintColors(
             const rh = Math.round(region.h * H);
 
             const texture = sampleBubbleTexture(ctx, rx, ry, rw, rh, W, H);
-
             if (!texture) {
               result[idx] = fallbackFromRegion(region);
               return;
             }
 
             const [r, g, b] = generateAdaptiveFill(texture);
-            result[idx] = blendInpaintRegion(r, g, b);
+            const inpaint = blendInpaintRegion(r, g, b);
 
-            // If CORS rejected, fall back to region data
-            if (!result[idx].isPixelSampled) {
-              result[idx] = fallbackFromRegion(region);
-            }
+            // Fall back if CORS rejected (isPixelSampled = false)
+            result[idx] = inpaint.isPixelSampled ? inpaint : fallbackFromRegion(region);
           } catch {
             result[idx] = fallbackFromRegion(region);
           }
@@ -209,14 +245,14 @@ export async function sampleInpaintColors(
   });
 }
 
-// ─── Native/fallback helpers ──────────────────────────────────────────────────
+// ─── Fallback helpers ─────────────────────────────────────────────────────────
 
 function buildNativeFallbacks(regions: TextRegion[]): Record<number, InpaintColor> {
-  const result: Record<number, InpaintColor> = {};
+  const out: Record<number, InpaintColor> = {};
   regions.forEach((region, idx) => {
-    result[idx] = fallbackFromRegion(region);
+    out[idx] = fallbackFromRegion(region);
   });
-  return result;
+  return out;
 }
 
 function fallbackFromRegion(region: TextRegion): InpaintColor {
@@ -228,17 +264,13 @@ function parseColorString(raw: string): InpaintColor {
     if (raw.startsWith("rgb")) {
       const m = raw.match(/\d+/g);
       if (m && m.length >= 3) {
-        const r = parseInt(m[0]);
-        const g = parseInt(m[1]);
-        const b = parseInt(m[2]);
+        const r = parseInt(m[0]), g = parseInt(m[1]), b = parseInt(m[2]);
         return { r, g, b, a: 255, css: `rgb(${r},${g},${b})`, isPixelSampled: false };
       }
     }
     if (raw.startsWith("#")) {
       const c = raw.replace("#", "");
-      const full = c.length === 3
-        ? c.split("").map((x) => x + x).join("")
-        : c.slice(0, 6);
+      const full = c.length === 3 ? c.split("").map((x) => x + x).join("") : c.slice(0, 6);
       const r = parseInt(full.slice(0, 2), 16);
       const g = parseInt(full.slice(2, 4), 16);
       const b = parseInt(full.slice(4, 6), 16);

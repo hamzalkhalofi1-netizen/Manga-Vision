@@ -1,23 +1,23 @@
 /**
  * DynamicFontScaler
  *
- * Recursively tries font sizes from largest to smallest until the text block
- * fits within the provided safe zone dimensions.
+ * Recursive cascade font scaler: tries sizes from largest to smallest
+ * until the text block fits within the safe zone (80% of bubble dims).
  *
- * Scale ladder: 22 → 18 → 16 → 14 → 12
+ * Cascade: 20 → 18 → 16 → 14 → 12
  *
- * Algorithm per size:
- *  1. Split text into balanced lines at current font size.
- *  2. Estimate rendered block width (longest line × avg glyph width).
+ * Per step:
+ *  1. Split text into balanced, overflow-validated lines.
+ *  2. Estimate rendered block width  (longest line × avg glyph width).
  *  3. Estimate rendered block height (line count × lineHeight).
- *  4. Accept if both fit within safeW × safeH.
- *  5. Otherwise shrink to next step and repeat.
- *  6. If 12px still doesn't fit, accept it anyway (minimum readable size).
+ *  4. Accept if both fit inside safeW × safeH.
+ *  5. Otherwise shrink one step and repeat.
+ *  6. 12 px is the hard floor — accepted even if it still overflows.
  */
 
 import { splitArabicText, estimateTextHeight, getSafeZone } from "./ArabicTypesettingEngine";
 
-const FONT_SIZE_LADDER = [22, 20, 18, 16, 14, 12] as const;
+const FONT_SIZE_LADDER = [20, 18, 16, 14, 12] as const;
 const LINE_HEIGHT_MULTIPLIER = 1.45;
 
 export interface ScaledTypeset {
@@ -28,20 +28,16 @@ export interface ScaledTypeset {
 
 /**
  * Estimate the rendered width of the longest line.
- * Average Arabic glyph width ≈ fontSize × 0.60.
+ * Average Arabic glyph width ≈ fontSize × 0.62.
  */
 function estimateBlockWidth(lines: string[], fontSize: number): number {
   const longestLen = Math.max(...lines.map((l) => l.length), 1);
-  return longestLen * fontSize * 0.60;
+  return longestLen * fontSize * 0.62;
 }
 
 /**
- * Compute the optimal font size and balanced line splits so the text block
- * fits within the safe zone of the given bubble dimensions.
- *
- * @param text       - Arabic translated text string
- * @param bubbleW    - rendered bubble pixel width
- * @param bubbleH    - rendered bubble pixel height
+ * scaleFontToFit — main export.
+ * Fits Arabic dialogue / narration text into the bubble safe zone.
  */
 export function scaleFontToFit(
   text: string,
@@ -51,35 +47,23 @@ export function scaleFontToFit(
   const { safeW, safeH } = getSafeZone(bubbleW, bubbleH);
 
   for (const fontSize of FONT_SIZE_LADDER) {
-    const lines = splitArabicText(text, safeW, fontSize);
+    const lines  = splitArabicText(text, safeW, fontSize);
     const blockW = estimateBlockWidth(lines, fontSize);
     const blockH = estimateTextHeight(lines.length, fontSize, LINE_HEIGHT_MULTIPLIER);
 
-    const fitsWidth = blockW <= safeW;
-    const fitsHeight = blockH <= safeH;
-
-    if (fitsWidth && fitsHeight) {
-      return {
-        fontSize,
-        lines,
-        lineHeight: fontSize * LINE_HEIGHT_MULTIPLIER,
-      };
+    if (blockW <= safeW && blockH <= safeH) {
+      return { fontSize, lines, lineHeight: fontSize * LINE_HEIGHT_MULTIPLIER };
     }
   }
 
-  // Minimum fallback — accept 12px even if it technically overflows
-  const minFontSize = 12;
-  const fallbackLines = splitArabicText(text, safeW, minFontSize);
-  return {
-    fontSize: minFontSize,
-    lines: fallbackLines,
-    lineHeight: minFontSize * LINE_HEIGHT_MULTIPLIER,
-  };
+  // Hard floor — 12 px accepted even if technically overflowing
+  const fallbackLines = splitArabicText(text, safeW, 12);
+  return { fontSize: 12, lines: fallbackLines, lineHeight: 12 * LINE_HEIGHT_MULTIPLIER };
 }
 
 /**
- * For SFX / emphasis regions use a slightly larger scale ladder since those
- * regions are usually short single-word bursts.
+ * scaleSFXFont — for short sound-effect / emphasis bursts.
+ * Starts larger since SFX labels are usually 1–3 characters.
  */
 export function scaleSFXFont(
   text: string,
@@ -87,10 +71,10 @@ export function scaleSFXFont(
   bubbleH: number
 ): ScaledTypeset {
   const { safeW, safeH } = getSafeZone(bubbleW, bubbleH);
-  const sfxLadder = [26, 22, 18, 16, 14] as const;
+  const sfxLadder = [24, 20, 18, 16, 14] as const;
 
   for (const fontSize of sfxLadder) {
-    const lines = splitArabicText(text, safeW, fontSize);
+    const lines  = splitArabicText(text, safeW, fontSize);
     const blockW = estimateBlockWidth(lines, fontSize);
     const blockH = estimateTextHeight(lines.length, fontSize, 1.2);
 

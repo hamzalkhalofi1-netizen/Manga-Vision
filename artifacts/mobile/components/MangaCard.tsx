@@ -57,7 +57,7 @@ export function MangaCard({ manga, onPress, size = "medium", showStatus = true }
             height: dims.height,
             borderRadius: colors.radius,
             backgroundColor: colors.card,
-            shadowColor: colors.primary,
+            ...Platform.select({ default: { shadowColor: colors.primary } }),
           },
           animatedStyle,
         ]}
