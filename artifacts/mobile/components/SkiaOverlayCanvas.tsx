@@ -30,7 +30,7 @@ import type { TextRegion } from "./MangaPage";
 import { scaleFontToFit, scaleSFXFont } from "./DynamicFontScaler";
 import type { InpaintColor } from "./SmartInpaintingEngine";
 import { preserveContourEdges } from "./SmartInpaintingEngine";
-import { resolveFromCss } from "./AdaptiveTextColorEngine";
+import { resolveFromCss, resolveFromGeminiTextColor } from "./AdaptiveTextColorEngine";
 
 interface SkiaOverlayCanvasProps {
   regions: TextRegion[];
@@ -79,8 +79,13 @@ function SkiaOverlayCanvas({
         const inpaint    = inpaintColors[idx];
         const inpaintCss = inpaint?.css ?? region.bgColor ?? "rgb(245,245,240)";
 
-        // ── Adaptive text color (WCAG luminance) ───────────────────────────
-        const colorProfile = resolveFromCss(inpaintCss);
+        // ── Adaptive text color ────────────────────────────────────────────
+        // Priority:
+        //   1. Gemini's textColor (full-image knowledge, most accurate)
+        //   2. Luminance-computed from the inpaint fill color (fallback)
+        const colorProfile = region.textColor
+          ? resolveFromGeminiTextColor(region.textColor)
+          : resolveFromCss(inpaintCss);
 
         // ── Adaptive border radius ─────────────────────────────────────────
         // 15% of the shorter dimension, capped at 12 px, floored at 3 px.

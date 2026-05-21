@@ -437,10 +437,11 @@ export default function ReaderScreen() {
 
       {/* ── Top controls ──────────────────────────────────────────────────── */}
       {showControls && (
-        <LinearGradient
-          colors={["rgba(0,0,0,0.90)", "rgba(0,0,0,0.45)", "transparent"]}
-          style={[styles.topOverlay, { paddingTop: topPadding + 8, pointerEvents: "box-none" }]}
-        >
+        <View style={[styles.topOverlay, { paddingTop: topPadding + 8, pointerEvents: "box-none" }]}>
+          <LinearGradient
+            colors={["rgba(0,0,0,0.90)", "rgba(0,0,0,0.45)", "transparent"]}
+            style={StyleSheet.absoluteFillObject}
+          />
           <View style={styles.topBar}>
             <Pressable onPress={() => router.back()} style={styles.iconTouch}>
               <Ionicons name="arrow-back" size={22} color="#fff" />
@@ -503,7 +504,7 @@ export default function ReaderScreen() {
               />
             </View>
           )}
-        </LinearGradient>
+        </View>
       )}
 
       {/* ── Status banner ─────────────────────────────────────────────────── */}
@@ -519,10 +520,11 @@ export default function ReaderScreen() {
 
       {/* ── Bottom controls ────────────────────────────────────────────────── */}
       {showControls && (
-        <LinearGradient
-          colors={["transparent", "rgba(0,0,0,0.72)", "rgba(0,0,0,0.97)"]}
-          style={[styles.bottomOverlay, { paddingBottom: bottomPadding + 8, pointerEvents: "box-none" }]}
-        >
+        <View style={[styles.bottomOverlay, { paddingBottom: bottomPadding + 8, pointerEvents: "box-none" }]}>
+          <LinearGradient
+            colors={["transparent", "rgba(0,0,0,0.72)", "rgba(0,0,0,0.97)"]}
+            style={StyleSheet.absoluteFillObject}
+          />
           <View style={styles.bottomBar}>
             {/* Reading mode */}
             <Pressable
@@ -612,7 +614,7 @@ export default function ReaderScreen() {
               ))}
             </View>
           )}
-        </LinearGradient>
+        </View>
       )}
 
       {/* ── Error Modal ────────────────────────────────────────────────────── */}

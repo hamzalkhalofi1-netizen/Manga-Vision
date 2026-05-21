@@ -82,6 +82,42 @@ export function resolveOptimalTextColor(
 }
 
 /**
+ * Build a TextColorProfile directly from Gemini's textColor field.
+ *
+ * Gemini already resolved the correct foreground color from the actual image.
+ * We preserve it verbatim and derive an appropriate halo shadow so the Arabic
+ * glyph separates cleanly from both the background and any bubble texture.
+ *
+ * Light text (white/cream) → dark shadow (text sits on dark panel).
+ * Dark  text (black/navy)  → white shadow (text sits on white bubble).
+ */
+export function resolveFromGeminiTextColor(textColor: string): TextColorProfile {
+  const lower = textColor.toLowerCase().trim();
+  const isLightText =
+    lower === "#ffffff" ||
+    lower === "#fff" ||
+    lower === "white" ||
+    lower === "rgb(255,255,255)";
+
+  if (isLightText) {
+    return {
+      color: "#F8F8F8",
+      shadowColor: "rgba(0,0,0,0.65)",
+      shadowRadius: 2.0,
+      isDark: true,
+    };
+  }
+
+  // Dark text (black, navy, etc.)
+  return {
+    color: "#1A1A1A",
+    shadowColor: "rgba(255,255,255,0.60)",
+    shadowRadius: 1.2,
+    isDark: false,
+  };
+}
+
+/**
  * Parse any CSS color string (rgb/hex) into {r,g,b} and resolve the profile.
  * Falls back to dark-text-on-white if the string cannot be parsed.
  */
