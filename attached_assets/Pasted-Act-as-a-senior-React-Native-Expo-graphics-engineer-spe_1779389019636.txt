@@ -1,0 +1,512 @@
+Act as a senior React Native + Expo graphics engineer specialized in manga scanlation rendering, OCR overlays, OpenCV-based inpainting, Skia canvas pipelines, adaptive typography systems, and cinematic Arabic manga localization.
+
+# 🚨 IMMUTABLE CORE WARNING
+
+DO NOT modify:
+- token retrieval systems
+- Gemini authentication routing
+- chapter-token binding
+- active slot logic
+- request orchestration
+- async translation signatures
+- credential/session memory
+
+The translation connectivity layer is production-stable and MUST remain untouched.
+
+Your task is ONLY to upgrade the VISUAL INPAINTING + TYPOGRAPHY RENDERING PIPELINE.
+
+# PRIMARY OBJECTIVE
+
+We are implementing a PREMIUM CONTENT-AWARE INPAINTING SYSTEM for manga translation overlays.
+
+The final rendering quality MUST match professional scanlation standards:
+- seamless erase
+- zero white-box artifacts
+- preserved bubble texture
+- preserved gradients
+- preserved line art
+- naturally integrated Arabic typography
+
+The final output MUST look like:
+- native manga lettering
+- cinematic Arabic scanlation
+- text embedded directly into original artwork
+
+NOT:
+- fake overlays
+- synthetic white rectangles
+- geometric masks
+- sticker-like UI layers
+
+# CRITICAL FIX #1 — CONTENT-AWARE INPAINTING ENGINE
+* Enforce Absolute Bounds Translation: Map the scaled text center coordinates (centerX, centerY) directly to the specific responsive Layout bounds of the target OCR bounding box, completely avoiding the (0,0) screen origin bug or absolute top floats.
+Open and completely refactor:
+
+```txt
+GeminiTranslationService.ts
+SmartInpaintingEngine.ts
+
+REMOVE OLD BEHAVIOR
+
+DELETE:
+
+static white fills
+
+hardcoded white masks
+
+geometry erase rectangles
+
+artificial overlay patches
+
+
+DO NOT:
+
+hide text with white boxes
+
+cover manga art
+
+destroy gradients
+
+wipe bubble textures
+
+
+REQUIRED NEW INPAINTING FLOW
+
+For EACH OCR bounding box:
+
+OCR Region
+    ↓
+Sample Neighboring Bubble Pixels
+    ↓
+Analyze Texture + Gradient + Lighting
+    ↓
+Generate Seamless Inpaint Fill
+    ↓
+Blend Into Original Bitmap
+
+REQUIRED SAMPLING ENGINE
+
+The engine MUST sample:
+
+surrounding bubble colors
+
+gradients
+
+noise patterns
+
+subtle shading
+
+texture variance
+
+
+REQUIRED IMPLEMENTATION STRATEGY
+
+Use:
+
+OpenCV inpaint()
+
+Telea method
+
+Navier-Stokes inpainting OR
+
+Skia source-in compositing
+
+alpha-aware texture synthesis
+
+
+REQUIRED SAFE ERASE RULE
+
+Maximum erase expansion:
+
+2px ONLY
+
+REQUIRED RESULT
+
+The inpaint MUST:
+
+preserve original bubble texture
+
+preserve manga shading
+
+preserve line art
+
+preserve contour borders
+
+preserve cinematic lighting
+
+
+The user MUST NOT visually detect:
+
+erase boundaries
+
+white patches
+
+artificial masking
+
+
+REQUIRED ENGINE FILE
+
+Create/refactor:
+
+SmartInpaintingEngine.ts
+
+Required methods:
+
+sampleBubbleTexture()
+generateAdaptiveFill()
+blendInpaintRegion()
+preserveContourEdges()
+
+CRITICAL FIX #2 — ADAPTIVE TEXT COLOR SYSTEM
+
+Open and refactor:
+
+PremiumOverlayRenderer.tsx
+ArabicTypesettingEngine.ts
+
+REMOVE OLD BEHAVIOR
+
+DELETE:
+
+hardcoded #000
+
+hardcoded #111
+
+fixed text colors
+
+
+REQUIRED NEW LOGIC
+
+The typography engine MUST dynamically determine:
+
+bubble brightness
+
+background luminance
+
+local contrast ratio
+
+
+REQUIRED COLOR RULES
+
+IF bubble/background is LIGHT:
+
+Use dark gray text
+
+Example:
+
+color: '#1A1A1A'
+
+IF bubble/background is DARK:
+
+Use light text
+
+Example:
+
+color: '#F8F8F8'
+
+REQUIRED CONTRAST ENGINE
+
+Implement:
+
+AdaptiveTextColorEngine.ts
+
+Functions:
+
+calculateLuminance()
+detectBubbleBrightness()
+resolveOptimalTextColor()
+
+REQUIRED TYPOGRAPHY GOAL
+
+Arabic text MUST:
+
+remain readable
+
+preserve emotional tone
+
+integrate naturally
+
+adapt automatically to scene lighting
+
+
+CRITICAL FIX #3 — PERFECT GEOMETRY & LINE BREAKS
+
+Open and refactor:
+
+ArabicTypesettingEngine.ts
+DynamicFontScaler.ts
+
+REQUIRED SAFE ZONE SYSTEM
+
+The renderer MUST:
+
+calculate mathematical inner bounds
+
+apply safe padding zone
+
+enforce text-safe rendering region
+
+
+Required inward padding:
+
+10% inward margin
+
+REQUIRED BOUNDARY VALIDATION
+
+Before final rendering:
+
+The engine MUST:
+
+1. measure text block
+
+
+2. compare against safe zone
+
+
+3. detect overflow risk
+
+
+4. force additional line splits if necessary
+
+
+5. recalculate typography layout
+
+
+
+REQUIRED LINE SPLITTING RULE
+
+If ANY glyph:
+
+touches contour
+
+exceeds width
+
+exceeds height
+
+approaches border
+
+
+THEN:
+
+Force additional \n line breaks
+
+REQUIRED TYPOGRAPHY BALANCING
+
+Arabic text MUST:
+
+remain centered
+
+maintain visual symmetry
+
+preserve cinematic spacing
+
+avoid cramped layouts
+
+
+REQUIRED FONT CASCADE
+
+Implement recursive scaling:
+
+22px
+↓
+20px
+↓
+18px
+↓
+16px
+↓
+14px
+↓
+12px
+
+REQUIRED ALGORITHM
+
+Loop:
+
+1. split lines
+
+
+2. measure text block
+
+
+3. compare against safe zone
+
+
+4. shrink font
+
+
+5. repeat until perfect fit achieved
+
+
+
+REQUIRED FINAL TYPOGRAPHY RESULT
+
+The Arabic block MUST:
+
+never touch borders
+
+never overflow
+
+never appear cramped
+
+remain naturally centered
+
+
+CRITICAL FIX #4 — TRANSPARENT OVERLAY ONLY
+
+Open and refactor:
+
+PremiumOverlayRenderer.tsx
+SkiaOverlayCanvas.tsx
+
+STRICT RULES
+
+The overlay system MUST:
+
+remain 100% transparent
+
+render NO synthetic shapes
+
+render NO artificial bubbles
+
+render NO borders
+
+render NO background fills
+
+
+REQUIRED STYLE RULES
+
+ALL overlay containers MUST use:
+
+backgroundColor: 'transparent'
+pointerEvents: 'none'
+
+REQUIRED RENDER TREE
+
+Transparent Overlay
+        +
+Arabic Typography Only
+
+REQUIRED FILES TO REFACTOR
+
+1. SmartInpaintingEngine.ts
+
+
+2. PremiumOverlayRenderer.tsx
+
+
+3. SkiaOverlayCanvas.tsx
+
+
+4. ArabicTypesettingEngine.ts
+
+
+5. DynamicFontScaler.ts
+
+
+6. AdaptiveTextColorEngine.ts
+
+
+
+REQUIRED PERFORMANCE RULES
+
+The premium layer MUST:
+
+NOT interfere with translation fetch logic
+
+NOT trigger rerenders
+
+preserve smooth scrolling
+
+preserve edge-to-edge reader performance
+
+use memoized rendering
+
+cache OCR measurements safely
+
+
+REQUIRED SANDBOX VALIDATION
+
+Perform a mock processing pass using the EXISTING active translation infrastructure WITHOUT modifying token systems.
+
+REQUIRED VALIDATION OUTPUT
+
+Return:
+
+production-ready React Native Expo TypeScript code
+
+content-aware inpainting implementation
+
+adaptive color engine
+
+safe-zone typography logic
+
+recursive line splitting implementation
+
+dynamic font scaling implementation
+
+
+AND validation logs proving:
+
+✅ Content-aware inpainting active
+✅ Bubble textures preserved
+✅ Gradients preserved
+✅ No white-box artifacts
+✅ No synthetic overlays rendered
+✅ Adaptive text coloring functioning
+✅ Dark text on light bubbles functioning
+✅ Light text on dark panels functioning
+✅ Boundary-safe line splitting functioning
+✅ Arabic text centered perfectly
+✅ Dynamic font scaling functioning
+✅ Professional scanlation-quality output achieved
+
+REQUIRED OUTPUT FORMAT
+
+Provide:
+
+production-ready React Native Expo TypeScript code
+
+OpenCV/Skia inpainting examples
+
+adaptive typography algorithms
+
+transparent overlay rendering
+
+safe-zone calculations
+
+validation logs
+
+final rendering proof structure
+
+
+Focus MOSTLY on:
+
+SEAMLESS CONTENT-AWARE INPAINTING
+
+ADAPTIVE TYPOGRAPHY
+
+PROFESSIONAL SCANLATION QUALITY
+
+NON-DESTRUCTIVE RENDERING
+
+PERFECT TEXT GEOMETRY
+
+TRANSPARENT OVERLAY SYSTEMS
+
+
+Avoid:
+
+synthetic shapes
+
+fake white masks
+
+geometric overlays
+
+hardcoded text colors
+
+sticker-like rendering
+
+token system modifications
+
+authentication refactors

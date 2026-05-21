@@ -439,8 +439,7 @@ export default function ReaderScreen() {
       {showControls && (
         <LinearGradient
           colors={["rgba(0,0,0,0.90)", "rgba(0,0,0,0.45)", "transparent"]}
-          style={[styles.topOverlay, { paddingTop: topPadding + 8 }]}
-          pointerEvents="box-none"
+          style={[styles.topOverlay, { paddingTop: topPadding + 8, pointerEvents: "box-none" }]}
         >
           <View style={styles.topBar}>
             <Pressable onPress={() => router.back()} style={styles.iconTouch}>
@@ -510,8 +509,7 @@ export default function ReaderScreen() {
       {/* ── Status banner ─────────────────────────────────────────────────── */}
       {statusBanner !== "" && (
         <View
-          style={[styles.banner, { top: topPadding + 72 }]}
-          pointerEvents="none"
+          style={[styles.banner, { top: topPadding + 72, pointerEvents: "none" }]}
         >
           <Text style={styles.bannerText} numberOfLines={3}>
             {statusBanner}
@@ -523,8 +521,7 @@ export default function ReaderScreen() {
       {showControls && (
         <LinearGradient
           colors={["transparent", "rgba(0,0,0,0.72)", "rgba(0,0,0,0.97)"]}
-          style={[styles.bottomOverlay, { paddingBottom: bottomPadding + 8 }]}
-          pointerEvents="box-none"
+          style={[styles.bottomOverlay, { paddingBottom: bottomPadding + 8, pointerEvents: "box-none" }]}
         >
           <View style={styles.bottomBar}>
             {/* Reading mode */}

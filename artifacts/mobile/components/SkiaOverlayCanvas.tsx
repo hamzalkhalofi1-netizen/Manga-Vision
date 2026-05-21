@@ -1,22 +1,27 @@
 /**
  * SkiaOverlayCanvas
  *
- * A fully transparent, non-interactive overlay layer that renders ONLY Arabic
- * typography — zero backgrounds, zero borders, zero geometry.
+ * Fully transparent, non-interactive overlay layer.
+ * Renders ONLY Arabic typography — zero backgrounds, zero borders,
+ * zero synthetic geometry.
  *
  * Rendering contract:
- *  - backgroundColor: 'transparent' on all containers
- *  - pointerEvents: 'none' — never blocks scroll or tap events
- *  - Only the Text nodes themselves are visible
- *  - memo() wrapped — never re-renders unless regions/dims change
+ *  - backgroundColor: 'transparent' on ALL containers
+ *  - style.pointerEvents: 'none' — never blocks scroll or tap
+ *  - Text color adapts automatically to bubble brightness via
+ *    AdaptiveTextColorEngine (dark text on light bubbles, light on dark)
+ *  - Inpainting fill is a pixel-sampled color from SmartInpaintingEngine
+ *  - memo() — never re-renders unless props change
  */
 
 import React, { memo, useMemo } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Platform, StyleSheet, Text, View } from "react-native";
 import type { TextRegion } from "./MangaPage";
 import { scaleFontToFit, scaleSFXFont } from "./DynamicFontScaler";
 import { getSafeZone } from "./ArabicTypesettingEngine";
 import type { InpaintColor } from "./SmartInpaintingEngine";
+import { preserveContourEdges } from "./SmartInpaintingEngine";
+import { resolveFromCss } from "./AdaptiveTextColorEngine";
 
 interface SkiaOverlayCanvasProps {
   regions: TextRegion[];
@@ -33,8 +38,13 @@ function SkiaOverlayCanvas({
   inpaintColors,
   isRTL = true,
 }: SkiaOverlayCanvasProps) {
+  const INSET = preserveContourEdges(); // = 2 — never bleeds past bubble contour
+
   const items = useMemo(() => {
     return regions.map((region, idx) => {
+      // ── Absolute position from normalised OCR coordinates ────────────────
+      // Maps fractional (0–1) bounds directly to the rendered layout rect,
+      // completely avoiding the (0,0) origin bug and absolute top floats.
       const left   = region.x * displayW;
       const top    = region.y * displayH;
       const width  = region.w * displayW;
@@ -46,9 +56,9 @@ function SkiaOverlayCanvas({
       if (!text) return null;
 
       const isSFX      = region.type === "sfx";
-      const isNarration = region.type === "narration";
       const isThought  = region.type === "thought";
 
+      // ── Typography layout ─────────────────────────────────────────────────
       const { safeW } = getSafeZone(width, height);
       const typeset = isSFX
         ? scaleSFXFont(text, width, height)
@@ -56,15 +66,12 @@ function SkiaOverlayCanvas({
 
       const renderedText = typeset.lines.join("\n");
 
-      // Text color from region data (Gemini-supplied), default to near-black
-      const textColor = region.textColor || "#111111";
-
-      // Inpaint layer: pixel-matched color sampled from bubble interior
-      const inpaint = inpaintColors[idx];
+      // ── Inpaint fill (pixel-sampled or Gemini-supplied bgColor fallback) ──
+      const inpaint    = inpaintColors[idx];
       const inpaintCss = inpaint?.css ?? region.bgColor ?? "rgb(245,245,240)";
 
-      // Inpainting rect inset: 2px max — never bleeds outside bubble contour
-      const INSET = 2;
+      // ── Adaptive text color: luminance-driven, never hardcoded ────────────
+      const colorProfile = resolveFromCss(inpaintCss);
 
       return {
         key: idx,
@@ -73,23 +80,18 @@ function SkiaOverlayCanvas({
         width,
         height,
         inpaintCss,
-        INSET,
         safeW,
         typeset,
         renderedText,
-        textColor,
+        colorProfile,
         isSFX,
-        isNarration,
         isThought,
-        isRTL,
       };
     }).filter(Boolean);
   }, [regions, displayW, displayH, inpaintColors, isRTL]);
 
   return (
-    <View
-      style={[styles.canvasRoot, { pointerEvents: "none" }]}
-    >
+    <View style={[styles.canvasRoot, { pointerEvents: "none" }]}>
       {items.map((item) => {
         if (!item) return null;
         const {
@@ -99,10 +101,9 @@ function SkiaOverlayCanvas({
           width,
           height,
           inpaintCss,
-          INSET,
           typeset,
           renderedText,
-          textColor,
+          colorProfile,
           isSFX,
           isThought,
         } = item;
@@ -115,8 +116,10 @@ function SkiaOverlayCanvas({
               { left, top, width, height, pointerEvents: "none" },
             ]}
           >
-            {/* ── Inpainting layer: pixel-matched fill, NOT a white box ──── */}
-            {/* Covers original source text using the bubble's own background */}
+            {/* ── Inpainting layer ─────────────────────────────────────────
+                Pixel-matched fill derived from the manga bitmap.
+                NOT a white box — color comes from the bubble's own pixels.
+                Inset by INSET px on all sides: never crosses bubble contour. */}
             <View
               style={[
                 styles.inpaintLayer,
@@ -131,22 +134,32 @@ function SkiaOverlayCanvas({
               ]}
             />
 
-            {/* ── Typography layer: ONLY Arabic text, fully transparent bg ── */}
-            <View
-              style={[styles.textLayer, { pointerEvents: "none" }]}
-            >
+            {/* ── Typography layer — ONLY the Arabic text, no background ─── */}
+            <View style={[styles.textLayer, { pointerEvents: "none" }]}>
               <Text
                 style={[
                   styles.arabicText,
                   {
                     fontSize: typeset.fontSize,
                     lineHeight: typeset.lineHeight,
-                    color: textColor,
-                    fontWeight: isSFX || item.isSFX ? "900" : "700",
+                    // Adaptive: dark on light bubble, light on dark panel
+                    color: colorProfile.color,
+                    fontWeight: isSFX ? "900" : "700",
                     fontStyle: isThought ? "italic" : "normal",
                     textAlign: "center",
                     writingDirection: "rtl",
                     letterSpacing: isSFX ? 0.5 : 0,
+                    // Luminance-driven subtle shadow for readability
+                    ...Platform.select({
+                      web: {
+                        textShadow: `0px 0px ${colorProfile.shadowRadius}px ${colorProfile.shadowColor}`,
+                      },
+                      default: {
+                        textShadowColor: colorProfile.shadowColor,
+                        textShadowOffset: { width: 0, height: 0 },
+                        textShadowRadius: colorProfile.shadowRadius,
+                      },
+                    }),
                   },
                 ]}
               >
@@ -176,7 +189,6 @@ const styles = StyleSheet.create({
   },
   inpaintLayer: {
     position: "absolute",
-    borderRadius: 0,
   },
   textLayer: {
     position: "absolute",
@@ -193,9 +205,6 @@ const styles = StyleSheet.create({
   arabicText: {
     includeFontPadding: false,
     textAlignVertical: "center",
-    textShadowColor: "rgba(255,255,255,0.35)",
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 1.5,
   },
 });
 

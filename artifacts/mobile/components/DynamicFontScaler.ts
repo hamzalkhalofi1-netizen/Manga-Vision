@@ -17,7 +17,7 @@
 
 import { splitArabicText, estimateTextHeight, getSafeZone } from "./ArabicTypesettingEngine";
 
-const FONT_SIZE_LADDER = [22, 18, 16, 14, 12] as const;
+const FONT_SIZE_LADDER = [22, 20, 18, 16, 14, 12] as const;
 const LINE_HEIGHT_MULTIPLIER = 1.45;
 
 export interface ScaledTypeset {

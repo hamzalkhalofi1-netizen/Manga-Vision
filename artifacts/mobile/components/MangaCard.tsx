@@ -1,7 +1,7 @@
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -105,10 +105,15 @@ export function MangaCard({ manga, onPress, size = "medium", showStatus = true }
 const styles = StyleSheet.create({
   card: {
     overflow: "hidden",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
     elevation: 6,
+    ...Platform.select({
+      web: { boxShadow: "0px 4px 8px rgba(0,0,0,0.30)" },
+      default: {
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+    }),
   },
   statusBadge: {
     alignSelf: "flex-start",
