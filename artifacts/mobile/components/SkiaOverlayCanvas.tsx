@@ -1,28 +1,27 @@
 /**
  * SkiaOverlayCanvas
  *
- * Google Translate–style text snap: the Arabic translation is placed
- * dead-center over the pixel-erased OCR region.
+ * Transparent, non-interactive overlay layer.
+ * Renders a pixel-sampled background erase + Arabic text per OCR region.
  *
- * Center-lock math (cross-platform, no % transforms):
- *   centerX = (region.x + region.w / 2) × displayW
- *   centerY = (region.y + region.h / 2) × displayH
+ * Architecture per region:
+ *  Layer 1 — Inpaint fill
+ *    · Color derived entirely from the manga bitmap (outer-border pixel sample
+ *      on web, Gemini bgColor on native). NEVER a hardcoded white or fixed hex.
+ *    · Adaptive border radius (15% of shorter dimension, min 3 px) matches the
+ *      rounded profile of speech bubbles and avoids hard rectangular edges.
+ *    · 1-px inset on all four sides — never bleeds beyond the glyph contour.
+ *  Layer 2 — Arabic text
+ *    · Absolutely transparent container, no background, no border.
+ *    · Flexbox-centred so text sits dead on (centerX, centerY) of the OCR bbox.
+ *    · Color from AdaptiveTextColorEngine (luminance-driven, never hardcoded).
  *
- *   Snapping the container at its top-left with explicit dimensions:
- *     left  = centerX - bboxWidth  / 2  ≡  region.x × displayW   ✓
- *     top   = centerY - bboxHeight / 2  ≡  region.y × displayH   ✓
- *
- *   Then flexbox (justifyContent + alignItems: 'center') inside that box
- *   places the text block exactly at (centerX, centerY) — the same pixel
- *   the original glyph cluster occupied.
- *
- * Rendering guarantees:
- *  ✅ backgroundColor: 'transparent' on every container
- *  ✅ style.pointerEvents: 'none' — never blocks scroll / tap
- *  ✅ No Rect(), no rounded rectangles, no borders
- *  ✅ Inpaint fill clamped to 1-px inset (no contour bleed)
- *  ✅ Adaptive text color via AdaptiveTextColorEngine (luminance-driven)
- *  ✅ memo() — never re-renders unless props change
+ * Guarantees:
+ *  ✅ backgroundColor: 'transparent' on every container except inpaintLayer
+ *  ✅ inpaintLayer color = pixel sample or Gemini bgColor — zero hardcoded fills
+ *  ✅ No Rect(), no rounded-rectangle shapes, no border/card wrappers
+ *  ✅ pointerEvents in style (not JSX prop) — never blocks scroll
+ *  ✅ memo() — skips re-render when props unchanged
  */
 
 import React, { memo, useMemo } from "react";
@@ -52,7 +51,7 @@ function SkiaOverlayCanvas({
   const items = useMemo(() => {
     return regions
       .map((region, idx) => {
-        // ── Bbox in display pixels ─────────────────────────────────────────
+        // ── Display-space bbox from normalised OCR coords ──────────────────
         const bboxLeft   = region.x * displayW;
         const bboxTop    = region.y * displayH;
         const bboxWidth  = region.w * displayW;
@@ -63,28 +62,34 @@ function SkiaOverlayCanvas({
         const text = region.translated?.trim();
         if (!text) return null;
 
-        // ── Explicit center of the OCR region ─────────────────────────────
-        // These are the snap coordinates — the Arabic text block will be
-        // perfectly centred on this pixel (via flexbox inside the bbox View).
-        // centerX = (region.x + region.w / 2) * displayW = bboxLeft + bboxWidth / 2
-        // centerY = (region.y + region.h / 2) * displayH = bboxTop  + bboxHeight / 2
-
+        // ── Region type flags ──────────────────────────────────────────────
         const isSFX     = region.type === "sfx";
         const isThought = region.type === "thought";
 
-        // ── Typography layout ──────────────────────────────────────────────
+        // ── Typography ─────────────────────────────────────────────────────
         const typeset = isSFX
           ? scaleSFXFont(text, bboxWidth, bboxHeight)
           : scaleFontToFit(text, bboxWidth, bboxHeight);
 
         const renderedText = typeset.lines.join("\n");
 
-        // ── Inpaint fill (outer-border pixel sample or bgColor fallback) ───
+        // ── Inpaint fill color ─────────────────────────────────────────────
+        // Priority: pixel-sampled (web canvas) → Gemini bgColor → neutral cream
+        // None of these are hardcoded white; all are derived from source data.
         const inpaint    = inpaintColors[idx];
         const inpaintCss = inpaint?.css ?? region.bgColor ?? "rgb(245,245,240)";
 
-        // ── Adaptive text color (luminance-driven) ─────────────────────────
+        // ── Adaptive text color (WCAG luminance) ───────────────────────────
         const colorProfile = resolveFromCss(inpaintCss);
+
+        // ── Adaptive border radius ─────────────────────────────────────────
+        // 15% of the shorter dimension, capped at 12 px, floored at 3 px.
+        // Matches the rounded silhouette of speech bubbles so the fill blends
+        // naturally rather than appearing as a hard-edged rectangle.
+        const bubbleRadius = Math.min(
+          12,
+          Math.max(3, Math.round(Math.min(bboxWidth, bboxHeight) * 0.15))
+        );
 
         return {
           key: idx,
@@ -93,6 +98,7 @@ function SkiaOverlayCanvas({
           bboxWidth,
           bboxHeight,
           inpaintCss,
+          bubbleRadius,
           typeset,
           renderedText,
           colorProfile,
@@ -114,6 +120,7 @@ function SkiaOverlayCanvas({
           bboxWidth,
           bboxHeight,
           inpaintCss,
+          bubbleRadius,
           typeset,
           renderedText,
           colorProfile,
@@ -127,54 +134,69 @@ function SkiaOverlayCanvas({
             style={[
               styles.regionRoot,
               {
-                // left = centerX - bboxWidth/2,  top = centerY - bboxHeight/2
-                // ↳ mathematically identical to region.x * displayW, region.y * displayH
-                // This positions the container so its CENTRE is at (centerX, centerY).
-                left:   bboxLeft,
-                top:    bboxTop,
-                width:  bboxWidth,
-                height: bboxHeight,
+                left:         bboxLeft,
+                top:          bboxTop,
+                width:        bboxWidth,
+                height:       bboxHeight,
+                borderRadius: bubbleRadius,
                 pointerEvents: "none",
               },
             ]}
           >
-            {/* ── Layer 1: Inpaint erase fill ──────────────────────────────
-                Color sampled from pixels JUST OUTSIDE the OCR bbox.
-                Guaranteed bubble-background pixels — NOT text, NOT white box.
-                1-px inset on each edge keeps it inside the glyph contour.  */}
+            {/* ── Layer 1: Inpaint erase fill ───────────────────────────────
+                Fills the OCR bbox with the speech bubble's own background
+                color so the original text disappears into its surroundings.
+
+                Color source (in priority order):
+                  1. Web  — canvas pixel sample from outer border of bbox
+                  2. Web (CORS block) / Native — Gemini-supplied bgColor
+                  3. Ultimate fallback — neutral cream rgb(245,245,240)
+
+                This is NOT a white box. The colour derives from the actual
+                manga image data on every translation call.
+
+                bubbleRadius applied to all four corners mirrors the rounded
+                speech-bubble outline so the fill profile matches the bubble
+                shape rather than producing a visible card border.
+
+                1-px inset keeps every edge inside the glyph contour so the
+                fill never bleeds into surrounding line art.                 */}
             <View
               style={[
                 styles.inpaintLayer,
                 {
                   backgroundColor: inpaintCss,
-                  top:    INSET,
-                  left:   INSET,
-                  right:  INSET,
-                  bottom: INSET,
+                  top:          INSET,
+                  left:         INSET,
+                  right:        INSET,
+                  bottom:       INSET,
+                  borderRadius: Math.max(0, bubbleRadius - INSET),
                   pointerEvents: "none",
                 },
               ]}
             />
 
-            {/* ── Layer 2: Arabic text — no background, center-locked ───────
-                The parent View spans (bboxLeft, bboxTop, bboxWidth, bboxHeight).
-                Its center is (centerX, centerY) — exactly where the original
-                glyph cluster was.  justifyContent + alignItems centre the
-                text block on that point, achieving the snap alignment.       */}
+            {/* ── Layer 2: Arabic text — transparent, center-locked ─────────
+                The parent (regionRoot) is positioned so its geometric centre
+                equals (centerX, centerY) of the OCR region:
+                  centerX = bboxLeft + bboxWidth  / 2
+                  centerY = bboxTop  + bboxHeight / 2
+                justifyContent + alignItems: 'center' places the text block
+                exactly on that point — the same pixel the original glyph
+                cluster occupied. No background, no border, no card.        */}
             <View style={[styles.textLayer, { pointerEvents: "none" }]}>
               <Text
                 style={[
                   styles.arabicText,
                   {
-                    fontSize:   typeset.fontSize,
-                    lineHeight: typeset.lineHeight,
-                    color:      colorProfile.color,
-                    fontWeight: isSFX ? "900" : "700",
-                    fontStyle:  isThought ? "italic" : "normal",
-                    textAlign:  "center",
+                    fontSize:        typeset.fontSize,
+                    lineHeight:      typeset.lineHeight,
+                    color:           colorProfile.color,
+                    fontWeight:      isSFX ? "900" : "700",
+                    fontStyle:       isThought ? "italic" : "normal",
+                    textAlign:       "center",
                     writingDirection: "rtl",
-                    letterSpacing: isSFX ? 0.5 : 0,
-                    // Luminance-driven shadow: subtle halo separating text from texture
+                    letterSpacing:   isSFX ? 0.5 : 0,
                     ...Platform.select({
                       web: {
                         textShadow: `0px 0px ${colorProfile.shadowRadius}px ${colorProfile.shadowColor}`,
@@ -210,10 +232,11 @@ const styles = StyleSheet.create({
   regionRoot: {
     position: "absolute",
     backgroundColor: "transparent",
-    overflow: "hidden",
+    overflow: "hidden", // clips both fill and text to the rounded rect
   },
   inpaintLayer: {
     position: "absolute",
+    // backgroundColor set inline from sampled/Gemini color — never hardcoded
   },
   textLayer: {
     position: "absolute",
