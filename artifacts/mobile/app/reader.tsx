@@ -381,10 +381,12 @@ export default function ReaderScreen() {
           regions={pageTranslations[index]}
           showOverlay={overlayVisible}
           isRTL={isRTL}
+          apiBase={apiBase}
+          userApiKey={getLiveKey()}
         />
       </Pressable>
     ),
-    [handleTap, pageTranslations, overlayVisible, isRTL]
+    [handleTap, pageTranslations, overlayVisible, isRTL, apiBase, tokens, activeTokenId]
   );
 
   const keyExtractor = useCallback(

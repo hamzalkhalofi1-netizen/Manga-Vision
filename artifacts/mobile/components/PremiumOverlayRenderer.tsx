@@ -1,34 +1,25 @@
 /**
  * PremiumOverlayRenderer
  *
- * Orchestrates the Google Translate–style text erase + snap pipeline:
+ * Pure text overlay — no fill shapes, no inpaint colors, no rectangles.
  *
- *   Original Manga Image  (rendered by MangaPage — never touched)
- *           +
- *   SmartInpaintingEngine  (samples pixels OUTSIDE each OCR bbox)
- *           +
- *   SkiaOverlayCanvas      (transparent layer — Arabic text only)
+ * The text-erase step now happens entirely on the server (POST /api/inpaint
+ * in MangaPage). By the time this component renders, the underlying image
+ * already has its original text pixel-erased. This layer only places the
+ * translated Arabic (or other language) text, centered on each OCR bbox.
  *
  * Guarantees:
- *  ✅ Zero white rectangles  ✅ Zero synthetic shapes
+ *  ✅ Zero fill rectangles  ✅ Zero white shapes  ✅ Zero synthetic geometry
  *  ✅ Overlay root 100% transparent  ✅ pointerEvents: 'none'
- *  ✅ Inpaint fill ≤ 1-px inset  ✅ Text snapped dead-center on OCR bbox
- *  ✅ Token / auth / chapter binding NEVER touched
- *
- * Sampling fallback:
- *  When nativeW / nativeH are not yet available (image still loading),
- *  we use displayW / displayH as the canvas scale reference.  The
- *  normalised OCR coordinates (0–1) remain correct regardless.
+ *  ✅ Text snapped dead-center on OCR bbox using centerX / centerY
  */
 
-import React, { memo, useEffect, useRef, useState } from "react";
+import React, { memo } from "react";
 import { StyleSheet, View } from "react-native";
 import type { TextRegion } from "./MangaPage";
-import { sampleInpaintColors, type InpaintColor } from "./SmartInpaintingEngine";
 import SkiaOverlayCanvas from "./SkiaOverlayCanvas";
 
 interface PremiumOverlayRendererProps {
-  uri: string;
   regions: TextRegion[];
   displayW: number;
   displayH: number;
@@ -38,47 +29,11 @@ interface PremiumOverlayRendererProps {
 }
 
 function PremiumOverlayRenderer({
-  uri,
   regions,
   displayW,
   displayH,
-  nativeW,
-  nativeH,
   isRTL = true,
 }: PremiumOverlayRendererProps) {
-  const [inpaintColors, setInpaintColors] = useState<Record<number, InpaintColor>>({});
-  const samplingRef = useRef(false);
-  const uriRef      = useRef(uri);
-
-  // ── Reset state whenever the page URI changes ──────────────────────────────
-  useEffect(() => {
-    if (uriRef.current !== uri) {
-      uriRef.current    = uri;
-      samplingRef.current = false;
-      setInpaintColors({});
-    }
-  }, [uri]);
-
-  // ── Trigger pixel sampling once per page ──────────────────────────────────
-  // Falls back to displayW/displayH when native image dimensions are not yet
-  // known — the normalised OCR coordinates work at any scale.
-  useEffect(() => {
-    if (regions.length === 0 || samplingRef.current) return;
-
-    // Use nativeW/H when available; fall back to display dims so sampling
-    // is never silently skipped while the image is still loading.
-    const refW = nativeW > 0 ? nativeW : displayW;
-    const refH = nativeH > 0 ? nativeH : displayH;
-
-    if (refW === 0 || refH === 0) return;
-
-    samplingRef.current = true;
-
-    sampleInpaintColors(uri, regions, refW, refH).then((colors) => {
-      setInpaintColors(colors);
-    });
-  }, [uri, regions, nativeW, nativeH, displayW, displayH]);
-
   if (regions.length === 0) return null;
 
   return (
@@ -92,7 +47,6 @@ function PremiumOverlayRenderer({
         regions={regions}
         displayW={displayW}
         displayH={displayH}
-        inpaintColors={inpaintColors}
         isRTL={isRTL}
       />
     </View>
