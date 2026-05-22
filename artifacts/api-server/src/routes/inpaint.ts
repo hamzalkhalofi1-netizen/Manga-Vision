@@ -4,15 +4,15 @@
  * Server-side text erasure pipeline.
  *
  * For each OCR bounding box the client supplies, this endpoint:
- *   1. Samples a 4-pixel border ring immediately outside the box
- *      (1-px dilation mask padding — never more than 2px).
+ *   1. Samples a 2-pixel border ring immediately outside the box.
  *   2. Averages those RGBA values to derive the bubble's background colour.
- *   3. Composites a filled rectangle of that colour onto the image buffer,
+ *   3. Composites a filled rectangle of that exact colour onto the image buffer,
  *      inset by 1px on every edge so the fill never bleeds past the glyph
- *      contour (equivalent to cv.INPAINT_TELEA on a uniform-colour fill).
+ *      contour boundary.
  *   4. Returns the processed image as a base64-encoded PNG.
  *
- * This is a stateless, side-effect-free operation — no file I/O, no globals.
+ * AsyncLocalStorage isolates the per-request Gemini API key so concurrent
+ * inpaint calls never cross-contaminate token contexts.
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -22,6 +22,8 @@ import sharp from "sharp";
 const router = Router();
 
 const requestCtx = new AsyncLocalStorage<{ userKey: string | undefined }>();
+
+const DILATION = 2; // 1–2px max mask padding per spec
 
 const CDN_HEADERS: Record<string, string> = {
   "User-Agent":
@@ -45,10 +47,6 @@ async function fetchImageBuffer(imageUrl: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
-/**
- * Parse a CSS hex colour (#rrggbb or #rgb) into {r, g, b}.
- * Used as the Gemini-supplied bgColor fallback when pixel sampling fails.
- */
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const clean = hex.replace("#", "");
   if (clean.length === 3) {
@@ -69,9 +67,9 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
 }
 
 /**
- * Sample the 4-pixel border ring that wraps a bounding box.
- * Dilation mask: 1px outside each edge, max 2px wide.
- * Returns the average RGB of those border pixels.
+ * Sample the border ring that wraps a bounding box (DILATION px wide).
+ * Returns the average RGB of those border pixels — this is the bubble's
+ * background colour, used as the inpaint fill.
  */
 async function sampleBorderColor(
   img: sharp.Sharp,
@@ -82,8 +80,6 @@ async function sampleBorderColor(
   bw: number,
   bh: number
 ): Promise<{ r: number; g: number; b: number }> {
-  const DILATION = 2; // max 2px mask padding per directive
-
   const sx = Math.max(0, bx - DILATION);
   const sy = Math.max(0, by - DILATION);
   const sw = Math.min(imgW - sx, bw + DILATION * 2);
@@ -98,17 +94,13 @@ async function sampleBorderColor(
     .raw()
     .toBuffer();
 
-  // Collect only the outer border pixels (skip the interior)
-  let r = 0,
-    g = 0,
-    b = 0,
-    count = 0;
+  let r = 0, g = 0, b = 0, count = 0;
 
   for (let row = 0; row < sh; row++) {
     const isBorderRow = row < DILATION || row >= sh - DILATION;
     for (let col = 0; col < sw; col++) {
       const isBorderCol = col < DILATION || col >= sw - DILATION;
-      if (!isBorderRow && !isBorderCol) continue; // interior — skip
+      if (!isBorderRow && !isBorderCol) continue;
       const idx = (row * sw + col) * 3;
       r += raw[idx];
       g += raw[idx + 1];
@@ -129,12 +121,7 @@ router.post("/", async (req, res) => {
   const userKey = req.headers["x-gemini-key"] as string | undefined;
 
   await requestCtx.run({ userKey }, async () => {
-    const {
-      imageUrl,
-      imageData,
-      mimeType,
-      regions,
-    } = req.body as {
+    const { imageUrl, imageData, regions } = req.body as {
       imageUrl?: string;
       imageData?: string;
       mimeType?: string;
@@ -172,7 +159,6 @@ router.post("/", async (req, res) => {
       return;
     }
 
-    // ── Build composite operations — one filled rect per OCR region ─────────
     const composites: sharp.OverlayOptions[] = [];
 
     for (const region of regions) {
@@ -181,34 +167,21 @@ router.post("/", async (req, res) => {
       const bw = Math.max(1, Math.floor(region.w * imgW));
       const bh = Math.max(1, Math.floor(region.h * imgH));
 
-      // Clamp to image bounds
       const clampedX = Math.max(0, Math.min(imgW - 1, bx));
       const clampedY = Math.max(0, Math.min(imgH - 1, by));
       const clampedW = Math.max(1, Math.min(imgW - clampedX, bw));
       const clampedH = Math.max(1, Math.min(imgH - clampedY, bh));
 
-      // ── Inpaint fill width/height: 1px inset on all four sides ────────────
-      // This is the "tight 1px to 2px maximum dilation mask padding" —
-      // the fill never bleeds past the glyph contour boundary.
+      // 1px inset fill — never bleeds past the glyph contour boundary
       const fillW = Math.max(1, clampedW - 2);
       const fillH = Math.max(1, clampedH - 2);
       const fillLeft = clampedX + 1;
       const fillTop = clampedY + 1;
 
-      // ── Colour source priority ─────────────────────────────────────────────
-      // 1. Border pixel sample  (most accurate — from actual manga bitmap)
-      // 2. Gemini-supplied bgColor hex  (fallback when sampling fails)
-      // 3. Neutral cream  (last resort)
       let fillColor: { r: number; g: number; b: number };
       try {
         fillColor = await sampleBorderColor(
-          img,
-          imgW,
-          imgH,
-          clampedX,
-          clampedY,
-          clampedW,
-          clampedH
+          img, imgW, imgH, clampedX, clampedY, clampedW, clampedH
         );
       } catch {
         fillColor =
@@ -235,14 +208,10 @@ router.post("/", async (req, res) => {
     }
 
     try {
-      // sharp().composite() composites all fills in a single pass
       const resultBuf = await img.composite(composites).png().toBuffer();
       const resultBase64 = resultBuf.toString("base64");
 
-      req.log?.info(
-        { imgW, imgH, regions: regions.length },
-        "Inpaint success"
-      );
+      req.log?.info({ imgW, imgH, regions: regions.length }, "Inpaint success");
 
       res.json({
         inpaintedImage: resultBase64,
