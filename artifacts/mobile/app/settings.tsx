@@ -205,6 +205,22 @@ export default function SettingsScreen() {
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [serverUrlInput, setServerUrlInput] = useState(serverUrl);
   const [serverUrlSaving, setServerUrlSaving] = useState(false);
+  const [pingStatus, setPingStatus] = useState<"idle" | "checking" | "online" | "offline">("idle");
+
+  const handleCheckServer = async () => {
+    const target = serverUrlInput.trim().replace(/\/$/, "");
+    if (!target) return;
+    setPingStatus("checking");
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(`${target}/`, { method: "GET", signal: controller.signal });
+      clearTimeout(timer);
+      setPingStatus(res.ok ? "online" : "offline");
+    } catch {
+      setPingStatus("offline");
+    }
+  };
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
   const bottomPadding = 40 + (Platform.OS === "web" ? 34 : insets.bottom);
@@ -221,7 +237,7 @@ export default function SettingsScreen() {
   };
 
   const handleOpenHFDeploy = async () => {
-    const url = "https://huggingface.co/spaces/new?template=hamzalkhalofi1-netizen/mangaverse-inpaint-core";
+    const url = "https://huggingface.co/spaces/new?template=yamihot123/mangaverse-inpaint-core";
     const supported = await Linking.canOpenURL(url);
     if (supported) {
       await Linking.openURL(url);
@@ -408,16 +424,47 @@ export default function SettingsScreen() {
           </Text>
           <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, padding: 14, gap: 10 }]}>
             <Text style={[styles.rowLabel, { color: colors.foreground }]}>Server URL</Text>
-            <TextInput
-              value={serverUrlInput}
-              onChangeText={setServerUrlInput}
-              placeholder="https://your-space.hf.space"
-              placeholderTextColor={colors.mutedForeground}
-              style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.muted }]}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-            />
+            <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+              <TextInput
+                value={serverUrlInput}
+                onChangeText={(v) => { setServerUrlInput(v); setPingStatus("idle"); }}
+                placeholder="https://your-space.hf.space"
+                placeholderTextColor={colors.mutedForeground}
+                style={[styles.input, { flex: 1, color: colors.foreground, borderColor: colors.border, backgroundColor: colors.muted }]}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+              />
+              <Pressable
+                onPress={handleCheckServer}
+                disabled={pingStatus === "checking" || !serverUrlInput.trim()}
+                style={[
+                  styles.pingBtn,
+                  { backgroundColor: colors.muted, borderColor: colors.border, opacity: serverUrlInput.trim() ? 1 : 0.4 },
+                ]}
+              >
+                {pingStatus === "checking" ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Ionicons name="wifi-outline" size={18} color={colors.primary} />
+                )}
+              </Pressable>
+            </View>
+
+            {pingStatus !== "idle" && (
+              <View style={styles.pingBadgeRow}>
+                <View style={[
+                  styles.pingDot,
+                  { backgroundColor: pingStatus === "online" ? "#22c55e" : pingStatus === "checking" ? colors.primary : "#ef4444" },
+                ]} />
+                <Text style={[styles.pingBadgeText, {
+                  color: pingStatus === "online" ? "#22c55e" : pingStatus === "checking" ? colors.primary : "#ef4444",
+                }]}>
+                  {pingStatus === "online" ? "● Active" : pingStatus === "checking" ? "Checking…" : "● Offline / Building"}
+                </Text>
+              </View>
+            )}
+
             <Pressable
               onPress={handleSaveServerUrl}
               disabled={serverUrlSaving || !serverUrlInput.trim()}
@@ -585,4 +632,25 @@ const styles = StyleSheet.create({
   },
   deployBtnTitle: { fontSize: 14, fontWeight: "600" as const },
   deployBtnSub: { fontSize: 11, marginTop: 2 },
+  pingBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  pingBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 2,
+  },
+  pingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  pingBadgeText: { fontSize: 12, fontWeight: "600" as const },
 });
