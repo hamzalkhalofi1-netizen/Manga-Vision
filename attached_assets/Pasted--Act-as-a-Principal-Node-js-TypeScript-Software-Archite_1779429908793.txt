@@ -1,0 +1,41 @@
+> Act as a Principal Node.js TypeScript Software Architect specialized in advanced asynchronous state isolation and OpenCV-based manga scanlation pipelines.
+> # 🚨 ARCHITECTURAL FAULT DIAGNOSIS (THE RACE CONDITION)
+> The recurring API_KEY_INVALID / HTTP 500 crash during batch image translation is caused by an asynchronous race condition within parallel Promise resolution blocks (Promise.all loops). Static variable storage or naive req.body reading fails because the asynchronous context drifts during intensive heavy operations (like OpenCV buffering), corrupting the thread memory payload.
+> We are completely ripping out all transient patches and implementing an enterprise-grade execution isolator.
+> # PRIMARY DIRECTIVE: ASYNC LOCAL STORAGE + STATELESS OPENCV
+> ### 1. IMPLEMENT SYSTEM-LEVEL ISOLATION (AsyncLocalStorage)
+> Do NOT use global static variables or shared objects which cause data cross-contamination between concurrent users. Implement Node's native async_hooks to lock the runtime execution context.
+> Create/refactor a central context file TranslationContext.ts:
+> ```typescript
+> import { AsyncLocalStorage } from 'async_hooks';
+> export const translationStorage = new AsyncLocalStorage<Map<string, string>>();
+> 
+> ```
+> In your core routing middleware (e.g., POST /api/manga/translate), wrap the entire handler lifecycle inside the storage boundary:
+> ```typescript
+> const store = new Map();
+> store.set('apiKey', req.body.apiKey);
+> 
+> translationStorage.run(store, () => {
+>    // Execute your entire chapter image loops and controller pipeline inside here
+> });
+> 
+> ```
+> Whenever any internal utility, loop instance, or GeminiTranslationService.ts needs to invoke the AI provider, pull implicitly from the active boundary storage:
+> ```typescript
+> const activeStore = translationStorage.getStore();
+> const liveKey = activeStore?.get('apiKey');
+> if (!liveKey) throw new Error("CRITICAL: Boundary execution context lost active authentication routing.");
+> const aiProvider = new GoogleGenAI({ apiKey: liveKey });
+> 
+> ```
+> ### 2. STATELESS OPENCV IMAGING ENGINE (SmartInpaintingEngine.ts)
+> Decouple image clearing completely from any user context or token parameters. The image processing pipeline must accept purely raw primitives:
+>  * **Input parameters:** (imageBuffer: Buffer, coordinates: Array<{x: number, y: number, w: number, h: number}>)
+>  * **Process:** Instantiate cv.Mat locally. Apply an absolute binary single-channel mask strictly on the raw text glyph coordinates with a safe dilation bound of **1px to 2px max**.
+>  * Execute pixel-level content-aware erasing using the cv.INPAINT_TELEA algorithm.
+>  * **Strict Enforcement:** Purge all code emitting geometric white rectangles (<Rect> or drawRect). The output layer metadata must be completely transparent (backgroundColor: 'transparent'), forcing the text layout center directly onto the target coordinates with safe 10% inward tracking margins and dynamic line splits (\n).
+> ### 3. THE PRE-FLIGHT COMPILATION GAUNTLET
+> Wrap the final endpoint response factory with a fail-safe check. Ensure that the generated stateless image output and the isolated API connection matrix resolve simultaneously without dropping runtime dependencies.
+> Re-architect the backend compilation files now. Provide clean, decoupled TypeScript structures with zero environment variables or static fallbacks.
+> 

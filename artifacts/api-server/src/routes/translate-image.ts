@@ -213,6 +213,27 @@ If no text found: { "found": false, "regions": [], "summary": "No text on this p
     } catch (err: unknown) {
       const anyErr = err as { status?: number; message?: string };
 
+      // ── Invalid API key — return 401 immediately, no retry value ─────────
+      // Gemini returns status 400 with reason API_KEY_INVALID when the key
+      // passed via X-Gemini-Key (or the shared fallback) is wrong/expired.
+      // Surfacing this as a clean 401 lets the client abort the queue at once
+      // instead of burning MAX_RETRIES attempts per page with a bad key.
+      if (
+        anyErr?.status === 400 &&
+        anyErr?.message?.includes("API_KEY_INVALID")
+      ) {
+        req.log?.error(
+          { model: MODEL, attempt },
+          "API_KEY_INVALID: aborting — key is not valid"
+        );
+        res.status(401).json({
+          error:
+            "API_KEY_INVALID: Your Gemini API key is not valid or has been revoked. " +
+            "Open Settings → AI Keys and add a working key, then try again.",
+        });
+        return;
+      }
+
       if (anyErr?.status === 429) {
         res.status(429).json({ error: "rate_limited", retryAfter: 70 });
         return;

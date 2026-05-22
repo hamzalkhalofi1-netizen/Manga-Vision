@@ -134,6 +134,19 @@ class TranslationQueueManager {
             PAGE_TIMEOUT_MS
           );
 
+          if (res.status === 401) {
+            // Invalid API key — abort the entire queue immediately.
+            // Retrying with the same bad key wastes calls on every remaining page.
+            let keyErrDetail = "Your Gemini API key is not valid. Open Settings → AI Keys and add a working key.";
+            try {
+              const body = await res.json();
+              if (body?.error) keyErrDetail = body.error;
+            } catch {}
+            this.abortController?.abort();
+            onPageError?.(i, keyErrDetail);
+            break;
+          }
+
           if (res.status === 429) {
             onRateLimited?.();
             // Stop the whole queue — key is exhausted
