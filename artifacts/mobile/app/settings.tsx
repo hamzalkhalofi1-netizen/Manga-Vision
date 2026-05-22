@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import * as Linking from "expo-linking";
+import { Linking } from "react-native";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -220,10 +220,14 @@ export default function SettingsScreen() {
     Alert.alert("Saved", "Inpaint server URL has been saved.");
   };
 
-  const handleOpenHFDeploy = () => {
-    Linking.openURL(
-      "https://huggingface.co/spaces/new?template=hamzalkhalofi1-netizen/mangaverse-inpaint-core"
-    );
+  const handleOpenHFDeploy = async () => {
+    const url = "https://huggingface.co/spaces/new?template=hamzalkhalofi1-netizen/mangaverse-inpaint-core";
+    const supported = await Linking.canOpenURL(url);
+    if (supported) {
+      await Linking.openURL(url);
+    } else {
+      console.log("Don't know how to open URI: " + url);
+    }
   };
 
   const handleAddKey = async (key: string, label: string) => {
