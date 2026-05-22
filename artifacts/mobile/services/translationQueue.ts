@@ -42,7 +42,7 @@ interface QueueParams {
   onPageError?: (pageIndex: number, errorMessage: string) => void;
 }
 
-const DELAY_BETWEEN_MS = 800;
+const DELAY_BETWEEN_MS = 1500;
 const MAX_RETRIES = 2;
 const PAGE_TIMEOUT_MS = 60_000;
 

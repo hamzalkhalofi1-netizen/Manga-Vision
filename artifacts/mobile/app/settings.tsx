@@ -117,10 +117,17 @@ function TokenRow({ token, isActive, onActivate, onRemove, onClearLimit }: {
           </Pressable>
         )}
         <Pressable
-          onPress={() => Alert.alert("Remove Key", `Remove "${token.label}"?`, [
-            { text: "Cancel", style: "cancel" },
-            { text: "Remove", style: "destructive", onPress: onRemove },
-          ])}
+          onPress={() =>
+            Alert.alert(
+              "حذف المفتاح",
+              "هل أنت متأكد من حذف مفتاح الـ API بشكل نهائي؟",
+              [
+                { text: "إلغاء", style: "cancel" },
+                { text: "حذف", style: "destructive", onPress: onRemove },
+              ],
+              { cancelable: true }
+            )
+          }
           style={styles.tokenActionBtn}
         >
           <Ionicons name="trash-outline" size={16} color="#f87171" />
