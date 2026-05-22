@@ -1,7 +1,16 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { Router } from "express";
 import { ai, createUserGeminiClient } from "@workspace/integrations-gemini-ai";
 
 const router = Router();
+
+/**
+ * Thread-safe per-request context store.
+ * Isolates the user's Gemini key across all async continuations
+ * within a single POST /translate-image call, preventing key
+ * leakage or mutation when concurrent requests share the event loop.
+ */
+const requestCtx = new AsyncLocalStorage<{ userKey: string | undefined }>();
 
 const LANGUAGE_NAMES: Record<string, string> = {
   en: "English",
@@ -39,57 +48,84 @@ async function fetchImageAsBase64(
   return { data, mimeType };
 }
 
+/**
+ * Wrap Arabic translations with balanced \n line breaks for typesetting.
+ * Splits on word boundaries so each line fits roughly within the bubble.
+ */
+function breakArabicLines(text: string, targetWordsPerLine = 3): string {
+  if (!text) return text;
+  const words = text.split(/\s+/);
+  if (words.length <= targetWordsPerLine) return text;
+  const lines: string[] = [];
+  for (let i = 0; i < words.length; i += targetWordsPerLine) {
+    lines.push(words.slice(i, i + targetWordsPerLine).join(" "));
+  }
+  return lines.join("\n");
+}
+
 router.post("/", async (req, res) => {
-  const { imageData, imageUrl, mimeType, targetLanguage } = req.body as {
-    imageData?: string;
-    imageUrl?: string;
-    mimeType?: string;
-    targetLanguage?: string;
-  };
+  const userKey = req.headers["x-gemini-key"] as string | undefined;
 
-  if (!targetLanguage) {
-    res.status(400).json({ error: "targetLanguage is required" });
-    return;
-  }
-  if (!imageData && !imageUrl) {
-    res.status(400).json({ error: "Either imageData or imageUrl is required" });
-    return;
-  }
+  // ── Bind userKey to this request's async execution context ───────────────
+  // AsyncLocalStorage.run() ensures every async continuation spawned inside
+  // this handler (fetch, Gemini call, retries) reads the same isolated key
+  // without touching any module-level variable.
+  await requestCtx.run({ userKey }, async () => {
+    const { imageData, imageUrl, mimeType, targetLanguage } = req.body as {
+      imageData?: string;
+      imageUrl?: string;
+      mimeType?: string;
+      targetLanguage?: string;
+    };
 
-  // ── Resolve image (server-side fetch beats client-side CORS issues) ────────
-  let finalData: string;
-  let finalMime: string;
-
-  if (imageUrl) {
-    try {
-      const fetched = await fetchImageAsBase64(imageUrl);
-      finalData = fetched.data;
-      finalMime = fetched.mimeType;
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      req.log?.error({ err }, "Server CDN fetch failed");
-      res.status(502).json({ error: `Image fetch failed: ${msg}` });
+    if (!targetLanguage) {
+      res.status(400).json({ error: "targetLanguage is required" });
       return;
     }
-  } else {
-    finalData = imageData!;
-    finalMime = (mimeType?.split(";")[0] ?? "image/jpeg").trim();
-  }
+    if (!imageData && !imageUrl) {
+      res
+        .status(400)
+        .json({ error: "Either imageData or imageUrl is required" });
+      return;
+    }
 
-  if (finalData.length < 100) {
-    res.status(400).json({ error: "Image data is empty or too short" });
-    return;
-  }
+    // ── Resolve image (server-side fetch beats client-side CORS issues) ────
+    let finalData: string;
+    let finalMime: string;
 
-  // ── Pick Gemini client (user key bypasses shared quota) ───────────────────
-  const userKey = req.headers["x-gemini-key"] as string | undefined;
-  const client = userKey ? createUserGeminiClient(userKey) : ai;
+    if (imageUrl) {
+      try {
+        const fetched = await fetchImageAsBase64(imageUrl);
+        finalData = fetched.data;
+        finalMime = fetched.mimeType;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        req.log?.error({ err }, "Server CDN fetch failed");
+        res.status(502).json({ error: `Image fetch failed: ${msg}` });
+        return;
+      }
+    } else {
+      finalData = imageData!;
+      finalMime = (mimeType?.split(";")[0] ?? "image/jpeg").trim();
+    }
 
-  const langName = LANGUAGE_NAMES[targetLanguage] ?? targetLanguage;
-  const isRTL = targetLanguage === "ar";
-  const resolvedMime = finalMime as "image/jpeg" | "image/png" | "image/webp";
+    if (finalData.length < 100) {
+      res.status(400).json({ error: "Image data is empty or too short" });
+      return;
+    }
 
-  const prompt = `You are a professional manga/manhwa OCR and localization engine.
+    // ── Pick Gemini client — key read from isolated async context ──────────
+    const ctx = requestCtx.getStore()!;
+    const client = ctx.userKey ? createUserGeminiClient(ctx.userKey) : ai;
+
+    const langName = LANGUAGE_NAMES[targetLanguage] ?? targetLanguage;
+    const isRTL = targetLanguage === "ar";
+    const resolvedMime = finalMime as
+      | "image/jpeg"
+      | "image/png"
+      | "image/webp";
+
+    const prompt = `You are a professional manga/manhwa OCR and localization engine.
 
 TASK: Analyze this manga/manhwa page image. For EVERY visible piece of text — speech bubbles, thought bubbles, sound effects, signs, narration boxes, title cards — do ALL of the following:
 
@@ -129,135 +165,158 @@ Return ONLY valid JSON — no markdown, no backticks, no commentary:
 Types: "speech" | "thought" | "sfx" | "sign" | "narration" | "title"
 If no text found: { "found": false, "regions": [], "summary": "No text on this page" }`;
 
-  // ── Strict sequential call with retry on transient 503 ────────────────────
-  const MODEL = "gemini-2.5-flash";
-  const MAX_ATTEMPTS = 4;
+    // ── Strict sequential call with retry on transient 503 ─────────────────
+    const MODEL = "gemini-2.5-flash";
+    const MAX_ATTEMPTS = 4;
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    try {
-      const response = await client.models.generateContent({
-        model: MODEL,
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { inlineData: { mimeType: resolvedMime, data: finalData } },
-              { text: prompt },
-            ],
-          },
-        ],
-        config: { maxOutputTokens: 8192 },
-      });
-
-      const raw = response.text?.trim() ?? "";
-
-      let parsed: {
-        found: boolean;
-        regions: Array<{
-          original: string;
-          translated: string;
-          x: number;
-          y: number;
-          w: number;
-          h: number;
-          type: string;
-          bgColor: string;
-          textColor: string;
-          speaker: string | null;
-          emphasis: boolean;
-        }>;
-        summary: string;
-      };
-
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
-        parsed = JSON.parse(raw);
-      } catch {
-        const match = raw.match(/\{[\s\S]*\}/);
-        parsed = match
-          ? (() => {
-              try {
-                return JSON.parse(match[0]);
-              } catch {
-                return {
-                  found: false,
-                  regions: [],
-                  summary: "Could not parse AI response",
-                };
-              }
-            })()
-          : { found: false, regions: [], summary: "No parseable response" };
-      }
+        const response = await client.models.generateContent({
+          model: MODEL,
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { inlineData: { mimeType: resolvedMime, data: finalData } },
+                { text: prompt },
+              ],
+            },
+          ],
+          config: { maxOutputTokens: 8192 },
+        });
 
-      if (parsed.regions) {
-        parsed.regions = parsed.regions
-          .filter((r) => r && typeof r.x === "number" && typeof r.y === "number")
-          .map((r) => ({
-            ...r,
-            x: Math.max(0, Math.min(0.99, r.x)),
-            y: Math.max(0, Math.min(0.99, r.y)),
-            w: Math.max(0.02, Math.min(1 - r.x, r.w)),
-            h: Math.max(0.02, Math.min(1 - r.y, r.h)),
-            bgColor: r.bgColor || "#ffffff",
-            textColor: r.textColor || "#000000",
-            emphasis: !!r.emphasis,
-            speaker: r.speaker || null,
-          }));
-      }
+        const raw = response.text?.trim() ?? "";
 
-      req.log?.info(
-        { model: MODEL, attempt, regions: parsed.regions?.length ?? 0 },
-        "Image translation success"
-      );
-      res.json(parsed);
-      return;
-    } catch (err: unknown) {
-      const anyErr = err as { status?: number; message?: string };
+        let parsed: {
+          found: boolean;
+          regions: Array<{
+            original: string;
+            translated: string;
+            x: number;
+            y: number;
+            w: number;
+            h: number;
+            type: string;
+            bgColor: string;
+            textColor: string;
+            speaker: string | null;
+            emphasis: boolean;
+          }>;
+          summary: string;
+        };
 
-      // ── Invalid API key — return 401 immediately, no retry value ─────────
-      // Gemini returns status 400 with reason API_KEY_INVALID when the key
-      // passed via X-Gemini-Key (or the shared fallback) is wrong/expired.
-      // Surfacing this as a clean 401 lets the client abort the queue at once
-      // instead of burning MAX_RETRIES attempts per page with a bad key.
-      if (
-        anyErr?.status === 400 &&
-        anyErr?.message?.includes("API_KEY_INVALID")
-      ) {
-        req.log?.error(
-          { model: MODEL, attempt },
-          "API_KEY_INVALID: aborting — key is not valid"
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          const match = raw.match(/\{[\s\S]*\}/);
+          parsed = match
+            ? (() => {
+                try {
+                  return JSON.parse(match[0]);
+                } catch {
+                  return {
+                    found: false,
+                    regions: [],
+                    summary: "Could not parse AI response",
+                  };
+                }
+              })()
+            : { found: false, regions: [], summary: "No parseable response" };
+        }
+
+        if (parsed.regions) {
+          parsed.regions = parsed.regions
+            .filter(
+              (r) => r && typeof r.x === "number" && typeof r.y === "number"
+            )
+            .map((r) => {
+              const cx = Math.max(0, Math.min(0.99, r.x));
+              const cy = Math.max(0, Math.min(0.99, r.y));
+              const cw = Math.max(0.02, Math.min(1 - cx, r.w));
+              const ch = Math.max(0.02, Math.min(1 - cy, r.h));
+
+              // ── Apply \n line breaks for Arabic typesetting ──────────────
+              const translatedText =
+                isRTL && r.translated
+                  ? breakArabicLines(r.translated)
+                  : (r.translated ?? "");
+
+              return {
+                ...r,
+                x: cx,
+                y: cy,
+                w: cw,
+                h: ch,
+                // Exact center alignment coordinates for the client overlay canvas
+                centerX: cx + cw / 2,
+                centerY: cy + ch / 2,
+                bgColor: r.bgColor || "#ffffff",
+                textColor: r.textColor || "#000000",
+                emphasis: !!r.emphasis,
+                speaker: r.speaker || null,
+                translated: translatedText,
+              };
+            });
+        }
+
+        req.log?.info(
+          { model: MODEL, attempt, regions: parsed.regions?.length ?? 0 },
+          "Image translation success"
         );
-        res.status(401).json({
-          error:
-            "API_KEY_INVALID: Your Gemini API key is not valid or has been revoked. " +
-            "Open Settings → AI Keys and add a working key, then try again.",
+        res.json(parsed);
+        return;
+      } catch (err: unknown) {
+        const anyErr = err as { status?: number; message?: string };
+
+        // ── Invalid API key — return 401 immediately, no retry ─────────────
+        // Gemini returns status 400 with reason API_KEY_INVALID when the key
+        // passed via X-Gemini-Key (or the shared fallback) is wrong/expired.
+        // Surfacing this as a clean 401 lets the client abort the queue at once
+        // instead of burning MAX_RETRIES attempts per page with a bad key.
+        if (
+          anyErr?.status === 400 &&
+          anyErr?.message?.includes("API_KEY_INVALID")
+        ) {
+          req.log?.error(
+            { model: MODEL, attempt },
+            "API_KEY_INVALID: aborting — key is not valid"
+          );
+          res.status(401).json({
+            error:
+              "API_KEY_INVALID: Your Gemini API key is not valid or has been revoked. " +
+              "Open Settings → AI Keys and add a working key, then try again.",
+          });
+          return;
+        }
+
+        if (anyErr?.status === 429) {
+          res.status(429).json({ error: "rate_limited", retryAfter: 70 });
+          return;
+        }
+
+        if (anyErr?.status === 503 && attempt < MAX_ATTEMPTS) {
+          const delay = attempt * 5000;
+          req.log?.warn(
+            { model: MODEL, attempt, delay },
+            `Gemini overloaded, retrying in ${delay}ms`
+          );
+          await sleep(delay);
+          continue;
+        }
+
+        const errMsg =
+          anyErr?.message ?? (err instanceof Error ? err.message : String(err));
+        req.log?.error(
+          { model: MODEL, attempt, err },
+          "Image translation failed"
+        );
+        res.status(500).json({
+          error: `Translation failed after ${attempt} attempt(s): ${errMsg}`,
         });
         return;
       }
-
-      if (anyErr?.status === 429) {
-        res.status(429).json({ error: "rate_limited", retryAfter: 70 });
-        return;
-      }
-
-      if (anyErr?.status === 503 && attempt < MAX_ATTEMPTS) {
-        const delay = attempt * 5000;
-        req.log?.warn(
-          { model: MODEL, attempt, delay },
-          `Gemini overloaded, retrying in ${delay}ms`
-        );
-        await sleep(delay);
-        continue;
-      }
-
-      const errMsg =
-        anyErr?.message ?? (err instanceof Error ? err.message : String(err));
-      req.log?.error({ model: MODEL, attempt, err }, "Image translation failed");
-      res.status(500).json({
-        error: `Translation failed after ${attempt} attempt(s): ${errMsg}`,
-      });
-      return;
     }
-  }
+  });
 });
 
 export default router;

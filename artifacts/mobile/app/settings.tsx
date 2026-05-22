@@ -255,6 +255,12 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleRemoveToken = (id: string) => {
+    removeToken(id);
+    // Reset input panel to empty state after any key is purged
+    setShowAddPanel(false);
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { paddingTop: topPadding + 12 }]}>
@@ -378,7 +384,7 @@ export default function SettingsScreen() {
                   token={token}
                   isActive={token.id === activeTokenId}
                   onActivate={() => setActiveToken(token.id)}
-                  onRemove={() => removeToken(token.id)}
+                  onRemove={() => handleRemoveToken(token.id)}
                   onClearLimit={() => clearRateLimit(token.id)}
                 />
               ))}
