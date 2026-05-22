@@ -1,3 +1,5 @@
+import { callInpaintServer } from "./inpaintClient";
+
 export interface TextRegion {
   original: string;
   translated: string;
@@ -35,6 +37,7 @@ interface QueueParams {
   targetLanguage: string;
   apiBase: string;
   userApiKey?: string | null;
+  inpaintServerUrl?: string | null;
   onPageTranslated: OnPageTranslated;
   onProgress: OnProgressUpdate;
   onComplete: (stats: { completed: number; failed: number }) => void;
@@ -79,6 +82,7 @@ class TranslationQueueManager {
       targetLanguage,
       apiBase,
       userApiKey,
+      inpaintServerUrl,
       onPageTranslated,
       onProgress,
       onComplete,
@@ -116,11 +120,19 @@ class TranslationQueueManager {
         if (this.abortController.signal.aborted) break;
 
         try {
+          // ── Decentralized HF inpaint server path ──────────────────────────
+          if (inpaintServerUrl) {
+            const result = await callInpaintServer(inpaintServerUrl, pageUrl, [], PAGE_TIMEOUT_MS);
+            onPageTranslated(i, result.regions, result.summary);
+            success = true;
+            completed++;
+            continue;
+          }
+
+          // ── Default local API path ─────────────────────────────────────────
           const headers: Record<string, string> = { "Content-Type": "application/json" };
           if (userApiKey) headers["X-Gemini-Key"] = userApiKey;
 
-          // Send the CDN URL directly — the server fetches and encodes it.
-          // This avoids client-side CORS/fetch issues with the manga CDN.
           const res = await fetchWithTimeout(
             `${apiBase}/api/translate-image`,
             {
@@ -135,8 +147,6 @@ class TranslationQueueManager {
           );
 
           if (res.status === 401) {
-            // Invalid API key — abort the entire queue immediately.
-            // Retrying with the same bad key wastes calls on every remaining page.
             let keyErrDetail = "Your Gemini API key is not valid. Open Settings → AI Keys and add a working key.";
             try {
               const body = await res.json();
@@ -149,7 +159,6 @@ class TranslationQueueManager {
 
           if (res.status === 429) {
             onRateLimited?.();
-            // Stop the whole queue — key is exhausted
             this.abortController?.abort();
             break;
           }

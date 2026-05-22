@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Linking from "expo-linking";
 import { router } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -17,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useSettings } from "@/context/SettingsContext";
 import { useTokens, GeminiToken, maskKey } from "@/context/TokenContext";
 import { useColors } from "@/hooks/useColors";
+import { useInpaintServer } from "@/hooks/useInpaintServer";
 
 type Language = { code: string; label: string };
 
@@ -199,10 +201,30 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { readerSettings, updateReaderSettings } = useSettings();
   const { tokens, activeTokenId, addToken, removeToken, setActiveToken, markRateLimited, clearRateLimit } = useTokens();
+  const { serverUrl, setServerUrl } = useInpaintServer();
   const [showAddPanel, setShowAddPanel] = useState(false);
+  const [serverUrlInput, setServerUrlInput] = useState(serverUrl);
+  const [serverUrlSaving, setServerUrlSaving] = useState(false);
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
   const bottomPadding = 40 + (Platform.OS === "web" ? 34 : insets.bottom);
+
+  React.useEffect(() => {
+    if (serverUrl) setServerUrlInput(serverUrl);
+  }, [serverUrl]);
+
+  const handleSaveServerUrl = async () => {
+    setServerUrlSaving(true);
+    await setServerUrl(serverUrlInput);
+    setServerUrlSaving(false);
+    Alert.alert("Saved", "Inpaint server URL has been saved.");
+  };
+
+  const handleOpenHFDeploy = () => {
+    Linking.openURL(
+      "https://huggingface.co/spaces/new?template=hamzalkhalofi1-netizen/mangaverse-inpaint-core"
+    );
+  };
 
   const handleAddKey = async (key: string, label: string) => {
     const result = await addToken(key, label || undefined);
@@ -374,6 +396,63 @@ export default function SettingsScreen() {
           )}
         </View>
 
+        {/* Inpaint Server */}
+        <View style={styles.section}>
+          <SectionLabel title="Inpaint Server" />
+          <Text style={[styles.keysSubtitle, { color: colors.mutedForeground }]}>
+            Connect your own private OpenCV inpainting backend hosted on Hugging Face Spaces for faster, decentralized processing.
+          </Text>
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, padding: 14, gap: 10 }]}>
+            <Text style={[styles.rowLabel, { color: colors.foreground }]}>Server URL</Text>
+            <TextInput
+              value={serverUrlInput}
+              onChangeText={setServerUrlInput}
+              placeholder="https://your-space.hf.space"
+              placeholderTextColor={colors.mutedForeground}
+              style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.muted }]}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+            />
+            <Pressable
+              onPress={handleSaveServerUrl}
+              disabled={serverUrlSaving || !serverUrlInput.trim()}
+              style={[
+                styles.addBtn,
+                {
+                  backgroundColor: serverUrlInput.trim() ? colors.primary : colors.muted,
+                  opacity: serverUrlSaving ? 0.7 : 1,
+                },
+              ]}
+            >
+              {serverUrlSaving ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.addBtnText}>Save Server URL</Text>
+              )}
+            </Pressable>
+          </View>
+
+          <Pressable
+            onPress={handleOpenHFDeploy}
+            style={[
+              styles.deployBtn,
+              { backgroundColor: `${colors.primary}18`, borderColor: colors.primary },
+            ]}
+          >
+            <Ionicons name="rocket-outline" size={20} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.deployBtnTitle, { color: colors.primary }]}>
+                Create Your Free Inpaint Server
+              </Text>
+              <Text style={[styles.deployBtnSub, { color: colors.mutedForeground }]}>
+                One-click deploy on Hugging Face Spaces
+              </Text>
+            </View>
+            <Ionicons name="open-outline" size={16} color={colors.primary} />
+          </Pressable>
+        </View>
+
         {/* About */}
         <View style={styles.section}>
           <SectionLabel title="About" />
@@ -491,4 +570,15 @@ const styles = StyleSheet.create({
   cancelBtn: { alignItems: "center", paddingVertical: 10 },
   cancelBtnText: { fontSize: 13 },
   disclaimer: { fontSize: 11, lineHeight: 16, textAlign: "center" },
+  deployBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  deployBtnTitle: { fontSize: 14, fontWeight: "600" as const },
+  deployBtnSub: { fontSize: 11, marginTop: 2 },
 });

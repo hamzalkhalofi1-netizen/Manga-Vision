@@ -32,6 +32,8 @@ import {
   OnPageTranslated,
 } from "@/services/translationQueue";
 import { useTokens } from "@/context/TokenContext";
+import { useInpaintServer } from "@/hooks/useInpaintServer";
+import { callInpaintServer } from "@/services/inpaintClient";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -57,6 +59,7 @@ export default function ReaderScreen() {
   const { readerSettings, updateReaderSettings, incrementTranslationCount } =
     useSettings();
   const { tokens, activeTokenId, markRateLimited } = useTokens();
+  const { serverUrl: inpaintServerUrl } = useInpaintServer();
 
   // Always compute the live active key directly from state — no closure risk
   const getLiveKey = (): string | null => {
@@ -232,43 +235,55 @@ export default function ReaderScreen() {
     setShowControls(false);
 
     try {
-      const userKey = getLiveKey();
-      const reqHeaders: Record<string, string> = { "Content-Type": "application/json" };
-      if (userKey) reqHeaders["X-Gemini-Key"] = userKey;
+      let regions: TextRegion[] = [];
+      let summary = "";
 
-      const res = await new Promise<Response>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("Request timed out")), 60000);
-        fetch(`${apiBase}/api/translate-image`, {
-          method: "POST",
-          headers: reqHeaders,
-          body: JSON.stringify({
-            imageUrl: pageUrl,
-            targetLanguage: readerSettings.targetLanguage,
-          }),
-        }).then(
-          (r) => { clearTimeout(timer); resolve(r); },
-          (e) => { clearTimeout(timer); reject(e); }
-        );
-      });
+      if (inpaintServerUrl) {
+        // ── Decentralized HF inpaint server ──────────────────────────────────
+        const result = await callInpaintServer(inpaintServerUrl, pageUrl, [], 90_000);
+        regions = result.regions;
+        summary = result.summary;
+      } else {
+        // ── Default local API ─────────────────────────────────────────────────
+        const userKey = getLiveKey();
+        const reqHeaders: Record<string, string> = { "Content-Type": "application/json" };
+        if (userKey) reqHeaders["X-Gemini-Key"] = userKey;
 
-      if (res.status === 429 && activeTokenId) {
-        markRateLimited(activeTokenId, 70_000);
-        showBanner("API key rate limited. Add another key in Settings.");
-        return;
+        const res = await new Promise<Response>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error("Request timed out")), 60000);
+          fetch(`${apiBase}/api/translate-image`, {
+            method: "POST",
+            headers: reqHeaders,
+            body: JSON.stringify({
+              imageUrl: pageUrl,
+              targetLanguage: readerSettings.targetLanguage,
+            }),
+          }).then(
+            (r) => { clearTimeout(timer); resolve(r); },
+            (e) => { clearTimeout(timer); reject(e); }
+          );
+        });
+
+        if (res.status === 429 && activeTokenId) {
+          markRateLimited(activeTokenId, 70_000);
+          showBanner("API key rate limited. Add another key in Settings.");
+          return;
+        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = await res.json();
+        regions = data.regions ?? [];
+        summary = data.summary ?? "";
       }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-      const data = await res.json();
-      const regions: TextRegion[] = data.regions ?? [];
 
       setPageTranslations((prev) => ({ ...prev, [idx]: regions }));
       setOverlayVisible(true);
       incrementTranslationCount();
 
       if (regions.length === 0) {
-        showBanner(data.summary ?? "No text detected on this page.");
+        showBanner(summary || "No text detected on this page.");
       } else {
-        showBanner(`Found ${regions.length} text region${regions.length > 1 ? "s" : ""}. ${data.summary ?? ""}`);
+        showBanner(`Found ${regions.length} text region${regions.length > 1 ? "s" : ""}. ${summary}`);
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -282,6 +297,7 @@ export default function ReaderScreen() {
     pages,
     pageTranslations,
     apiBase,
+    inpaintServerUrl,
     readerSettings.targetLanguage,
     incrementTranslationCount,
     showBanner,
@@ -315,6 +331,7 @@ export default function ReaderScreen() {
       targetLanguage: readerSettings.targetLanguage,
       apiBase,
       userApiKey: getLiveKey(),
+      inpaintServerUrl: inpaintServerUrl || null,
       onPageTranslated,
       onProgress: (progress) => {
         setQueueProgress(progress);
