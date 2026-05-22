@@ -1,5 +1,4 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "GvE6R9Q1Jt1UmlaWuqezR"
@@ -12,3 +11,9 @@ id = "NvboVZYry7De_dSCcR0Ij"
 uri = "file://artifacts/mobile/assets/images/splash.png"
 type = "image"
 title = "generated_image"
+
+[[outputs]]
+id = "N4I6iF4QQzMe63sXycIgH"
+uri = "file://hf-deploy/mangaverse-hf-deploy.tar.gz"
+type = "unspecified"
+title = "mangaverse-hf-deploy.tar.gz — All 4 files ready to commit"
