@@ -18,6 +18,7 @@ import { Platform, StyleSheet, Text, View } from "react-native";
 import type { TextRegion } from "./MangaPage";
 import { scaleFontToFit, scaleSFXFont } from "./DynamicFontScaler";
 import { resolveFromCss, resolveFromGeminiTextColor } from "./AdaptiveTextColorEngine";
+import { ARABIC_FONT_FAMILY } from "./ArabicTypesettingEngine";
 
 interface Props {
   regions:  TextRegion[];
@@ -175,13 +176,17 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
                     fontSize:      typeset.fontSize,
                     lineHeight:    typeset.lineHeight,
                     color:         colorProfile.color,
+                    fontFamily:    ARABIC_FONT_FAMILY,
                     fontWeight:    isSFX     ? "900" : "700",
                     fontStyle:     isThought ? "italic" : "normal",
-                    letterSpacing: isSFX ? 0.5 : 0,
+                    // Arabic MUST be 0 — any positive tracking breaks glyph joining
+                    letterSpacing: 0,
                     ...Platform.select({
                       web: {
-                        textShadow: `0px 0px ${colorProfile.shadowRadius}px ${colorProfile.shadowColor}`,
-                      },
+                        textShadow:          `0px 0px ${colorProfile.shadowRadius}px ${colorProfile.shadowColor}`,
+                        WebkitFontSmoothing: "antialiased",
+                        textRendering:       "optimizeLegibility",
+                      } as object,
                       default: {
                         textShadowColor:  colorProfile.shadowColor,
                         textShadowOffset: { width: 0, height: 0 },

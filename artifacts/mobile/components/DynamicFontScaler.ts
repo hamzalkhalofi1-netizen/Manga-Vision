@@ -5,11 +5,19 @@
  * Tries sizes from largest to smallest until text fits within the OCR bbox
  * safe zone (80% of bubble dims).
  *
+ * Uses measureLine() from ArabicTypesettingEngine for accurate block-width
+ * checks — Canvas.measureText() on web, calibrated heuristic on native.
+ *
  * Ladder: 18 → 16 → 14 → 12
  * Hard floor: 12 px (accepted even if still overflowing)
  */
 
-import { splitArabicText, estimateTextHeight, getSafeZone } from "./ArabicTypesettingEngine";
+import {
+  splitArabicText,
+  estimateTextHeight,
+  getSafeZone,
+  measureLine,
+} from "./ArabicTypesettingEngine";
 
 const FONT_SIZE_LADDER = [18, 16, 14, 12] as const;
 const LINE_HEIGHT_RATIO = 1.45;
@@ -18,10 +26,6 @@ export interface ScaledTypeset {
   fontSize:   number;
   lines:      string[];
   lineHeight: number;
-}
-
-function estimateLineWidth(line: string, fontSize: number): number {
-  return line.length * fontSize * 0.62;
 }
 
 /**
@@ -35,16 +39,17 @@ export function scaleFontToFit(
   const { safeW, safeH } = getSafeZone(bubbleW, bubbleH);
 
   for (const fontSize of FONT_SIZE_LADDER) {
-    const lines   = splitArabicText(text, safeW, fontSize);
-    const blockW  = Math.max(...lines.map((l) => estimateLineWidth(l, fontSize)));
-    const blockH  = estimateTextHeight(lines.length, fontSize, LINE_HEIGHT_RATIO);
+    const lines  = splitArabicText(text, safeW, fontSize);
+    // Use real font metrics for block-width check
+    const blockW = Math.max(...lines.map((l) => measureLine(l, fontSize)));
+    const blockH = estimateTextHeight(lines.length, fontSize, LINE_HEIGHT_RATIO);
 
     if (blockW <= safeW && blockH <= safeH) {
       return { fontSize, lines, lineHeight: fontSize * LINE_HEIGHT_RATIO };
     }
   }
 
-  // Hard floor
+  // Hard floor — 12 px accepted even if technically overflowing
   const fallback = splitArabicText(text, safeW, 12);
   return { fontSize: 12, lines: fallback, lineHeight: 12 * LINE_HEIGHT_RATIO };
 }
@@ -62,7 +67,7 @@ export function scaleSFXFont(
 
   for (const fontSize of sfxLadder) {
     const lines  = splitArabicText(text, safeW, fontSize);
-    const blockW = Math.max(...lines.map((l) => estimateLineWidth(l, fontSize)));
+    const blockW = Math.max(...lines.map((l) => measureLine(l, fontSize)));
     const blockH = estimateTextHeight(lines.length, fontSize, 1.2);
 
     if (blockW <= safeW && blockH <= safeH) {
