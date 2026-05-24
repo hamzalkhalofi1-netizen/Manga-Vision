@@ -9,6 +9,7 @@ import React, {
 
 export type ReadingMode = "vertical" | "horizontal";
 export type TargetLanguage = "en" | "es" | "pt" | "fr" | "de" | "ja" | "ko" | "zh" | "ar";
+export type ThemeMode = "auto" | "light" | "dark";
 
 export interface ReaderSettings {
   readingMode: ReadingMode;
@@ -24,6 +25,9 @@ interface SettingsContextType {
   setActiveSourceId: (id: string) => void;
   translationCount: number;
   incrementTranslationCount: () => void;
+  // Theme
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
 }
 
 const DEFAULT_SETTINGS: ReaderSettings = {
@@ -33,28 +37,34 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   showPageNumber: true,
 };
 
-const SETTINGS_KEY = "mangaverse_settings";
-const SOURCE_KEY = "mangaverse_source";
+const SETTINGS_KEY        = "mangaverse_settings";
+const SOURCE_KEY          = "mangaverse_source";
 const TRANSLATION_COUNT_KEY = "mangaverse_translations";
+const THEME_KEY           = "mangaverse_theme";
 
-const SettingsContext = createContext<SettingsContextType | null>(null);
+export const SettingsContext = createContext<SettingsContextType | null>(null);
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [readerSettings, setReaderSettings] = useState<ReaderSettings>(DEFAULT_SETTINGS);
   const [activeSourceId, setActiveSourceIdState] = useState("mangadex");
   const [translationCount, setTranslationCount] = useState(0);
+  const [themeMode, setThemeModeState] = useState<ThemeMode>("auto");
 
   useEffect(() => {
     async function load() {
       try {
-        const [settingsRaw, sourceRaw, countRaw] = await Promise.all([
+        const [settingsRaw, sourceRaw, countRaw, themeRaw] = await Promise.all([
           AsyncStorage.getItem(SETTINGS_KEY),
           AsyncStorage.getItem(SOURCE_KEY),
           AsyncStorage.getItem(TRANSLATION_COUNT_KEY),
+          AsyncStorage.getItem(THEME_KEY),
         ]);
         if (settingsRaw) setReaderSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(settingsRaw) });
         if (sourceRaw) setActiveSourceIdState(sourceRaw);
         if (countRaw) setTranslationCount(parseInt(countRaw, 10) || 0);
+        if (themeRaw && ["auto", "light", "dark"].includes(themeRaw)) {
+          setThemeModeState(themeRaw as ThemeMode);
+        }
       } catch {}
     }
     load();
@@ -81,6 +91,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const setThemeMode = useCallback((mode: ThemeMode) => {
+    setThemeModeState(mode);
+    AsyncStorage.setItem(THEME_KEY, mode);
+  }, []);
+
   return (
     <SettingsContext.Provider
       value={{
@@ -90,6 +105,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         setActiveSourceId,
         translationCount,
         incrementTranslationCount,
+        themeMode,
+        setThemeMode,
       }}
     >
       {children}

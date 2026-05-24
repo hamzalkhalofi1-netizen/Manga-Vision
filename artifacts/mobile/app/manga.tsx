@@ -126,6 +126,14 @@ export default function MangaScreen() {
 
   const startReading = (chapter: Chapter) => {
     if (!manga) return;
+    const chapterIndex = chapters.findIndex((c) => c.id === chapter.id);
+    // Pass a slim chapters list (id, number, title only) for in-reader navigation.
+    // Limit to 300 chapters to keep the param size reasonable.
+    const slim = chapters.slice(0, 300).map((c) => ({
+      id: c.id,
+      number: c.number,
+      title: c.title,
+    }));
     router.push({
       pathname: "/reader",
       params: {
@@ -134,6 +142,8 @@ export default function MangaScreen() {
         chapterNum: chapter.number,
         mangaTitle: manga.title,
         sourceId,
+        chapterIndex: String(chapterIndex),
+        chaptersJson: JSON.stringify(slim),
       },
     });
   };

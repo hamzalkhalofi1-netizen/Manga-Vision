@@ -1,24 +1,37 @@
+import { useContext } from "react";
 import { useColorScheme } from "react-native";
-
 import colors from "@/constants/colors";
 
+// Import the context object directly — NOT the throwing useSettings() hook —
+// so we can do a null-safe check. ErrorFallback calls useColors() while sitting
+// outside the SettingsProvider tree, so we must handle ctx === null gracefully.
+import { SettingsContext } from "@/context/SettingsContext";
+
 /**
- * Returns the design tokens for the current color scheme.
+ * useColors — returns design tokens for the active theme.
  *
- * The returned object contains all color tokens for the active palette
- * plus scheme-independent values like `radius`.
+ * Theme resolution order:
+ *   1. SettingsContext.themeMode ('light' | 'dark') — manual user override
+ *   2. 'auto' → OS color scheme via useColorScheme()
+ *   3. Fallback to 'dark' (app default, and ErrorFallback safe-path)
  *
- * Falls back to the light palette when no dark key is defined in
- * constants/colors.ts (the scaffold ships light-only by default).
- * When a sibling web artifact's dark tokens are synced into a `dark`
- * key, this hook will automatically switch palettes based on the
- * device's appearance setting.
+ * Null-safe: works even when rendered outside SettingsProvider
+ * (e.g., the global ErrorFallback boundary component).
  */
 export function useColors() {
-  const scheme = useColorScheme();
+  const osScheme = useColorScheme();
+  const ctx = useContext(SettingsContext);
+  const themeMode = ctx?.themeMode ?? "auto";
+
+  const resolved =
+    themeMode === "auto"
+      ? (osScheme ?? "dark")
+      : themeMode;
+
   const palette =
-    scheme === "dark" && "dark" in colors
+    resolved === "dark" && "dark" in colors
       ? (colors as unknown as Record<string, typeof colors.light>).dark
       : colors.light;
+
   return { ...palette, radius: colors.radius };
 }

@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { callInpaintServer } from "./inpaintClient";
 
 export interface TextRegion {
@@ -49,23 +50,84 @@ const DELAY_BETWEEN_MS = 1500;
 const MAX_RETRIES = 2;
 const PAGE_TIMEOUT_MS = 60_000;
 
-// ── Client-side page translation cache ────────────────────────────────────────
+// ── Persistent page translation cache ─────────────────────────────────────────
+//
+// Two-layer cache:
+//   1. In-memory Map<string, CachedPage> for instant lookups this session
+//   2. AsyncStorage persistence so translations survive app restarts
 //
 // Keyed by `${pageUrl}|${targetLanguage}`.
-// Persists for the full app session — if the user navigates away and comes
-// back to the same chapter, already-translated pages are served instantly
-// without any network call.
+// Max 60 entries stored (FIFO eviction on the stored list).
 
 interface CachedPage {
   regions: TextRegion[];
   summary: string;
 }
 
+const CACHE_STORAGE_KEY = "@mangaverse_tc_v2";
+const CACHE_MAX_STORED  = 60;
+
 const pageCache = new Map<string, CachedPage>();
 
-function pageCacheKey(url: string, lang: string): string {
+let _cacheHydrated = false;
+let _hydratePromise: Promise<void> | null = null;
+
+/** Load stored translations into the in-memory cache (called once on first use). */
+async function hydrateCache(): Promise<void> {
+  if (_cacheHydrated) return;
+  if (_hydratePromise) return _hydratePromise;
+
+  _hydratePromise = (async () => {
+    try {
+      const raw = await AsyncStorage.getItem(CACHE_STORAGE_KEY);
+      if (raw) {
+        const entries: Array<[string, CachedPage]> = JSON.parse(raw);
+        for (const [key, value] of entries) {
+          if (!pageCache.has(key)) {
+            pageCache.set(key, value);
+          }
+        }
+      }
+    } catch {}
+    _cacheHydrated = true;
+  })();
+
+  return _hydratePromise;
+}
+
+// Debounced write — batches rapid cache updates into a single AsyncStorage write.
+let _saveTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleSave(): void {
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(async () => {
+    try {
+      // Keep only the newest CACHE_MAX_STORED entries (oldest-first insertion order)
+      const entries = Array.from(pageCache.entries()).slice(-CACHE_MAX_STORED);
+      await AsyncStorage.setItem(CACHE_STORAGE_KEY, JSON.stringify(entries));
+    } catch {}
+  }, 2000);
+}
+
+function cacheKey(url: string, lang: string): string {
   return `${url}|${lang}`;
 }
+
+/** Clear all cached translations — both in-memory and on disk. */
+export async function clearTranslationCache(): Promise<void> {
+  pageCache.clear();
+  _cacheHydrated = false;
+  _hydratePromise = null;
+  try {
+    await AsyncStorage.removeItem(CACHE_STORAGE_KEY);
+  } catch {}
+}
+
+/** Return the number of entries currently in the in-memory cache. */
+export function getTranslationCacheSize(): number {
+  return pageCache.size;
+}
+
+// ── Queue ──────────────────────────────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -111,6 +173,9 @@ class TranslationQueueManager {
     let completed = 0;
     let failed = 0;
 
+    // Ensure the persistent cache is hydrated before the queue starts
+    await hydrateCache();
+
     const emit = (currentIndex: number | null) => {
       onProgress({
         total: pages.length,
@@ -134,14 +199,14 @@ class TranslationQueueManager {
       const pageUrl = pages[i];
       let success = false;
 
-      // ── Client-side cache check ─────────────────────────────────────────────
-      const cacheKey = pageCacheKey(pageUrl, targetLanguage);
-      const cached = pageCache.get(cacheKey);
+      // ── Cache hit — serve instantly, no network call ───────────────────────
+      const key = cacheKey(pageUrl, targetLanguage);
+      const cached = pageCache.get(key);
       if (cached) {
         onPageTranslated(i, cached.regions, cached.summary);
         success = true;
         completed++;
-        // No delay needed — no API call was made
+        // No delay — no API call was made
         continue;
       }
 
@@ -152,7 +217,8 @@ class TranslationQueueManager {
           // ── Decentralized HF inpaint server path ──────────────────────────
           if (inpaintServerUrl) {
             const result = await callInpaintServer(inpaintServerUrl, pageUrl, [], PAGE_TIMEOUT_MS);
-            pageCache.set(cacheKey, { regions: result.regions, summary: result.summary });
+            pageCache.set(key, { regions: result.regions, summary: result.summary });
+            scheduleSave();
             onPageTranslated(i, result.regions, result.summary);
             success = true;
             completed++;
@@ -207,11 +273,11 @@ class TranslationQueueManager {
           const regions: TextRegion[] = data.regions?.length > 0 ? data.regions : [];
           const summary: string = data.summary ?? "";
 
-          // Store in client cache so repeat visits skip the API call entirely
-          pageCache.set(cacheKey, { regions, summary });
+          // Persist to in-memory cache and schedule a disk save
+          pageCache.set(key, { regions, summary });
+          scheduleSave();
 
           onPageTranslated(i, regions, summary);
-
           success = true;
           completed++;
         } catch (err) {
@@ -226,7 +292,7 @@ class TranslationQueueManager {
         }
       }
 
-      // Wait between pages to avoid RESOURCE_EXHAUSTED from Gemini
+      // Inter-page delay to avoid Gemini RESOURCE_EXHAUSTED
       if (!this.abortController.signal.aborted && i < pages.length - 1) {
         await sleep(DELAY_BETWEEN_MS);
       }

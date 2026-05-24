@@ -12,7 +12,6 @@ import {
   ActivityIndicator,
   Dimensions,
   FlatList,
-  Modal,
   Platform,
   Pressable,
   StyleSheet,
@@ -24,6 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useLibrary } from "@/context/LibraryContext";
 import { useSettings } from "@/context/SettingsContext";
 import { useColors } from "@/hooks/useColors";
+import { AppErrorModal, classifyError } from "@/components/AppErrorModal";
 import { getSource } from "@/services/sources";
 import MangaPage, { TextRegion } from "@/components/MangaPage";
 import {
@@ -54,7 +54,34 @@ export default function ReaderScreen() {
     chapterNum: string;
     mangaTitle: string;
     sourceId: string;
+    // Chapter navigation (passed from manga.tsx)
+    chapterIndex: string;
+    chaptersJson: string;
   }>();
+
+  // ── Minimal chapter shape for in-reader navigation ────────────────────────
+  type NavChapter = { id: string; number: string; title?: string };
+
+  // Parse + sort chapters ascending by chapter number so next/prev are intuitive.
+  const chaptersForNav = React.useMemo<NavChapter[]>(() => {
+    if (!params.chaptersJson) return [];
+    try {
+      const raw: NavChapter[] = JSON.parse(params.chaptersJson);
+      return [...raw].sort((a, b) => parseFloat(a.number) - parseFloat(b.number));
+    } catch {
+      return [];
+    }
+  }, [params.chaptersJson]);
+
+  // Active chapter state — overrides params when user navigates next/prev.
+  const [activeChapterId, setActiveChapterId] = useState(params.chapterId);
+  const [activeChapterNum, setActiveChapterNum] = useState(params.chapterNum);
+
+  const currentNavIdx = chaptersForNav.findIndex((c) => c.id === activeChapterId);
+  const prevChapter = currentNavIdx > 0 ? chaptersForNav[currentNavIdx - 1] : null;
+  const nextChapter = currentNavIdx >= 0 && currentNavIdx < chaptersForNav.length - 1
+    ? chaptersForNav[currentNavIdx + 1]
+    : null;
 
   const { readerSettings, updateReaderSettings, incrementTranslationCount } =
     useSettings();
@@ -117,20 +144,23 @@ export default function ReaderScreen() {
   const apiBase = `https://${process.env.EXPO_PUBLIC_DOMAIN}`;
 
   // ─── Load pages ────────────────────────────────────────────────────────────
+  // Depends on activeChapterId (state), not params.chapterId, so next/prev
+  // chapter navigation triggers a fresh load without remounting the screen.
   useEffect(() => {
-    if (!params.chapterId) return;
+    if (!activeChapterId) return;
     const source = getSource(params.sourceId || "mangadex");
 
     setLoading(true);
     setLoadError(null);
     setPages([]);
     setCurrentPage(0);
+    currentPageRef.current = 0;
     setPageTranslations({});
     setQueueProgress(null);
     translationQueue.cancel();
 
     source
-      .getChapterPages(params.chapterId)
+      .getChapterPages(activeChapterId)
       .then((p) => {
         const valid = (p || []).filter(
           (u) => typeof u === "string" && u.startsWith("http")
@@ -139,19 +169,23 @@ export default function ReaderScreen() {
           setLoadError("No pages found for this chapter.");
         } else {
           setPages(valid);
+          // Scroll to top when chapter changes
+          setTimeout(() => {
+            flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+          }, 50);
         }
       })
       .catch(() => setLoadError("Failed to load chapter. Please try again."))
       .finally(() => setLoading(false));
-  }, [params.chapterId, params.sourceId]);
+  }, [activeChapterId, params.sourceId]);
 
   // ─── Save reading progress ─────────────────────────────────────────────────
   useEffect(() => {
-    if (params.mangaId && params.chapterId && params.chapterNum) {
+    if (params.mangaId && activeChapterId && activeChapterNum) {
       saveProgress({
         mangaId: params.mangaId,
-        chapterId: params.chapterId,
-        chapterNum: params.chapterNum,
+        chapterId: activeChapterId,
+        chapterNum: activeChapterNum,
         pageIndex: currentPage,
         timestamp: Date.now(),
       });
@@ -159,8 +193,8 @@ export default function ReaderScreen() {
   }, [
     currentPage,
     params.mangaId,
-    params.chapterId,
-    params.chapterNum,
+    activeChapterId,
+    activeChapterNum,
     saveProgress,
   ]);
 
@@ -365,6 +399,15 @@ export default function ReaderScreen() {
     markRateLimited,
   ]);
 
+  // ─── Chapter navigation (in-place, no remount) ────────────────────────────
+  const handleGoToChapter = useCallback((chapter: { id: string; number: string }) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setActiveChapterId(chapter.id);
+    setActiveChapterNum(chapter.number);
+    setShowControls(true);
+    resetControlsTimer();
+  }, [resetControlsTimer]);
+
   // ─── Toggle reading mode ───────────────────────────────────────────────────
   const toggleMode = useCallback(() => {
     updateReaderSettings({
@@ -455,7 +498,43 @@ export default function ReaderScreen() {
             ? (_, i) => ({ length: SCREEN_W, offset: SCREEN_W * i, index: i })
             : undefined
         }
-        ListFooterComponent={isVertical ? <View style={{ height: 80 }} /> : null}
+        ListFooterComponent={isVertical ? (
+          <View>
+            <View style={{ height: 48 }} />
+            {/* End-of-chapter card */}
+            <View style={styles.chapterEndCard}>
+              <View style={styles.chapterEndDivider} />
+              <Text style={styles.chapterEndLabel}>End of Chapter {activeChapterNum}</Text>
+              {nextChapter ? (
+                <Pressable
+                  onPress={() => handleGoToChapter(nextChapter)}
+                  style={styles.chapterEndBtn}
+                >
+                  <View style={styles.chapterEndBtnInner}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.chapterEndBtnSub}>NEXT CHAPTER</Text>
+                      <Text style={styles.chapterEndBtnTitle} numberOfLines={2}>
+                        Ch. {nextChapter.number}{nextChapter.title ? ` — ${nextChapter.title}` : ""}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={22} color="#fff" />
+                  </View>
+                </Pressable>
+              ) : (
+                <View style={styles.endOfSeriesBox}>
+                  <Text style={styles.endOfSeriesEmoji}>🎉</Text>
+                  <Text style={styles.endOfSeriesTitle}>All caught up!</Text>
+                  <Text style={styles.endOfSeriesSub}>
+                    You've reached the latest chapter.{"\n"}Check back soon for updates.
+                  </Text>
+                  <Pressable onPress={() => router.back()} style={styles.endOfSeriesBtn}>
+                    <Text style={styles.endOfSeriesBtnTxt}>← Back to Manga</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          </View>
+        ) : null}
         style={styles.list}
       />
 
@@ -475,7 +554,7 @@ export default function ReaderScreen() {
               <Text style={styles.topTitle} numberOfLines={1}>
                 {params.mangaTitle}
               </Text>
-              <Text style={styles.topSub}>Ch. {params.chapterNum}</Text>
+              <Text style={styles.topSub}>Ch. {activeChapterNum}</Text>
             </View>
 
             {/* Translate Chapter button in top-right */}
@@ -642,29 +721,31 @@ export default function ReaderScreen() {
       )}
 
       {/* ── Error Modal ────────────────────────────────────────────────────── */}
-      <Modal
+      <AppErrorModal
         visible={errorModal.visible}
-        transparent
-        animationType="fade"
-        statusBarTranslucent
-        onRequestClose={dismissErrorModal}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalIcon}>⚠️</Text>
-              <Text style={styles.modalTitle}>{errorModal.title}</Text>
+        title={errorModal.title}
+        technicalMessage={errorModal.message}
+        onDismiss={dismissErrorModal}
+        category={classifyError(errorModal.message)}
+      />
+
+      {/* ── Horizontal mode: Next Chapter floating banner on last page ──────── */}
+      {!isVertical && nextChapter && currentPage === pages.length - 1 && pages.length > 0 && (
+        <Pressable
+          onPress={() => handleGoToChapter(nextChapter)}
+          style={styles.nextChapterFloating}
+        >
+          <View style={styles.nextChapterFloatingInner}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.nextChapterFloatingSub}>NEXT CHAPTER</Text>
+              <Text style={styles.nextChapterFloatingTitle} numberOfLines={1}>
+                Ch. {nextChapter.number}{nextChapter.title ? ` — ${nextChapter.title}` : ""}
+              </Text>
             </View>
-            <View style={styles.modalDivider} />
-            <Text style={styles.modalMessage} selectable>
-              {errorModal.message}
-            </Text>
-            <Pressable onPress={dismissErrorModal} style={styles.modalOkBtn}>
-              <Text style={styles.modalOkTxt}>OK</Text>
-            </Pressable>
+            <Ionicons name="arrow-forward-circle" size={28} color="#fff" />
           </View>
-        </View>
-      </Modal>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -818,62 +899,109 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.75)",
-    justifyContent: "center",
+  // ── Chapter end card styles ────────────────────────────────────────────────
+  chapterEndCard: {
+    paddingHorizontal: 20,
+    paddingBottom: 60,
+    gap: 16,
     alignItems: "center",
-    paddingHorizontal: 24,
   },
-  modalBox: {
+  chapterEndDivider: {
+    height: 1,
+    width: "60%",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    marginBottom: 4,
+  },
+  chapterEndLabel: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 12,
+    fontWeight: "600" as const,
+    letterSpacing: 0.5,
+  },
+  chapterEndBtn: {
     width: "100%",
-    maxWidth: 380,
-    backgroundColor: "#1a1a1a",
-    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
+    borderColor: "rgba(255,255,255,0.12)",
     overflow: "hidden",
   },
-  modalHeader: {
+  chapterEndBtnInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    gap: 12,
+  },
+  chapterEndBtnSub: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 10,
+    fontWeight: "700" as const,
+    letterSpacing: 1.2,
+    marginBottom: 4,
+  },
+  chapterEndBtnTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700" as const,
+    lineHeight: 20,
+  },
+  endOfSeriesBox: {
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 8,
+  },
+  endOfSeriesEmoji: { fontSize: 40 },
+  endOfSeriesTitle: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "700" as const,
+  },
+  endOfSeriesSub: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  endOfSeriesBtn: {
+    marginTop: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 12,
+  },
+  endOfSeriesBtnTxt: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600" as const,
+  },
+  // ── Horizontal next chapter floating banner ────────────────────────────────
+  nextChapterFloating: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: "rgba(0,0,0,0.92)",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.1)",
+    paddingBottom: 24,
+  },
+  nextChapterFloatingInner: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 14,
-    gap: 10,
+    paddingTop: 14,
+    gap: 12,
   },
-  modalIcon: {
-    fontSize: 20,
-  },
-  modalTitle: {
-    flex: 1,
-    color: "#fff",
-    fontSize: 16,
+  nextChapterFloatingSub: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 10,
     fontWeight: "700" as const,
-    lineHeight: 22,
+    letterSpacing: 1.2,
+    marginBottom: 3,
   },
-  modalDivider: {
-    height: 1,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    marginHorizontal: 0,
-  },
-  modalMessage: {
-    color: "#e84057",
-    fontSize: 13,
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    lineHeight: 20,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  modalOkBtn: {
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.08)",
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  modalOkTxt: {
-    color: "#e84057",
-    fontSize: 16,
+  nextChapterFloatingTitle: {
+    color: "#fff",
+    fontSize: 15,
     fontWeight: "700" as const,
   },
 });

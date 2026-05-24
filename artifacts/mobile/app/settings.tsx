@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Linking } from "react-native";
 import { router } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -15,10 +15,11 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useSettings } from "@/context/SettingsContext";
+import { useSettings, ThemeMode } from "@/context/SettingsContext";
 import { useTokens, GeminiToken, maskKey } from "@/context/TokenContext";
 import { useColors } from "@/hooks/useColors";
 import { useInpaintServer } from "@/hooks/useInpaintServer";
+import { clearTranslationCache, getTranslationCacheSize } from "@/services/translationQueue";
 
 type Language = { code: string; label: string };
 
@@ -199,13 +200,19 @@ function AddKeyPanel({ onAdd, colors }: {
 export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { readerSettings, updateReaderSettings } = useSettings();
+  const { readerSettings, updateReaderSettings, themeMode, setThemeMode } = useSettings();
   const { tokens, activeTokenId, addToken, removeToken, setActiveToken, markRateLimited, clearRateLimit } = useTokens();
   const { serverUrl, setServerUrl } = useInpaintServer();
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [serverUrlInput, setServerUrlInput] = useState(serverUrl);
   const [serverUrlSaving, setServerUrlSaving] = useState(false);
   const [pingStatus, setPingStatus] = useState<"idle" | "checking" | "online" | "offline">("idle");
+  const [cacheSize, setCacheSize] = useState(0);
+  const [clearingCache, setClearingCache] = useState(false);
+
+  useEffect(() => {
+    setCacheSize(getTranslationCacheSize());
+  }, []);
 
   const handleCheckServer = async () => {
     const target = serverUrlInput.trim().replace(/\/$/, "");
@@ -257,8 +264,28 @@ export default function SettingsScreen() {
 
   const handleRemoveToken = (id: string) => {
     removeToken(id);
-    // Reset input panel to empty state after any key is purged
     setShowAddPanel(false);
+  };
+
+  const handleClearCache = async () => {
+    Alert.alert(
+      "Clear Translation Cache",
+      "This will delete all saved translations. Pages will need to be re-translated. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            setClearingCache(true);
+            await clearTranslationCache();
+            setCacheSize(0);
+            setClearingCache(false);
+            Alert.alert("Cache Cleared", "All saved translations have been removed.");
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -275,6 +302,40 @@ export default function SettingsScreen() {
         contentContainerStyle={{ paddingBottom: bottomPadding }}
         showsVerticalScrollIndicator={false}
       >
+        {/* Appearance */}
+        <View style={styles.section}>
+          <SectionLabel title="Appearance" />
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
+            <SettingRow
+              icon="contrast-outline"
+              label="Theme"
+              description={themeMode === "auto" ? "Follows system setting" : themeMode === "dark" ? "Always dark" : "Always light"}
+              right={
+                <View style={styles.toggleRow}>
+                  {(["auto", "light", "dark"] as ThemeMode[]).map((mode) => (
+                    <Pressable
+                      key={mode}
+                      onPress={() => setThemeMode(mode)}
+                      style={[
+                        styles.toggleOption,
+                        {
+                          backgroundColor: themeMode === mode ? colors.primary : "transparent",
+                          borderRadius: 8,
+                        },
+                      ]}
+                    >
+                      <Text style={{ color: themeMode === mode ? "#fff" : colors.mutedForeground, fontSize: 12, fontWeight: "500" as const }}>
+                        {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              }
+              last
+            />
+          </View>
+        </View>
+
         {/* Reader */}
         <View style={styles.section}>
           <SectionLabel title="Reader" />
@@ -335,6 +396,26 @@ export default function SettingsScreen() {
                   trackColor={{ false: colors.border, true: `${colors.primary}80` }}
                   thumbColor={readerSettings.dataSaver ? colors.primary : colors.mutedForeground}
                 />
+              }
+            />
+            <SettingRow
+              icon="layers-outline"
+              label="Translation Cache"
+              description={cacheSize > 0 ? `${cacheSize} page${cacheSize !== 1 ? "s" : ""} saved offline` : "No cached pages"}
+              right={
+                cacheSize > 0 ? (
+                  <Pressable
+                    onPress={handleClearCache}
+                    disabled={clearingCache}
+                    style={[styles.clearCacheBtn, { borderColor: "#ef4444", opacity: clearingCache ? 0.5 : 1 }]}
+                  >
+                    {clearingCache ? (
+                      <ActivityIndicator size="small" color="#ef4444" />
+                    ) : (
+                      <Text style={{ color: "#ef4444", fontSize: 12, fontWeight: "600" as const }}>Clear</Text>
+                    )}
+                  </Pressable>
+                ) : null
               }
               last
             />
@@ -626,6 +707,16 @@ const styles = StyleSheet.create({
   addBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" as const },
   cancelBtn: { alignItems: "center", paddingVertical: 10 },
   cancelBtnText: { fontSize: 13 },
+  clearCacheBtn: {
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+    minWidth: 56,
+    height: 32,
+  },
   disclaimer: { fontSize: 11, lineHeight: 16, textAlign: "center" },
   deployBtn: {
     flexDirection: "row",
