@@ -132,38 +132,32 @@ router.post("/", async (req, res) => {
     const isRTL = targetLanguage === "ar";
     const resolvedMime = finalMime as "image/jpeg" | "image/png" | "image/webp";
 
-    const prompt = `You are a professional manga/manhwa OCR, bubble detection, and localization engine.
+    const prompt = `You are a professional manga/manhwa OCR and translation engine.
 
-TASK: Analyze this manga/manhwa page. For EVERY piece of visible text — speech bubbles, thought bubbles, sound effects, signs, narration boxes — do ALL of the following:
+TASK: Analyze this manga/manhwa page. For EVERY visible piece of text — dialogue, sound effects, signs, narration — do ALL of the following:
 
-1. DETECT the speech bubble or text container boundary:
-   - polygon: array of exactly 4 [x, y] normalized coordinates (0.0–1.0), clockwise from top-left corner of the bubble body
-   - Trace the ACTUAL bubble shape, not just a bounding rectangle
-   - Exclude the tail/pointer — polygon should wrap the bubble body only
-   - For rectangular panels/signs, the polygon will be a rectangle
+1. LOCATE the text precisely:
+   - polygon: tight quadrilateral around the actual text characters (4 [x,y] normalized points, clockwise from top-left)
+   - x, y: top-left corner of the text area (normalized 0.0–1.0)
+   - w, h: width and height of the text area as fractions of the image size
+   Coordinates MUST wrap the TEXT GLYPHS ONLY — not the speech bubble outline.
 
-2. ALSO provide the bounding box (for fallback):
-   - x: left edge of bubble body (normalized, excluding tail)
-   - y: top edge of bubble body (normalized)
-   - w: width as fraction of image width
-   - h: height as fraction of image height
+2. DETECT the color immediately behind the text:
+   - bgColor: hex of the pixel area directly behind the text characters (e.g. "#ffffff" white, "#1a1a1a" dark)
+   - textColor: hex of the original text color (e.g. "#000000" black, "#ffffff" white)
 
-3. DETECT bubble colors from the actual image pixels:
-   - bgColor: hex of the bubble interior background (e.g. "#ffffff" white, "#1a1a1a" dark)
-   - textColor: the original text color (black on white bubbles, white on dark panels)
+3. CLASSIFY the rendering style:
+   - "speech":    dialogue inside a speech bubble
+   - "thought":   text inside a thought bubble
+   - "sfx":       large stylized sound effects
+   - "sign":      environmental labels, signs, titles
+   - "narration": rectangular caption/narration boxes
+   - "title":     chapter or volume title cards
 
-4. CLASSIFY the text type:
-   - "speech": normal dialogue in speech bubbles
-   - "thought": cloud/wavy thought bubbles
-   - "sfx": sound effects (large stylized text outside bubbles)
-   - "sign": environmental text (signs, labels, titles)
-   - "narration": rectangular narration boxes
-   - "title": chapter/volume title cards
-
-5. TRANSLATE original text to ${langName}:
+4. TRANSLATE to ${langName}:
    ${isRTL
-     ? "- Write natural, emotionally vivid Arabic. Manga-localized — NOT robotic or literal. Proper MSA with character voice and emotional flair.\n   - Sound effects: use Arabic SFX equivalents or transliterate creatively\n   - Keep exclamations, ellipses, emphasis intact"
-     : `- Use natural, idiomatic ${langName} — emotionally faithful, not literal\n   - Sound effects: use equivalent ${langName} SFX or transliterate\n   - Preserve exclamations, ellipses, emphasis`}
+     ? "- Natural, emotionally vivid Arabic — manga-localized, NOT robotic. Proper MSA with character voice and emotional flair.\n   - Sound effects: Arabic SFX equivalents or creative transliteration\n   - Preserve exclamations, ellipses, emphasis"
+     : `- Natural, idiomatic ${langName} — emotionally faithful, not literal\n   - Sound effects: equivalent ${langName} SFX or transliteration\n   - Preserve exclamations, ellipses, emphasis`}
 
 Return ONLY valid JSON — no markdown, no backticks, no commentary:
 {
@@ -184,11 +178,10 @@ Return ONLY valid JSON — no markdown, no backticks, no commentary:
   "summary": "One sentence describing what happens on this page."
 }
 
-CRITICAL RULES:
-- polygon MUST have exactly 4 points, each [normalized_x, normalized_y]
-- All coordinates must be in range 0.0 to 1.0
-- Do NOT merge separate bubbles into one region — every bubble is its own region
-- Do NOT split one bubble into multiple regions
+RULES:
+- polygon: exactly 4 [x,y] points wrapping the TEXT ONLY — never the bubble outline
+- All coordinates in range 0.0–1.0
+- Every separate text block is its own region — never merge distinct text areas
 - If no text found: { "found": false, "regions": [], "summary": "No text on this page" }`;
 
     const MODEL = "gemini-2.5-flash";

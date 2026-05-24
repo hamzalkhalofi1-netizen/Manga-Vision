@@ -1,39 +1,33 @@
 /**
- * SkiaOverlayCanvas — Professional manga overlay renderer.
+ * SkiaOverlayCanvas — Simple deterministic manga text overlay.
  *
- * Architecture:
- *   Layer 1 (SVG):   Polygon masks — precisely shaped to speech bubble contours,
- *                    semi-transparent, drawn using react-native-svg Path elements.
- *   Layer 2 (Views): Arabic text — absolutely positioned at polygon centroid,
- *                    rendered by the platform RTL engine (Core Text / HarfBuzz).
+ * Pipeline per OCR region (fully independent, no cross-region awareness):
+ *   1. Get tight pixel bounds from OCR data (polygon bbox → fallback to x/y/w/h)
+ *   2. Expand by a small fixed padding (PAD px)
+ *   3. Draw a lightweight rounded-rect mask using the text background color
+ *   4. Render translated text centered over the original text area
  *
- * Design principles:
- *   ✅ Polygon masks follow actual bubble shapes — not rectangles
- *   ✅ Smooth rounded corners via SVG quadratic bezier curves
- *   ✅ No AI whitening, no repainting, no pixel manipulation
- *   ✅ Each OCR region is completely independent — zero merging
- *   ✅ Arabic rendered by platform (Core Text on iOS, HarfBuzz on Android)
- *   ✅ letterSpacing MUST be 0 — any positive value breaks Arabic glyph joining
- *   ✅ Mask opacity calibrated to bubble luminance (light vs dark bubbles)
- *   ✅ Preserves original manga art, bubble borders, gradients, textures
+ * No bubble detection. No polygon geometry rendering. No region merging.
+ * No collision logic. No AI repainting. No perspective math.
+ * If polygon is invalid, falls back to bbox — never silently skips a region.
  */
 
 import React, { memo, useMemo } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
-import Svg, { Path } from "react-native-svg";
-import type { TextRegion, BubblePolygon } from "./MangaPage";
+import Svg, { Rect } from "react-native-svg";
+import type { TextRegion } from "./MangaPage";
 import { scaleFontToFit, scaleSFXFont } from "./DynamicFontScaler";
 import { resolveFromCss, resolveFromGeminiTextColor } from "./AdaptiveTextColorEngine";
 import { ARABIC_FONT_FAMILY } from "./ArabicTypesettingEngine";
 
 interface Props {
-  regions: TextRegion[];
+  regions:  TextRegion[];
   displayW: number;
   displayH: number;
-  isRTL?: boolean;
+  isRTL?:   boolean;
 }
 
-// ── Color utilities ────────────────────────────────────────────────────────────
+// ── Color ──────────────────────────────────────────────────────────────────────
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const h = hex.replace("#", "");
@@ -45,9 +39,11 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
 }
 
 /**
- * Derive mask fill color and opacity from the bubble's background color.
- * Light bubbles (white speech): high opacity to cleanly cover original text.
- * Dark bubbles (dark panels):   slightly lower opacity to preserve panel texture.
+ * maskFill — derive mask color and opacity from the background color
+ * immediately behind the text.
+ *
+ * Light backgrounds (white bubbles): high opacity to cover original glyphs.
+ * Dark backgrounds (dark panels):    lower opacity to preserve artwork texture.
  */
 function maskFill(bgColor: string): { color: string; opacity: number } {
   const rgb = hexToRgb(bgColor);
@@ -57,101 +53,53 @@ function maskFill(bgColor: string): { color: string; opacity: number } {
   return { color: `rgb(${rgb.r},${rgb.g},${rgb.b})`, opacity };
 }
 
-// ── Polygon → SVG path ────────────────────────────────────────────────────────
+// ── Bounds ─────────────────────────────────────────────────────────────────────
 
 /**
- * Convert normalized polygon coordinates to pixel coordinates.
- */
-function toPixelPts(
-  polygon: BubblePolygon,
-  w: number,
-  h: number
-): [number, number][] {
-  return polygon.map(([nx, ny]) => [nx * w, ny * h]);
-}
-
-/**
- * Build an SVG path string for a smooth rounded polygon.
+ * getTextBounds — compute the pixel-space center and size of an OCR text region.
  *
- * Algorithm:
- *   For each corner vertex V with neighbours Prev and Next:
- *     - Compute midpoint M1 of edge Prev→V
- *     - Compute midpoint M2 of edge V→Next
- *     - Line to M1, then quadratic bezier Q(V, M2)
- *   This produces naturally rounded corners that follow the bubble contour
- *   without introducing any artificial rectangular shapes.
+ * Priority:
+ *   1. Polygon bounding box — most accurate, derived from tight text-glyph coords
+ *   2. x / y / w / h bbox   — always-available fallback
  *
- * Adaptive corner softness: corner radius scales with polygon area so
- * small bubbles get tight corners and large ones get natural smooth curves.
+ * Returns null only if both sources produce a degenerate (near-zero) box.
  */
-function roundedPolygonPath(pts: [number, number][]): string {
-  const n = pts.length;
-  if (n < 3) return "";
+function getTextBounds(
+  region: TextRegion,
+  displayW: number,
+  displayH: number
+): { cx: number; cy: number; w: number; h: number } | null {
+  let cx: number, cy: number, bw: number, bh: number;
 
-  function mid(
-    a: [number, number],
-    b: [number, number]
-  ): [number, number] {
-    return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  if (region.polygon && region.polygon.length >= 3) {
+    // Derive axis-aligned bbox from the OCR polygon
+    const xs = region.polygon.map(([x]) => x * displayW);
+    const ys = region.polygon.map(([, y]) => y * displayH);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    bw = maxX - minX;
+    bh = maxY - minY;
+    cx = (minX + maxX) / 2;
+    cy = (minY + maxY) / 2;
+  } else {
+    // Fallback: use normalized x/y/w/h from the OCR response
+    bw = region.w * displayW;
+    bh = region.h * displayH;
+    cx = (region.centerX ?? region.x + region.w / 2) * displayW;
+    cy = (region.centerY ?? region.y + region.h / 2) * displayH;
   }
 
-  const mids: [number, number][] = pts.map((p, i) =>
-    mid(p, pts[(i + 1) % n])
-  );
-
-  let d = `M ${mids[0][0].toFixed(2)} ${mids[0][1].toFixed(2)} `;
-
-  for (let i = 0; i < n; i++) {
-    const corner = pts[(i + 1) % n];
-    const nextMid = mids[(i + 1) % n];
-    d += `Q ${corner[0].toFixed(2)} ${corner[1].toFixed(2)} ${nextMid[0].toFixed(2)} ${nextMid[1].toFixed(2)} `;
-  }
-
-  d += "Z";
-  return d;
-}
-
-/**
- * Derive a BubblePolygon from the region's bounding box when no polygon
- * is available (e.g. older cached data before the polygon field was added).
- */
-function bboxPolygon(r: TextRegion): BubblePolygon {
-  const { x, y, w, h } = r;
-  return [
-    [x, y],
-    [x + w, y],
-    [x + w, y + h],
-    [x, y + h],
-  ];
-}
-
-/**
- * Compute the centroid of a polygon (average of vertices).
- * For convex polygons this is the visual center — ideal for text placement.
- */
-function centroid(pts: [number, number][]): [number, number] {
-  const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
-  const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
-  return [cx, cy];
-}
-
-/**
- * Compute the axis-aligned bounding box of a set of pixel points.
- */
-function polyBbox(pts: [number, number][]): {
-  minX: number; minY: number; maxX: number; maxY: number;
-  w: number; h: number;
-} {
-  const xs = pts.map((p) => p[0]);
-  const ys = pts.map((p) => p[1]);
-  const minX = Math.min(...xs);
-  const minY = Math.min(...ys);
-  const maxX = Math.max(...xs);
-  const maxY = Math.max(...ys);
-  return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+  if (bw < 8 || bh < 6) return null;
+  return { cx, cy, w: bw, h: bh };
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
+
+/** Tight local padding around OCR text bounds. 4 px is enough to cover
+ *  antialiased glyph edges without expanding into surrounding art. */
+const PAD = 4;
 
 function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
   const items = useMemo(() => {
@@ -160,48 +108,42 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
         const text = region.translated?.trim();
         if (!text) return null;
 
-        // Resolve polygon — use provided data or fall back to bbox
-        const poly: BubblePolygon = region.polygon ?? bboxPolygon(region);
+        const bounds = getTextBounds(region, displayW, displayH);
+        if (!bounds) return null;
 
-        // Convert normalized → pixel coordinates
-        const pixelPts = toPixelPts(poly, displayW, displayH);
+        const { cx, cy, w, h } = bounds;
 
-        // Bounding box of the polygon for text sizing
-        const bbox = polyBbox(pixelPts);
-        if (bbox.w < 10 || bbox.h < 8) return null;
-
-        // Visual center for text placement
-        const [pcx, pcy] = centroid(pixelPts);
-
-        const isSFX = region.type === "sfx";
+        const isSFX     = region.type === "sfx";
         const isThought = region.type === "thought";
 
-        // Scale font to fit within the polygon's bounding box
+        // Scale font to fit within the detected text area
         const typeset = isSFX
-          ? scaleSFXFont(text, bbox.w, bbox.h)
-          : scaleFontToFit(text, bbox.w, bbox.h);
+          ? scaleSFXFont(text, w, h)
+          : scaleFontToFit(text, w, h);
 
-        // SVG polygon mask path
-        const maskPath = roundedPolygonPath(pixelPts);
+        // Mask: tight text bounds + PAD, clamped to display edges
+        const maskLeft = Math.max(0, cx - w / 2 - PAD);
+        const maskTop  = Math.max(0, cy - h / 2 - PAD);
+        const maskW    = Math.min(w + PAD * 2, displayW - maskLeft);
+        const maskH    = Math.min(h + PAD * 2, displayH - maskTop);
+        // Corner radius: gentle rounding, never exceeds 20% of height
+        const maskRx   = Math.min(5, maskH * 0.18);
 
-        // Mask color from Gemini-supplied bgColor
+        // Mask color from the background immediately behind the text
         const { color: maskColor, opacity: maskOpacity } = maskFill(
           region.bgColor ?? "#f5f5f0"
         );
 
-        // Text color — prefer Gemini's textColor, fall back to luminance detection
+        // Text color: use Gemini-supplied textColor when available
         const colorProfile = region.textColor
           ? resolveFromGeminiTextColor(region.textColor)
           : resolveFromCss(region.bgColor ?? "#ffffff");
 
         return {
           key: idx,
-          pcx,
-          pcy,
-          bbox,
-          maskPath,
-          maskColor,
-          maskOpacity,
+          cx, cy, w, h,
+          maskLeft, maskTop, maskW, maskH, maskRx,
+          maskColor, maskOpacity,
           typeset,
           renderedText: typeset.lines.join("\n"),
           colorProfile,
@@ -217,7 +159,7 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
   return (
     <View style={[styles.root, { pointerEvents: "none" }]}>
 
-      {/* ── Layer 1: SVG polygon masks ─────────────────────────────────────── */}
+      {/* ── Layer 1: Local rounded-rect readability masks ─────────────────── */}
       <Svg
         width={displayW}
         height={displayH}
@@ -226,25 +168,29 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
         {items.map((item) => {
           if (!item) return null;
           return (
-            <Path
+            <Rect
               key={`mask-${item.key}`}
-              d={item.maskPath}
+              x={item.maskLeft}
+              y={item.maskTop}
+              width={item.maskW}
+              height={item.maskH}
+              rx={item.maskRx}
+              ry={item.maskRx}
               fill={item.maskColor}
               fillOpacity={item.maskOpacity}
-              stroke="none"
             />
           );
         })}
       </Svg>
 
-      {/* ── Layer 2: Arabic text — rendered by platform RTL engine ─────────── */}
+      {/* ── Layer 2: Translated text — platform RTL engine ────────────────── */}
       {items.map((item) => {
         if (!item) return null;
-        const { key, pcx, pcy, bbox, typeset, renderedText, colorProfile, isSFX, isThought } = item;
-
-        // Text container centered on polygon centroid, sized to polygon bbox
-        const textW = bbox.w;
-        const textH = bbox.h;
+        const {
+          key, cx, cy, w, h,
+          typeset, renderedText, colorProfile,
+          isSFX, isThought,
+        } = item;
 
         return (
           <View
@@ -252,10 +198,10 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
             style={[
               styles.textBox,
               {
-                left: pcx - textW / 2,
-                top: pcy - textH / 2,
-                width: textW,
-                height: textH,
+                left:   cx - w / 2,
+                top:    cy - h / 2,
+                width:  w,
+                height: h,
                 pointerEvents: "none",
               },
             ]}
@@ -264,22 +210,22 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
               style={[
                 styles.label,
                 {
-                  fontSize: typeset.fontSize,
-                  lineHeight: typeset.lineHeight,
-                  color: colorProfile.color,
-                  fontFamily: ARABIC_FONT_FAMILY,
-                  fontWeight: isSFX ? "900" : "700",
-                  fontStyle: isThought ? "italic" : "normal",
-                  // Arabic MUST be 0 — any positive tracking breaks contextual glyph forms
+                  fontSize:      typeset.fontSize,
+                  lineHeight:    typeset.lineHeight,
+                  color:         colorProfile.color,
+                  fontFamily:    ARABIC_FONT_FAMILY,
+                  fontWeight:    isSFX     ? "900" : "700",
+                  fontStyle:     isThought ? "italic" : "normal",
+                  // Arabic MUST be 0 — any positive tracking breaks glyph joining
                   letterSpacing: 0,
                   ...Platform.select({
                     web: {
-                      textShadow: `0px 0px ${colorProfile.shadowRadius}px ${colorProfile.shadowColor}`,
+                      textShadow:          `0px 0px ${colorProfile.shadowRadius}px ${colorProfile.shadowColor}`,
                       WebkitFontSmoothing: "antialiased",
-                      textRendering: "optimizeLegibility",
+                      textRendering:       "optimizeLegibility",
                     } as object,
                     default: {
-                      textShadowColor: colorProfile.shadowColor,
+                      textShadowColor:  colorProfile.shadowColor,
                       textShadowOffset: { width: 0, height: 0 },
                       textShadowRadius: colorProfile.shadowRadius,
                     },
@@ -299,25 +245,22 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
 
 const styles = StyleSheet.create({
   root: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    position:        "absolute",
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: "transparent",
   },
   textBox: {
-    position: "absolute",
+    position:        "absolute",
     backgroundColor: "transparent",
-    justifyContent: "center",
-    alignItems: "center",
-    overflow: "hidden",
+    justifyContent:  "center",
+    alignItems:      "center",
+    overflow:        "hidden",
   },
   label: {
     includeFontPadding: false,
-    textAlignVertical: "center",
-    textAlign: "center",
-    writingDirection: "rtl",
+    textAlignVertical:  "center",
+    textAlign:          "center",
+    writingDirection:   "rtl",
   },
 });
 
