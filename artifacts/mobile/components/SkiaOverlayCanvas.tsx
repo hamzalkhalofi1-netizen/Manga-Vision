@@ -1,15 +1,24 @@
 /**
- * SkiaOverlayCanvas — Simple deterministic manga text overlay.
+ * SkiaOverlayCanvas — Glyph-tight deterministic manga text overlay.
  *
- * Pipeline per OCR region (fully independent, no cross-region awareness):
- *   1. Get tight pixel bounds from OCR data (polygon bbox → fallback to x/y/w/h)
- *   2. Expand by a small fixed padding (PAD px)
- *   3. Draw a lightweight rounded-rect mask using the text background color
- *   4. Render translated text centered over the original text area
+ * Pipeline per OCR region:
+ *   1. Extract placement center from OCR polygon bbox (or x/y/w/h fallback)
+ *   2. Layout translated text using the OCR width as a wrapping constraint
+ *   3. Measure ACTUAL rendered glyph extents line-by-line via measureLine()
+ *      → Canvas.measureText() on web (real glyph metrics)
+ *      → Calibrated Arabic heuristic on native (0.55 × fontSize × chars)
+ *   4. Draw a rounded-rect mask sized to the MEASURED glyph bounds + tiny PAD
+ *   5. Render translated text centered on the same measured bounds
  *
- * No bubble detection. No polygon geometry rendering. No region merging.
- * No collision logic. No AI repainting. No perspective math.
- * If polygon is invalid, falls back to bbox — never silently skips a region.
+ * Key invariant: mask size follows actual rendered text — not OCR bbox, not
+ * bubble size, not character count estimates.
+ *
+ *   small word   →  tiny mask
+ *   multi-line   →  mask grows to wrap rendered lines only
+ *
+ * No OpenCV. No contour detection. No bubble detection. No region merging.
+ * No AI repainting. No native CV dependencies.
+ * If polygon/bbox is invalid, falls back gracefully — never skips a region.
  */
 
 import React, { memo, useMemo } from "react";
@@ -17,6 +26,8 @@ import { Platform, StyleSheet, Text, View } from "react-native";
 import Svg, { Rect } from "react-native-svg";
 import type { TextRegion } from "./MangaPage";
 import { scaleFontToFit, scaleSFXFont } from "./DynamicFontScaler";
+import type { ScaledTypeset } from "./DynamicFontScaler";
+import { measureLine, estimateTextHeight } from "./ArabicTypesettingEngine";
 import { resolveFromCss, resolveFromGeminiTextColor } from "./AdaptiveTextColorEngine";
 import { ARABIC_FONT_FAMILY } from "./ArabicTypesettingEngine";
 
@@ -39,11 +50,11 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
 }
 
 /**
- * maskFill — derive mask color and opacity from the background color
- * immediately behind the text.
+ * maskFill — derive mask color + opacity from the background color immediately
+ * behind the text glyphs.
  *
- * Light backgrounds (white bubbles): high opacity to cover original glyphs.
- * Dark backgrounds (dark panels):    lower opacity to preserve artwork texture.
+ * Light backgrounds: high opacity to cleanly cover original glyphs.
+ * Dark backgrounds:  lower opacity to preserve panel artwork texture.
  */
 function maskFill(bgColor: string): { color: string; opacity: number } {
   const rgb = hexToRgb(bgColor);
@@ -53,52 +64,78 @@ function maskFill(bgColor: string): { color: string; opacity: number } {
   return { color: `rgb(${rgb.r},${rgb.g},${rgb.b})`, opacity };
 }
 
-// ── Bounds ─────────────────────────────────────────────────────────────────────
+// ── Placement ──────────────────────────────────────────────────────────────────
 
 /**
- * getTextBounds — compute the pixel-space center and size of an OCR text region.
+ * getPlacement — extract the text center and OCR container size in pixel space.
+ *
+ * The CENTER (cx, cy) is used for WHERE to place the overlay.
+ * The container dimensions (ocrW, ocrH) are used ONLY as wrapping constraints
+ * for the font scaler — they do NOT determine mask size.
  *
  * Priority:
- *   1. Polygon bounding box — most accurate, derived from tight text-glyph coords
- *   2. x / y / w / h bbox   — always-available fallback
+ *   1. Polygon bounding box (tight around OCR text glyphs)
+ *   2. x / y / w / h bbox (always-available fallback)
  *
- * Returns null only if both sources produce a degenerate (near-zero) box.
+ * Returns null only for degenerate (near-zero) boxes.
  */
-function getTextBounds(
+function getPlacement(
   region: TextRegion,
   displayW: number,
   displayH: number
-): { cx: number; cy: number; w: number; h: number } | null {
-  let cx: number, cy: number, bw: number, bh: number;
+): { cx: number; cy: number; ocrW: number; ocrH: number } | null {
+  let cx: number, cy: number, ocrW: number, ocrH: number;
 
   if (region.polygon && region.polygon.length >= 3) {
-    // Derive axis-aligned bbox from the OCR polygon
     const xs = region.polygon.map(([x]) => x * displayW);
     const ys = region.polygon.map(([, y]) => y * displayH);
     const minX = Math.min(...xs);
     const maxX = Math.max(...xs);
     const minY = Math.min(...ys);
     const maxY = Math.max(...ys);
-    bw = maxX - minX;
-    bh = maxY - minY;
-    cx = (minX + maxX) / 2;
-    cy = (minY + maxY) / 2;
+    ocrW = maxX - minX;
+    ocrH = maxY - minY;
+    cx   = (minX + maxX) / 2;
+    cy   = (minY + maxY) / 2;
   } else {
-    // Fallback: use normalized x/y/w/h from the OCR response
-    bw = region.w * displayW;
-    bh = region.h * displayH;
-    cx = (region.centerX ?? region.x + region.w / 2) * displayW;
-    cy = (region.centerY ?? region.y + region.h / 2) * displayH;
+    ocrW = region.w * displayW;
+    ocrH = region.h * displayH;
+    cx   = (region.centerX ?? region.x + region.w / 2) * displayW;
+    cy   = (region.centerY ?? region.y + region.h / 2) * displayH;
   }
 
-  if (bw < 8 || bh < 6) return null;
-  return { cx, cy, w: bw, h: bh };
+  if (ocrW < 8 || ocrH < 6) return null;
+  return { cx, cy, ocrW, ocrH };
+}
+
+// ── Glyph measurement ──────────────────────────────────────────────────────────
+
+/**
+ * glyphBounds — compute the ACTUAL rendered extent of the laid-out text block.
+ *
+ * Uses the same measurement path as the font scaler:
+ *   Web:    Canvas.measureText() via measureLine() — real glyph widths
+ *   Native: Calibrated Arabic heuristic via measureLine() — 0.55 × fs × chars
+ *
+ * This is the core of glyph-tight masking: mask size follows text, not OCR box.
+ */
+function glyphBounds(typeset: ScaledTypeset): { w: number; h: number } {
+  const { lines, fontSize, lineHeight } = typeset;
+  const lhr = fontSize > 0 ? lineHeight / fontSize : 1.35;
+
+  const w = lines.length === 0 ? 0
+    : Math.max(...lines.map((l) => measureLine(l, fontSize)));
+
+  const h = estimateTextHeight(lines.length, fontSize, lhr);
+  return { w, h };
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-/** Tight local padding around OCR text bounds. 4 px is enough to cover
- *  antialiased glyph edges without expanding into surrounding art. */
+/**
+ * Tiny adaptive padding around measured glyph bounds.
+ * 4 px covers antialiased glyph edges without leaking into surrounding art.
+ */
 const PAD = 4;
 
 function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
@@ -108,42 +145,53 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
         const text = region.translated?.trim();
         if (!text) return null;
 
-        const bounds = getTextBounds(region, displayW, displayH);
-        if (!bounds) return null;
-
-        const { cx, cy, w, h } = bounds;
+        // Step 1: placement center + OCR container (for wrapping constraint only)
+        const placement = getPlacement(region, displayW, displayH);
+        if (!placement) return null;
+        const { cx, cy, ocrW, ocrH } = placement;
 
         const isSFX     = region.type === "sfx";
         const isThought = region.type === "thought";
 
-        // Scale font to fit within the detected text area
+        // Step 2: layout text using OCR container as wrapping constraint
         const typeset = isSFX
-          ? scaleSFXFont(text, w, h)
-          : scaleFontToFit(text, w, h);
+          ? scaleSFXFont(text, ocrW, ocrH)
+          : scaleFontToFit(text, ocrW, ocrH);
 
-        // Mask: tight text bounds + PAD, clamped to display edges
-        const maskLeft = Math.max(0, cx - w / 2 - PAD);
-        const maskTop  = Math.max(0, cy - h / 2 - PAD);
-        const maskW    = Math.min(w + PAD * 2, displayW - maskLeft);
-        const maskH    = Math.min(h + PAD * 2, displayH - maskTop);
-        // Corner radius: gentle rounding, never exceeds 20% of height
+        // Step 3: measure ACTUAL rendered glyph extents
+        // mask/text box are sized to this, NOT to OCR dimensions
+        const glyph = glyphBounds(typeset);
+        if (glyph.w < 4 || glyph.h < 4) return null;
+
+        // Step 4: build mask geometry — glyph bounds + PAD, clamped to display
+        const maskLeft = Math.max(0, cx - glyph.w / 2 - PAD);
+        const maskTop  = Math.max(0, cy - glyph.h / 2 - PAD);
+        const maskW    = Math.min(glyph.w + PAD * 2, displayW - maskLeft);
+        const maskH    = Math.min(glyph.h + PAD * 2, displayH - maskTop);
+        // Gentle corner rounding — never more than 20% of height
         const maskRx   = Math.min(5, maskH * 0.18);
 
-        // Mask color from the background immediately behind the text
+        // Mask fill from background color immediately behind the text
         const { color: maskColor, opacity: maskOpacity } = maskFill(
           region.bgColor ?? "#f5f5f0"
         );
 
-        // Text color: use Gemini-supplied textColor when available
+        // Text color
         const colorProfile = region.textColor
           ? resolveFromGeminiTextColor(region.textColor)
           : resolveFromCss(region.bgColor ?? "#ffffff");
 
         return {
           key: idx,
-          cx, cy, w, h,
+          // Placement
+          cx, cy,
+          // Glyph-tight text box (NOT OCR dimensions)
+          glyphW: glyph.w,
+          glyphH: glyph.h,
+          // Mask geometry
           maskLeft, maskTop, maskW, maskH, maskRx,
           maskColor, maskOpacity,
+          // Text
           typeset,
           renderedText: typeset.lines.join("\n"),
           colorProfile,
@@ -159,7 +207,7 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
   return (
     <View style={[styles.root, { pointerEvents: "none" }]}>
 
-      {/* ── Layer 1: Local rounded-rect readability masks ─────────────────── */}
+      {/* ── Layer 1: Glyph-tight rounded-rect masks ───────────────────────── */}
       <Svg
         width={displayW}
         height={displayH}
@@ -187,7 +235,7 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
       {items.map((item) => {
         if (!item) return null;
         const {
-          key, cx, cy, w, h,
+          key, cx, cy, glyphW, glyphH,
           typeset, renderedText, colorProfile,
           isSFX, isThought,
         } = item;
@@ -198,10 +246,11 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
             style={[
               styles.textBox,
               {
-                left:   cx - w / 2,
-                top:    cy - h / 2,
-                width:  w,
-                height: h,
+                // Text box is glyph-sized, not OCR-sized
+                left:   cx - glyphW / 2,
+                top:    cy - glyphH / 2,
+                width:  glyphW,
+                height: glyphH,
                 pointerEvents: "none",
               },
             ]}
@@ -216,7 +265,8 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
                   fontFamily:    ARABIC_FONT_FAMILY,
                   fontWeight:    isSFX     ? "900" : "700",
                   fontStyle:     isThought ? "italic" : "normal",
-                  // Arabic MUST be 0 — any positive tracking breaks glyph joining
+                  // Arabic: letterSpacing MUST be 0 — any positive value
+                  // breaks contextual glyph joining (initial/medial/final forms)
                   letterSpacing: 0,
                   ...Platform.select({
                     web: {
