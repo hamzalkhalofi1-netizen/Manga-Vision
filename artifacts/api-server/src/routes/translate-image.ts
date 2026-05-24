@@ -4,12 +4,6 @@ import { ai, createUserGeminiClient } from "@workspace/integrations-gemini-ai";
 
 const router = Router();
 
-/**
- * Thread-safe per-request context store.
- * Isolates the user's Gemini key across all async continuations
- * within a single POST /translate-image call, preventing key
- * leakage or mutation when concurrent requests share the event loop.
- */
 const requestCtx = new AsyncLocalStorage<{ userKey: string | undefined }>();
 
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -49,27 +43,47 @@ async function fetchImageAsBase64(
 }
 
 /**
- * Wrap Arabic translations with balanced \n line breaks for typesetting.
- * Splits on word boundaries so each line fits roughly within the bubble.
+ * Derive a 4-point polygon from a bounding box when Gemini doesn't supply one.
+ * Order: top-left, top-right, bottom-right, bottom-left (clockwise).
  */
-function breakArabicLines(text: string, targetWordsPerLine = 3): string {
-  if (!text) return text;
-  const words = text.split(/\s+/);
-  if (words.length <= targetWordsPerLine) return text;
-  const lines: string[] = [];
-  for (let i = 0; i < words.length; i += targetWordsPerLine) {
-    lines.push(words.slice(i, i + targetWordsPerLine).join(" "));
-  }
-  return lines.join("\n");
+function bboxToPolygon(
+  x: number,
+  y: number,
+  w: number,
+  h: number
+): [[number, number], [number, number], [number, number], [number, number]] {
+  return [
+    [x, y],
+    [x + w, y],
+    [x + w, y + h],
+    [x, y + h],
+  ];
+}
+
+/**
+ * Validate that a polygon is a non-degenerate array of [x, y] pairs within [0,1].
+ */
+function validatePolygon(
+  raw: unknown
+): [[number, number], [number, number], [number, number], [number, number]] | null {
+  if (!Array.isArray(raw) || raw.length < 3) return null;
+  const pts = raw.map((p) => {
+    if (!Array.isArray(p) || p.length < 2) return null;
+    const x = Number(p[0]);
+    const y = Number(p[1]);
+    if (isNaN(x) || isNaN(y)) return null;
+    return [Math.max(0, Math.min(1, x)), Math.max(0, Math.min(1, y))] as [number, number];
+  });
+  if (pts.some((p) => p === null)) return null;
+  const valid = pts as [number, number][];
+  // Pad or trim to exactly 4 points
+  while (valid.length < 4) valid.push(valid[valid.length - 1]);
+  return [valid[0], valid[1], valid[2], valid[3]];
 }
 
 router.post("/", async (req, res) => {
   const userKey = req.headers["x-gemini-key"] as string | undefined;
 
-  // ── Bind userKey to this request's async execution context ───────────────
-  // AsyncLocalStorage.run() ensures every async continuation spawned inside
-  // this handler (fetch, Gemini call, retries) reads the same isolated key
-  // without touching any module-level variable.
   await requestCtx.run({ userKey }, async () => {
     const { imageData, imageUrl, mimeType, targetLanguage } = req.body as {
       imageData?: string;
@@ -83,13 +97,10 @@ router.post("/", async (req, res) => {
       return;
     }
     if (!imageData && !imageUrl) {
-      res
-        .status(400)
-        .json({ error: "Either imageData or imageUrl is required" });
+      res.status(400).json({ error: "Either imageData or imageUrl is required" });
       return;
     }
 
-    // ── Resolve image (server-side fetch beats client-side CORS issues) ────
     let finalData: string;
     let finalMime: string;
 
@@ -114,35 +125,45 @@ router.post("/", async (req, res) => {
       return;
     }
 
-    // ── Pick Gemini client — key read from isolated async context ──────────
     const ctx = requestCtx.getStore()!;
     const client = ctx.userKey ? createUserGeminiClient(ctx.userKey) : ai;
 
     const langName = LANGUAGE_NAMES[targetLanguage] ?? targetLanguage;
     const isRTL = targetLanguage === "ar";
-    const resolvedMime = finalMime as
-      | "image/jpeg"
-      | "image/png"
-      | "image/webp";
+    const resolvedMime = finalMime as "image/jpeg" | "image/png" | "image/webp";
 
-    const prompt = `You are a professional manga/manhwa OCR and localization engine.
+    const prompt = `You are a professional manga/manhwa OCR, bubble detection, and localization engine.
 
-TASK: Analyze this manga/manhwa page image. For EVERY visible piece of text — speech bubbles, thought bubbles, sound effects, signs, narration boxes, title cards — do ALL of the following:
+TASK: Analyze this manga/manhwa page. For EVERY piece of visible text — speech bubbles, thought bubbles, sound effects, signs, narration boxes — do ALL of the following:
 
-1. LOCATE using normalized coordinates (0.0–1.0):
-   - x: left edge of bubble body (excluding tail)
-   - y: top edge of bubble body
+1. DETECT the speech bubble or text container boundary:
+   - polygon: array of exactly 4 [x, y] normalized coordinates (0.0–1.0), clockwise from top-left corner of the bubble body
+   - Trace the ACTUAL bubble shape, not just a bounding rectangle
+   - Exclude the tail/pointer — polygon should wrap the bubble body only
+   - For rectangular panels/signs, the polygon will be a rectangle
+
+2. ALSO provide the bounding box (for fallback):
+   - x: left edge of bubble body (normalized, excluding tail)
+   - y: top edge of bubble body (normalized)
    - w: width as fraction of image width
    - h: height as fraction of image height
 
-2. DETECT colors:
-   - bgColor: hex of bubble interior (e.g. "#ffffff" white, "#000000" black)
-   - textColor: contrasting text color (black on light bubbles, white on dark)
+3. DETECT bubble colors from the actual image pixels:
+   - bgColor: hex of the bubble interior background (e.g. "#ffffff" white, "#1a1a1a" dark)
+   - textColor: the original text color (black on white bubbles, white on dark panels)
 
-3. TRANSLATE original text to ${langName}:
-   - ${isRTL ? "Write natural, energetic Arabic — manga-localized, NOT robotic. Proper MSA with emotional flair." : `Use natural idiomatic ${langName}`}
-   - Sound effects: transliterate or use equivalent ${langName} SFX
-   - Preserve emphasis, exclamations, ellipsis
+4. CLASSIFY the text type:
+   - "speech": normal dialogue in speech bubbles
+   - "thought": cloud/wavy thought bubbles
+   - "sfx": sound effects (large stylized text outside bubbles)
+   - "sign": environmental text (signs, labels, titles)
+   - "narration": rectangular narration boxes
+   - "title": chapter/volume title cards
+
+5. TRANSLATE original text to ${langName}:
+   ${isRTL
+     ? "- Write natural, emotionally vivid Arabic. Manga-localized — NOT robotic or literal. Proper MSA with character voice and emotional flair.\n   - Sound effects: use Arabic SFX equivalents or transliterate creatively\n   - Keep exclamations, ellipses, emphasis intact"
+     : `- Use natural, idiomatic ${langName} — emotionally faithful, not literal\n   - Sound effects: use equivalent ${langName} SFX or transliterate\n   - Preserve exclamations, ellipses, emphasis`}
 
 Return ONLY valid JSON — no markdown, no backticks, no commentary:
 {
@@ -151,6 +172,7 @@ Return ONLY valid JSON — no markdown, no backticks, no commentary:
     {
       "original": "source text",
       "translated": "${langName} translation",
+      "polygon": [[0.05,0.03],[0.47,0.03],[0.47,0.14],[0.05,0.14]],
       "x": 0.05, "y": 0.03, "w": 0.42, "h": 0.11,
       "type": "speech",
       "bgColor": "#ffffff",
@@ -162,10 +184,13 @@ Return ONLY valid JSON — no markdown, no backticks, no commentary:
   "summary": "One sentence describing what happens on this page."
 }
 
-Types: "speech" | "thought" | "sfx" | "sign" | "narration" | "title"
-If no text found: { "found": false, "regions": [], "summary": "No text on this page" }`;
+CRITICAL RULES:
+- polygon MUST have exactly 4 points, each [normalized_x, normalized_y]
+- All coordinates must be in range 0.0 to 1.0
+- Do NOT merge separate bubbles into one region — every bubble is its own region
+- Do NOT split one bubble into multiple regions
+- If no text found: { "found": false, "regions": [], "summary": "No text on this page" }`;
 
-    // ── Strict sequential call with retry on transient 503 ─────────────────
     const MODEL = "gemini-2.5-flash";
     const MAX_ATTEMPTS = 4;
 
@@ -192,6 +217,7 @@ If no text found: { "found": false, "regions": [], "summary": "No text on this p
           regions: Array<{
             original: string;
             translated: string;
+            polygon?: unknown;
             x: number;
             y: number;
             w: number;
@@ -214,11 +240,7 @@ If no text found: { "found": false, "regions": [], "summary": "No text on this p
                 try {
                   return JSON.parse(match[0]);
                 } catch {
-                  return {
-                    found: false,
-                    regions: [],
-                    summary: "Could not parse AI response",
-                  };
+                  return { found: false, regions: [], summary: "Could not parse AI response" };
                 }
               })()
             : { found: false, regions: [], summary: "No parseable response" };
@@ -226,20 +248,16 @@ If no text found: { "found": false, "regions": [], "summary": "No text on this p
 
         if (parsed.regions) {
           parsed.regions = parsed.regions
-            .filter(
-              (r) => r && typeof r.x === "number" && typeof r.y === "number"
-            )
+            .filter((r) => r && typeof r.x === "number" && typeof r.y === "number")
             .map((r) => {
               const cx = Math.max(0, Math.min(0.99, r.x));
               const cy = Math.max(0, Math.min(0.99, r.y));
               const cw = Math.max(0.02, Math.min(1 - cx, r.w));
               const ch = Math.max(0.02, Math.min(1 - cy, r.h));
 
-              // ── Apply \n line breaks for Arabic typesetting ──────────────
-              const translatedText =
-                isRTL && r.translated
-                  ? breakArabicLines(r.translated)
-                  : (r.translated ?? "");
+              // Validate or derive polygon
+              const polygon =
+                validatePolygon(r.polygon) ?? bboxToPolygon(cx, cy, cw, ch);
 
               return {
                 ...r,
@@ -247,14 +265,14 @@ If no text found: { "found": false, "regions": [], "summary": "No text on this p
                 y: cy,
                 w: cw,
                 h: ch,
-                // Exact center alignment coordinates for the client overlay canvas
+                polygon,
                 centerX: cx + cw / 2,
                 centerY: cy + ch / 2,
                 bgColor: r.bgColor || "#ffffff",
                 textColor: r.textColor || "#000000",
                 emphasis: !!r.emphasis,
                 speaker: r.speaker || null,
-                translated: translatedText,
+                translated: r.translated ?? "",
               };
             });
         }
@@ -268,19 +286,8 @@ If no text found: { "found": false, "regions": [], "summary": "No text on this p
       } catch (err: unknown) {
         const anyErr = err as { status?: number; message?: string };
 
-        // ── Invalid API key — return 401 immediately, no retry ─────────────
-        // Gemini returns status 400 with reason API_KEY_INVALID when the key
-        // passed via X-Gemini-Key (or the shared fallback) is wrong/expired.
-        // Surfacing this as a clean 401 lets the client abort the queue at once
-        // instead of burning MAX_RETRIES attempts per page with a bad key.
-        if (
-          anyErr?.status === 400 &&
-          anyErr?.message?.includes("API_KEY_INVALID")
-        ) {
-          req.log?.error(
-            { model: MODEL, attempt },
-            "API_KEY_INVALID: aborting — key is not valid"
-          );
+        if (anyErr?.status === 400 && anyErr?.message?.includes("API_KEY_INVALID")) {
+          req.log?.error({ model: MODEL, attempt }, "API_KEY_INVALID: aborting");
           res.status(401).json({
             error:
               "API_KEY_INVALID: Your Gemini API key is not valid or has been revoked. " +
@@ -296,20 +303,13 @@ If no text found: { "found": false, "regions": [], "summary": "No text on this p
 
         if (anyErr?.status === 503 && attempt < MAX_ATTEMPTS) {
           const delay = attempt * 5000;
-          req.log?.warn(
-            { model: MODEL, attempt, delay },
-            `Gemini overloaded, retrying in ${delay}ms`
-          );
+          req.log?.warn({ model: MODEL, attempt, delay }, `Gemini overloaded, retrying in ${delay}ms`);
           await sleep(delay);
           continue;
         }
 
-        const errMsg =
-          anyErr?.message ?? (err instanceof Error ? err.message : String(err));
-        req.log?.error(
-          { model: MODEL, attempt, err },
-          "Image translation failed"
-        );
+        const errMsg = anyErr?.message ?? (err instanceof Error ? err.message : String(err));
+        req.log?.error({ model: MODEL, attempt, err }, "Image translation failed");
         res.status(500).json({
           error: `Translation failed after ${attempt} attempt(s): ${errMsg}`,
         });

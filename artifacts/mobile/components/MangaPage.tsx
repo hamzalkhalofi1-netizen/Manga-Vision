@@ -6,17 +6,39 @@ import PremiumOverlayRenderer from "./PremiumOverlayRenderer";
 const SCREEN_W = Dimensions.get("window").width;
 const DEFAULT_ASPECT = 1.45;
 
+/**
+ * A 4-point polygon in normalized [0,1] image coordinates.
+ * Order: top-left, top-right, bottom-right, bottom-left (clockwise).
+ * Used for precise bubble-shape mask rendering via react-native-svg.
+ */
+export type BubblePolygon = [
+  [number, number],
+  [number, number],
+  [number, number],
+  [number, number],
+];
+
 export interface TextRegion {
   original: string;
   translated: string;
+  /** Normalized bounding box (0–1) of the bubble body */
   x: number;
   y: number;
   w: number;
   h: number;
+  /** Normalized center of the bounding box */
   centerX?: number;
   centerY?: number;
+  /**
+   * 4-point clockwise polygon describing the actual bubble boundary.
+   * Falls back to a rectangle derived from x/y/w/h if absent.
+   */
+  polygon?: BubblePolygon;
+  /** "speech" | "thought" | "sfx" | "sign" | "narration" | "title" */
   type: string;
+  /** Hex color of the bubble interior background */
   bgColor: string;
+  /** Hex color of the original text (used to derive translation text color) */
   textColor: string;
   speaker: string | null;
   emphasis: boolean;

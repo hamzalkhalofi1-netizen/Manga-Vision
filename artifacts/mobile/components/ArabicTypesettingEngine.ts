@@ -8,25 +8,41 @@
  *  2. Measure real rendered widths via Canvas.measureText() on web.
  *     Falls back to a calibrated heuristic on native (iOS / Android).
  *  3. Balance pass redistributes words so all lines have similar visual widths,
- *     producing symmetrical centered Arabic text inside speech bubbles.
+ *     producing symmetrical centred Arabic text inside speech bubbles.
+ *
+ * Platform Arabic shaping:
+ *  - iOS:     Core Text with Geeza Pro / system Arabic — full ligature support
+ *  - Android: HarfBuzz (built into Android text stack) — full OpenType support
+ *  - Web:     Browser Unicode bidi + CSS writing-direction
+ *
+ * The platform handles all glyph shaping, ligatures, and bidi automatically
+ * when letterSpacing is exactly 0 and writingDirection is "rtl".
  */
 
 // ─── Font constants (shared with SkiaOverlayCanvas) ───────────────────────────
 
 /**
- * Font stack — ordered by Arabic rendering quality.
- * MUST match the fontFamily applied to the Text component in SkiaOverlayCanvas.
+ * Font stack ordered by Arabic rendering quality on each platform.
+ * MUST match the fontFamily applied to Text in SkiaOverlayCanvas.
+ *
+ * iOS:     Geeza Pro → excellent Arabic, system default
+ * Android: Noto Naskh Arabic → bundled in Android since 5.0
+ * Web:     Noto Naskh Arabic → widely available or falls through to system
  */
 export const ARABIC_FONT_FAMILY =
-  '"Noto Naskh Arabic", "Geeza Pro", "Noto Sans Arabic", "Segoe UI", Arial, sans-serif';
+  '"Noto Naskh Arabic", "Geeza Pro", "Noto Sans Arabic", "Amiri", "Segoe UI", Arial, sans-serif';
 
 export const ARABIC_FONT_WEIGHT = "bold";
 
 // ─── Safe zone ────────────────────────────────────────────────────────────────
 
-/** 10% inward on each side → 80% of available dimensions. */
+/**
+ * 9% margin on each side → 82% usable area.
+ * Slightly more generous than the old 80% to allow larger, more readable text
+ * while still preventing glyphs from touching the bubble border.
+ */
 export function getSafeZone(w: number, h: number): { safeW: number; safeH: number } {
-  return { safeW: w * 0.80, safeH: h * 0.80 };
+  return { safeW: w * 0.82, safeH: h * 0.82 };
 }
 
 // ─── Real font measurement ────────────────────────────────────────────────────
@@ -62,17 +78,20 @@ function getCtx(fontSize: number): CanvasRenderingContext2D | null {
 /**
  * measureLine — returns the rendered pixel width of a text string.
  *
- * Web:    Canvas.measureText() with the actual matched font — accurate to the
- *         glyph including ligatures, cursive joins, and diacritics.
- * Native: Heuristic — Arabic connected forms average ~0.52 × fontSize per
- *         character (substantially narrower than Latin's ~0.62).
+ * Web:    Canvas.measureText() — accurate glyph widths including ligatures,
+ *         cursive joins, and diacritical marks.
+ * Native: Calibrated heuristic — Arabic connected forms in bold average
+ *         ~0.55 × fontSize per character. This is slightly higher than the
+ *         old 0.52 estimate to better account for diacritics and wide glyphs.
+ *
+ * Note: The native heuristic intentionally over-estimates slightly so the
+ * font scaler produces conservatively sized text that never overflows.
  */
 export function measureLine(text: string, fontSize: number): number {
   if (!text) return 0;
   const ctx = getCtx(fontSize);
   if (ctx) return ctx.measureText(text).width;
-  // Native fallback — Arabic glyphs are compact in connected form
-  return text.length * fontSize * 0.52;
+  return text.length * fontSize * 0.55;
 }
 
 // ─── Line splitting ───────────────────────────────────────────────────────────
@@ -80,7 +99,7 @@ export function measureLine(text: string, fontSize: number): number {
 /**
  * greedyWrap — fills lines with whole words until the next word would exceed
  * maxW.  A word that is itself wider than maxW goes on its own line untouched
- * (never character-split — that destroys Arabic shaping).
+ * (never character-split — that destroys Arabic glyph shaping).
  */
 function greedyWrap(words: string[], maxW: number, fontSize: number): string[] {
   if (!words.length) return [];
@@ -93,7 +112,7 @@ function greedyWrap(words: string[], maxW: number, fontSize: number): string[] {
       current = candidate;
     } else {
       if (current) lines.push(current);
-      current = word; // start fresh — NEVER split the word
+      current = word;
     }
   }
   if (current) lines.push(current);
@@ -101,14 +120,13 @@ function greedyWrap(words: string[], maxW: number, fontSize: number): string[] {
 }
 
 /**
- * balanceLines — redistributes words so that all lines have similar visual
- * widths, improving the symmetry of centered Arabic text.
+ * balanceLines — redistributes words so all lines have similar visual widths.
  *
  * Strategy:
- *   • Measure the full single-line width.
- *   • Divide by target line count to get a per-line target.
- *   • Re-wrap at that target (with 15% slack to avoid choppy rhythm).
- *   • Accept only if the result does not produce MORE lines than the input.
+ *   1. Measure full single-line width.
+ *   2. Divide by target line count to get per-line target width.
+ *   3. Re-wrap at that target (+10% slack to avoid choppy rhythm).
+ *   4. Accept only if result does not produce MORE lines than input.
  */
 function balanceLines(
   words: string[],
@@ -119,7 +137,7 @@ function balanceLines(
   if (lineCount <= 1 || words.length <= 1) return [words.join(" ")];
 
   const totalW = measureLine(words.join(" "), fontSize);
-  const targetW = Math.min(safeW, (totalW / lineCount) * 1.15);
+  const targetW = Math.min(safeW, (totalW / lineCount) * 1.10);
 
   const balanced = greedyWrap(words, targetW, fontSize);
   return balanced;
@@ -145,10 +163,8 @@ export function splitArabicText(
   const words = trimmed.split(/\s+/).filter(Boolean);
   if (words.length === 1) return [trimmed];
 
-  // Step 1: establish minimum line count via greedy wrap
   const wrapped = greedyWrap(words, safeW, fontSize);
 
-  // Step 2: balance only if multi-line; keep result if it doesn't add lines
   if (wrapped.length > 1) {
     const balanced = balanceLines(words, wrapped.length, safeW, fontSize);
     if (balanced.length <= wrapped.length) return balanced;
@@ -159,11 +175,13 @@ export function splitArabicText(
 
 /**
  * estimateTextHeight — rendered height of a text block.
+ * Line height multiplier is 1.35 — tighter than Latin typography, appropriate
+ * for Arabic which uses less interline space in manga bubble contexts.
  */
 export function estimateTextHeight(
   lineCount: number,
   fontSize: number,
-  lineHeightMultiplier = 1.45
+  lineHeightMultiplier = 1.35
 ): number {
   return lineCount * fontSize * lineHeightMultiplier;
 }

@@ -1,0 +1,241 @@
+MAJOR ARCHITECTURE REFACTOR REQUIRED.
+
+The current manga translation overlay system is unstable because it relies on:
+- AI whitening
+- AI repainting
+- heuristic masking
+- inaccurate OCR rectangles
+- incorrect Arabic rendering
+
+We are replacing the entire overlay pipeline with a professional deterministic manga rendering architecture.
+
+==================================================
+GOAL
+==================================================
+
+Transform the app into a professional manga/manhwa translation renderer similar to high-end scanlation overlays.
+
+AI should ONLY do:
+1. OCR
+2. Translation
+
+Everything else must become deterministic rendering logic.
+
+==================================================
+REMOVE COMPLETELY
+==================================================
+
+Delete all old systems related to:
+- AI whitening
+- AI mask generation
+- AI repaint
+- AI inpainting
+- giant overlay containers
+- aggressive region merging
+- collision relocation system
+- fake bubble reconstruction
+- centralized text grouping
+- heuristic bubble repainting
+
+Delete unused code/files/hooks/states related to:
+- inpaint pipeline
+- whitening engine
+- mask AI
+- old collision engine
+- mergeNearbyRegions() aggressive logic
+
+==================================================
+NEW PROFESSIONAL STACK
+==================================================
+
+Install and integrate the following architecture:
+
+==================================================
+1. OCR ENGINE
+==================================================
+
+Install PaddleOCR for polygon-based OCR detection.
+
+Requirements:
+- return quadrilateral/polygon coordinates
+- support manga/manhwa pages
+- preserve line grouping
+- preserve reading order
+
+OCR result must contain:
+- original text
+- polygon coordinates
+- line segmentation
+- confidence score
+
+DO NOT reduce polygons to simple rectangles.
+
+==================================================
+2. BUBBLE/TEXT DETECTION
+==================================================
+
+Integrate Comic Text Detector or equivalent manga text segmentation model.
+
+Goal:
+- identify speech bubbles
+- associate OCR regions with their real bubble
+- avoid incorrect region merging
+- preserve manga composition
+
+Each bubble should become an isolated render context.
+
+==================================================
+3. ARABIC TEXT SHAPING
+==================================================
+
+Install proper Arabic shaping pipeline.
+
+Use:
+- HarfBuzz
+OR
+- Skia paragraph shaping
+OR
+- equivalent advanced RTL shaping engine
+
+Arabic MUST support:
+- contextual glyph shaping
+- ligatures
+- bidi
+- RTL rendering
+- multiline balancing
+
+DO NOT render Arabic character-by-character.
+
+==================================================
+4. TEXT MEASUREMENT
+==================================================
+
+Replace all fake text width estimation.
+
+Use REAL rendered text metrics:
+- canvas metrics
+- Skia metrics
+- actual glyph bounds
+
+Never estimate Arabic width using character count.
+
+==================================================
+5. NEW MASK SYSTEM
+==================================================
+
+Create a lightweight deterministic local overlay renderer.
+
+For each OCR polygon:
+
+STEP A:
+Expand polygon slightly using tiny adaptive padding.
+
+STEP B:
+Sample local surrounding color from nearby pixels.
+
+STEP C:
+Draw a soft rounded semi-transparent local mask ONLY behind the translated text.
+
+Mask rules:
+- preserve original manga art
+- preserve bubble borders
+- preserve gradients
+- preserve textures
+- never create giant white rectangles
+- never repaint whole panels
+
+Mask is ONLY a readability helper.
+
+NOT an AI repaint system.
+
+==================================================
+6. TEXT OVERLAY
+==================================================
+
+Render translated Arabic text:
+- centered inside original polygon area
+- visually balanced
+- multiline aware
+- mobile readable
+- compact
+- manga-like
+
+Avoid:
+- oversized fonts
+- huge line spacing
+- excessive letter spacing
+- fragmented Arabic glyphs
+
+==================================================
+7. REGION LOGIC
+==================================================
+
+OCR regions must remain isolated.
+
+Only merge regions if:
+- polygons physically overlap
+OR
+- they clearly belong to same speech bubble with tiny spacing
+
+Most OCR regions should remain independent.
+
+==================================================
+8. PERFORMANCE
+==================================================
+
+Optimize for mobile rendering:
+- lightweight overlays
+- fast redraw
+- no AI image repainting
+- no expensive inpainting
+- cached text metrics
+- GPU-friendly rendering
+
+==================================================
+9. FILES TO REWRITE
+==================================================
+
+Rewrite/refactor:
+- overlay renderer
+- OCR adapter
+- Arabic text renderer
+- mask renderer
+- region grouping logic
+- text measurement engine
+
+Preserve:
+- translation API flow
+- reader UI
+- chapter system
+- existing app navigation
+
+==================================================
+10. FINAL VISUAL TARGET
+==================================================
+
+The result should look like professional manga scanlation overlays:
+- original art preserved
+- original speech bubbles preserved
+- translation naturally embedded
+- overlays nearly invisible
+- no subtitle-style appearance
+- no giant white blocks
+- no floating cards
+- no AI repaint artifacts
+
+The reader should feel:
+Only the language changed.
+The manga itself stayed untouched.
+
+==================================================
+IMPORTANT
+==================================================
+
+Before writing new code:
+1. analyze current overlay architecture
+2. identify all old whitening dependencies
+3. remove conflicting systems
+4. rebuild cleanly instead of patching old hacks
+
+Do NOT stack new logic on top of broken legacy overlay code.
+Rebuild the overlay renderer cleanly and professionally.
