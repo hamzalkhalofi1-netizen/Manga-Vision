@@ -222,7 +222,6 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
         width={displayW}
         height={displayH}
         style={StyleSheet.absoluteFillObject}
-        pointerEvents="none"
       >
         {items.map((item) => {
           if (!item) return null;

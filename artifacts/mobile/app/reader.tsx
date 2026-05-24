@@ -355,6 +355,7 @@ export default function ReaderScreen() {
   }, [
     pages,
     apiBase,
+    inpaintServerUrl,
     readerSettings.targetLanguage,
     incrementTranslationCount,
     showBanner,
@@ -395,7 +396,10 @@ export default function ReaderScreen() {
   );
 
   // ─── Derived ───────────────────────────────────────────────────────────────
-  const hasTranslation = pageTranslations[currentPage] !== undefined;
+  // Only true when the page has been processed AND has actual regions.
+  // Pages with no text return [] which must NOT be treated as "translated"
+  // for UI purposes (button state, overlay toggle behaviour).
+  const hasTranslation = (pageTranslations[currentPage]?.length ?? 0) > 0;
   const isQueueRunning = queueProgress?.isRunning ?? false;
 
   // ─── Loading / Error ───────────────────────────────────────────────────────
@@ -441,6 +445,7 @@ export default function ReaderScreen() {
         scrollEventThrottle={16}
         onViewableItemsChanged={onViewableItemsChanged.current}
         viewabilityConfig={VIEWABILITY_CONFIG}
+        extraData={pageTranslations}
         removeClippedSubviews={Platform.OS !== "web"}
         maxToRenderPerBatch={3}
         windowSize={5}
