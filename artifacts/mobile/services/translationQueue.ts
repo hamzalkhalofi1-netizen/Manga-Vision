@@ -49,6 +49,24 @@ const DELAY_BETWEEN_MS = 1500;
 const MAX_RETRIES = 2;
 const PAGE_TIMEOUT_MS = 60_000;
 
+// ── Client-side page translation cache ────────────────────────────────────────
+//
+// Keyed by `${pageUrl}|${targetLanguage}`.
+// Persists for the full app session — if the user navigates away and comes
+// back to the same chapter, already-translated pages are served instantly
+// without any network call.
+
+interface CachedPage {
+  regions: TextRegion[];
+  summary: string;
+}
+
+const pageCache = new Map<string, CachedPage>();
+
+function pageCacheKey(url: string, lang: string): string {
+  return `${url}|${lang}`;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -116,6 +134,17 @@ class TranslationQueueManager {
       const pageUrl = pages[i];
       let success = false;
 
+      // ── Client-side cache check ─────────────────────────────────────────────
+      const cacheKey = pageCacheKey(pageUrl, targetLanguage);
+      const cached = pageCache.get(cacheKey);
+      if (cached) {
+        onPageTranslated(i, cached.regions, cached.summary);
+        success = true;
+        completed++;
+        // No delay needed — no API call was made
+        continue;
+      }
+
       for (let attempt = 0; attempt < MAX_RETRIES && !success; attempt++) {
         if (this.abortController.signal.aborted) break;
 
@@ -123,6 +152,7 @@ class TranslationQueueManager {
           // ── Decentralized HF inpaint server path ──────────────────────────
           if (inpaintServerUrl) {
             const result = await callInpaintServer(inpaintServerUrl, pageUrl, [], PAGE_TIMEOUT_MS);
+            pageCache.set(cacheKey, { regions: result.regions, summary: result.summary });
             onPageTranslated(i, result.regions, result.summary);
             success = true;
             completed++;
@@ -174,11 +204,13 @@ class TranslationQueueManager {
 
           const data = await res.json();
 
-          onPageTranslated(
-            i,
-            data.regions?.length > 0 ? data.regions : [],
-            data.summary ?? ""
-          );
+          const regions: TextRegion[] = data.regions?.length > 0 ? data.regions : [];
+          const summary: string = data.summary ?? "";
+
+          // Store in client cache so repeat visits skip the API call entirely
+          pageCache.set(cacheKey, { regions, summary });
+
+          onPageTranslated(i, regions, summary);
 
           success = true;
           completed++;

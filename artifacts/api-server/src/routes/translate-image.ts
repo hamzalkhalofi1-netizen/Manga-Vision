@@ -6,6 +6,39 @@ const router = Router();
 
 const requestCtx = new AsyncLocalStorage<{ userKey: string | undefined }>();
 
+// ── Server-side page translation cache ────────────────────────────────────────
+//
+// Keyed by `imageUrl|targetLanguage`.  Survives within the server process
+// lifetime — prevents duplicate Gemini calls when the same page is requested
+// multiple times (e.g. chapter re-open, retry after network error).
+//
+// Max 300 entries with simple FIFO eviction (insertion order via Map).
+
+interface CachedTranslation {
+  found: boolean;
+  regions: unknown[];
+  summary: string;
+}
+
+const translationCache = new Map<string, CachedTranslation>();
+const CACHE_MAX = 300;
+
+function cacheGet(imageUrl: string, lang: string): CachedTranslation | undefined {
+  return translationCache.get(`${imageUrl}|${lang}`);
+}
+
+function cacheSet(imageUrl: string, lang: string, value: CachedTranslation): void {
+  const key = `${imageUrl}|${lang}`;
+  if (translationCache.has(key)) {
+    // Refresh position by re-inserting
+    translationCache.delete(key);
+  } else if (translationCache.size >= CACHE_MAX) {
+    // Evict oldest entry
+    translationCache.delete(translationCache.keys().next().value!);
+  }
+  translationCache.set(key, value);
+}
+
 const LANGUAGE_NAMES: Record<string, string> = {
   en: "English",
   es: "Spanish",
@@ -123,6 +156,19 @@ router.post("/", async (req, res) => {
     if (finalData.length < 100) {
       res.status(400).json({ error: "Image data is empty or too short" });
       return;
+    }
+
+    // ── Cache check (imageUrl path only — base64 uploads are not cached) ──────
+    if (imageUrl) {
+      const hit = cacheGet(imageUrl, targetLanguage);
+      if (hit) {
+        req.log?.info(
+          { imageUrl, targetLanguage, regions: hit.regions.length },
+          "Translation cache hit — skipping Gemini call"
+        );
+        res.json(hit);
+        return;
+      }
     }
 
     const ctx = requestCtx.getStore()!;
@@ -274,6 +320,12 @@ RULES:
           { model: MODEL, attempt, regions: parsed.regions?.length ?? 0 },
           "Image translation success"
         );
+
+        // Store in server cache — future requests for this page skip Gemini entirely
+        if (imageUrl) {
+          cacheSet(imageUrl, targetLanguage, parsed);
+        }
+
         res.json(parsed);
         return;
       } catch (err: unknown) {
