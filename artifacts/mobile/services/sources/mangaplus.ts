@@ -1,6 +1,18 @@
 import { Chapter, Manga, MangaSource } from "./types";
+import { proxiedFetch } from "./fetchClient";
 
-const BASE = "https://api.mangaplus.shueisha.co.jp/v3";
+const SITE_URL = "https://mangaplus.shueisha.co.jp";
+const API_BASE = "https://api.mangaplus.shueisha.co.jp/v3";
+
+const FETCH_OPTS = {
+  sourceId: "mangaplus",
+  siteUrl: SITE_URL,
+  timeoutMs: 12000,
+  headers: {
+    Accept: "application/json",
+    "User-Agent": "Mozilla/5.0 (compatible; MangaVerse/1.0)",
+  },
+};
 
 type MPTitle = {
   titleId?: number;
@@ -8,8 +20,6 @@ type MPTitle = {
   author?: string;
   portraitImageUrl?: string;
   landscapeImageUrl?: string;
-  viewCount?: number;
-  language?: string;
 };
 
 type MPChapter = {
@@ -17,27 +27,15 @@ type MPChapter = {
   name?: string;
   subTitle?: string;
   startTimeStamp?: number;
-  isVerticalOnly?: boolean;
 };
 
 async function mpFetch(path: string): Promise<Record<string, unknown>> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
-  try {
-    const res = await fetch(`${BASE}${path}`, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "Mozilla/5.0",
-        Origin: "https://mangaplus.shueisha.co.jp",
-        Referer: "https://mangaplus.shueisha.co.jp/",
-      },
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`MANGA Plus API error: ${res.status}`);
-    return res.json();
-  } finally {
-    clearTimeout(timeout);
-  }
+  const res = await proxiedFetch("mangaplus", path, "", {
+    ...FETCH_OPTS,
+    siteUrl: API_BASE,
+    directOnWeb: true,
+  });
+  return res.json();
 }
 
 function parseTitle(t: MPTitle): Manga {
@@ -56,13 +54,13 @@ function parseTitle(t: MPTitle): Manga {
 export const mangaplusSource: MangaSource = {
   id: "mangaplus",
   name: "MANGA Plus",
-  baseUrl: "https://mangaplus.shueisha.co.jp",
+  baseUrl: SITE_URL,
   isEnabled: true,
 
   async getTrending(): Promise<Manga[]> {
     try {
       const data = await mpFetch("/api_page/home?lang=0");
-      const groups = (data as Record<string, unknown>).data as Record<string, unknown> | undefined;
+      const groups = data.data as Record<string, unknown> | undefined;
       const ranking = (groups?.titleRanking as { titles?: MPTitle[] })?.titles ?? [];
       const featured = (groups?.featuredTitles as { titles?: MPTitle[] })?.titles ?? [];
       return [...ranking, ...featured].filter(Boolean).slice(0, 20).map(parseTitle);
@@ -73,11 +71,10 @@ export const mangaplusSource: MangaSource = {
 
   async search(query: string): Promise<Manga[]> {
     try {
-      const qs = new URLSearchParams({ query, lang: "0" });
+      const qs = new URLSearchParams({ query, lang: "0" }).toString();
       const data = await mpFetch(`/api_page/search?${qs}`);
-      const result = (data as Record<string, unknown>).data as Record<string, unknown> | undefined;
-      const titles = (result?.titles as MPTitle[]) ?? [];
-      return titles.slice(0, 20).map(parseTitle);
+      const result = data.data as Record<string, unknown> | undefined;
+      return ((result?.titles as MPTitle[]) ?? []).slice(0, 20).map(parseTitle);
     } catch {
       return [];
     }
@@ -86,7 +83,7 @@ export const mangaplusSource: MangaSource = {
   async getLatestUpdates(): Promise<Manga[]> {
     try {
       const data = await mpFetch("/api_page/home?lang=0");
-      const groups = (data as Record<string, unknown>).data as Record<string, unknown> | undefined;
+      const groups = data.data as Record<string, unknown> | undefined;
       const updated = (groups?.newTitleList as { titles?: MPTitle[] })?.titles ?? [];
       return updated.slice(0, 20).map(parseTitle);
     } catch {
@@ -97,7 +94,7 @@ export const mangaplusSource: MangaSource = {
   async getMangaDetails(id: string): Promise<Manga> {
     try {
       const data = await mpFetch(`/api_page/title?title_id=${id}&lang=0`);
-      const result = (data as Record<string, unknown>).data as Record<string, unknown> | undefined;
+      const result = data.data as Record<string, unknown> | undefined;
       const title = result?.titleDetailView as Record<string, unknown> | undefined;
       if (!title) throw new Error("Not found");
       const t = title.title as MPTitle;
@@ -114,7 +111,7 @@ export const mangaplusSource: MangaSource = {
   async getChapters(mangaId: string): Promise<Chapter[]> {
     try {
       const data = await mpFetch(`/api_page/title?title_id=${mangaId}&lang=0`);
-      const result = (data as Record<string, unknown>).data as Record<string, unknown> | undefined;
+      const result = data.data as Record<string, unknown> | undefined;
       const titleDetail = result?.titleDetailView as Record<string, unknown> | undefined;
       const groups = (titleDetail?.chapterListGroup as Array<Record<string, unknown>>) ?? [];
       const chapters: Chapter[] = [];
@@ -126,7 +123,9 @@ export const mangaplusSource: MangaSource = {
             id: String(c.chapterId),
             number: c.name?.replace("#", "") ?? "?",
             title: c.subTitle,
-            publishedAt: c.startTimeStamp ? new Date(c.startTimeStamp * 1000).toISOString() : "",
+            publishedAt: c.startTimeStamp
+              ? new Date(c.startTimeStamp * 1000).toISOString()
+              : "",
           });
         }
       }
@@ -139,10 +138,12 @@ export const mangaplusSource: MangaSource = {
   async getChapterPages(chapterId: string): Promise<string[]> {
     try {
       const data = await mpFetch(
-        `/api_page/chapter_viewer?chapter_id=${chapterId}&split=yes&img_quality=low`
+        `/api_page/chapter_viewer?chapter_id=${chapterId}&split=yes&img_quality=low`,
       );
-      const result = (data as Record<string, unknown>).data as Record<string, unknown> | undefined;
-      const viewer = (result?.mangaPlusPage ?? result?.chapterViewer) as Record<string, unknown> | undefined;
+      const result = data.data as Record<string, unknown> | undefined;
+      const viewer = (result?.mangaPlusPage ?? result?.chapterViewer) as
+        | Record<string, unknown>
+        | undefined;
       const pages = (viewer?.pages as Array<Record<string, unknown>>) ?? [];
       return pages
         .map((p) => (p.page as Record<string, unknown>)?.imageUrl as string | undefined)

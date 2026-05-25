@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -16,10 +16,11 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MangaCard } from "@/components/MangaCard";
 import { SourceSwitcher } from "@/components/SourceSwitcher";
+import SourceVerificationModal from "@/components/SourceVerificationModal";
 import { useLibrary } from "@/context/LibraryContext";
 import { useSettings } from "@/context/SettingsContext";
 import { useColors } from "@/hooks/useColors";
-import { getSource } from "@/services/sources";
+import { getSource, SourceError } from "@/services/sources";
 import { Manga } from "@/services/sources/types";
 
 function SectionHeader({ title, onMore }: { title: string; onMore?: () => void }) {
@@ -83,22 +84,32 @@ export default function HomeScreen() {
   const [trending, setTrending] = useState<Manga[]>([]);
   const [latest, setLatest] = useState<Manga[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cfSource, setCfSource] = useState<{ id: string; name: string; url: string } | null>(null);
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
 
-  useEffect(() => {
+  const loadSource = useCallback((sourceId: string) => {
     setLoading(true);
     setTrending([]);
     setLatest([]);
-    const source = getSource(activeSourceId);
+    const source = getSource(sourceId);
     Promise.all([source.getTrending(), source.getLatestUpdates()])
       .then(([t, l]) => {
         setTrending(t);
         setLatest(l);
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (err instanceof SourceError && err.type === "cloudflare") {
+          const src = getSource(sourceId);
+          setCfSource({ id: sourceId, name: src.name, url: src.baseUrl });
+        }
+      })
       .finally(() => setLoading(false));
-  }, [activeSourceId]);
+  }, []);
+
+  useEffect(() => {
+    loadSource(activeSourceId);
+  }, [activeSourceId, loadSource]);
 
   const reading = entries.filter((e) => e.status === "reading").slice(0, 5);
 
@@ -115,6 +126,22 @@ export default function HomeScreen() {
       contentContainerStyle={{ paddingBottom: 100 + (Platform.OS === "web" ? 34 : insets.bottom) }}
       showsVerticalScrollIndicator={false}
     >
+      {/* CF Verification modal */}
+      {cfSource && (
+        <SourceVerificationModal
+          visible
+          sourceId={cfSource.id}
+          sourceName={cfSource.name}
+          sourceUrl={cfSource.url}
+          onVerified={() => {
+            setCfSource(null);
+            loadSource(activeSourceId);
+          }}
+          onDismiss={() => setCfSource(null)}
+          onChangeSource={() => setCfSource(null)}
+        />
+      )}
+
       {/* Header */}
       <LinearGradient
         colors={[`${colors.primary}22`, "transparent"]}

@@ -31,6 +31,8 @@ export interface MangaSource {
   name: string;
   baseUrl: string;
   isEnabled: boolean;
+  /** True if this source uses Cloudflare or other bot-protection that may need browser verification */
+  requiresVerification?: boolean;
   search(query: string, page?: number): Promise<Manga[]>;
   getTrending(page?: number): Promise<Manga[]>;
   getLatestUpdates(page?: number): Promise<Manga[]>;

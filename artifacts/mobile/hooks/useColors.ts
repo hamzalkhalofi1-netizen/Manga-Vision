@@ -33,5 +33,5 @@ export function useColors() {
       ? (colors as unknown as Record<string, typeof colors.light>).dark
       : colors.light;
 
-  return { ...palette, radius: colors.radius };
+  return { ...palette, radius: colors.radius, isDark: resolved === "dark" };
 }

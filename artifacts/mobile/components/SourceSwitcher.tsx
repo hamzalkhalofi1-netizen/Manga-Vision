@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -8,17 +8,75 @@ import {
   Text,
   View,
 } from "react-native";
+import SourceVerificationModal from "@/components/SourceVerificationModal";
 import { useColors } from "@/hooks/useColors";
+import { sourceHealth, HealthRecord, SourceHealthStatus } from "@/services/sourceHealth";
 import { ALL_SOURCES } from "@/services/sources";
+import { MangaSource } from "@/services/sources/types";
 import { useSettings } from "@/context/SettingsContext";
 
-export function SourceSwitcher() {
+const STATUS_COLORS: Record<SourceHealthStatus, string> = {
+  healthy:    "#22c55e",
+  degraded:   "#f59e0b",
+  disabled:   "#ef4444",
+  cf_blocked: "#f97316",
+};
+
+const STATUS_LABELS: Record<SourceHealthStatus, string> = {
+  healthy:    "Online",
+  degraded:   "Slow",
+  disabled:   "Disabled",
+  cf_blocked: "Verify",
+};
+
+function HealthDot({ status }: { status: SourceHealthStatus }) {
+  return (
+    <View
+      style={[
+        styles.healthDot,
+        { backgroundColor: STATUS_COLORS[status] },
+      ]}
+    />
+  );
+}
+
+export function SourceSwitcher({ onCfError }: { onCfError?: (sourceId: string) => void }) {
   const colors = useColors();
   const { activeSourceId, setActiveSourceId } = useSettings();
   const [showModal, setShowModal] = useState(false);
+  const [healthMap, setHealthMap] = useState<Record<string, HealthRecord>>({});
+  const [verifySource, setVerifySource] = useState<MangaSource | null>(null);
 
   const enabledSources = ALL_SOURCES.filter((s) => s.isEnabled);
   const disabledSources = ALL_SOURCES.filter((s) => !s.isEnabled);
+
+  const loadHealth = useCallback(async () => {
+    const entries = await Promise.all(
+      ALL_SOURCES.map(async (s) => [s.id, await sourceHealth.getHealth(s.id)] as const),
+    );
+    setHealthMap(Object.fromEntries(entries));
+  }, []);
+
+  useEffect(() => {
+    loadHealth();
+  }, [loadHealth, activeSourceId]);
+
+  const handleSelectSource = useCallback(
+    (source: MangaSource) => {
+      const health = healthMap[source.id];
+      if (health) {
+        const status = sourceHealth.getStatus(health);
+        if (status === "cf_blocked") {
+          setVerifySource(source);
+          setShowModal(false);
+          return;
+        }
+      }
+      setActiveSourceId(source.id);
+      setShowModal(false);
+    },
+    [healthMap, setActiveSourceId],
+  );
 
   return (
     <>
@@ -29,29 +87,63 @@ export function SourceSwitcher() {
       >
         {enabledSources.map((source) => {
           const isActive = source.id === activeSourceId;
+          const health = healthMap[source.id];
+          const status: SourceHealthStatus = health
+            ? sourceHealth.getStatus(health)
+            : "healthy";
+          const isCfBlocked = status === "cf_blocked";
+
           return (
             <Pressable
               key={source.id}
-              onPress={() => setActiveSourceId(source.id)}
+              onPress={() => handleSelectSource(source)}
               style={[
                 styles.pill,
                 {
-                  backgroundColor: isActive ? colors.primary : "rgba(255,255,255,0.06)",
-                  borderColor: isActive ? colors.primary : "rgba(255,255,255,0.1)",
+                  backgroundColor: isActive
+                    ? colors.primary
+                    : isCfBlocked
+                    ? "rgba(249,115,22,0.12)"
+                    : "rgba(255,255,255,0.06)",
+                  borderColor: isActive
+                    ? colors.primary
+                    : isCfBlocked
+                    ? "rgba(249,115,22,0.4)"
+                    : "rgba(255,255,255,0.1)",
                   borderRadius: 20,
                 },
               ]}
             >
-              {isActive && <View style={styles.dot} />}
-              <Text style={[styles.label, { color: isActive ? "#fff" : colors.mutedForeground }]}>
+              {isActive && !isCfBlocked && <View style={styles.dot} />}
+              {isCfBlocked && (
+                <Ionicons name="lock-closed" size={11} color="#f97316" />
+              )}
+              <Text
+                style={[
+                  styles.label,
+                  {
+                    color: isActive
+                      ? "#fff"
+                      : isCfBlocked
+                      ? "#f97316"
+                      : colors.mutedForeground,
+                  },
+                ]}
+              >
                 {source.name}
               </Text>
+              {!isActive && status !== "healthy" && !isCfBlocked && (
+                <HealthDot status={status} />
+              )}
             </Pressable>
           );
         })}
 
         <Pressable
-          onPress={() => setShowModal(true)}
+          onPress={() => {
+            loadHealth();
+            setShowModal(true);
+          }}
           style={[
             styles.pill,
             {
@@ -66,6 +158,7 @@ export function SourceSwitcher() {
         </Pressable>
       </ScrollView>
 
+      {/* Full source list sheet */}
       <Modal
         visible={showModal}
         transparent
@@ -78,22 +171,23 @@ export function SourceSwitcher() {
             onPress={() => {}}
           >
             <View style={[styles.handle, { backgroundColor: colors.border }]} />
-            <Text style={[styles.sheetTitle, { color: colors.foreground }]}>
-              Manga Sources
-            </Text>
+            <Text style={[styles.sheetTitle, { color: colors.foreground }]}>Manga Sources</Text>
 
             <Text style={[styles.sheetSection, { color: colors.mutedForeground }]}>
               ACTIVE SOURCES
             </Text>
             {enabledSources.map((source) => {
               const isActive = source.id === activeSourceId;
+              const health = healthMap[source.id];
+              const status: SourceHealthStatus = health
+                ? sourceHealth.getStatus(health)
+                : "healthy";
+              const isCfBlocked = status === "cf_blocked";
+
               return (
                 <Pressable
                   key={source.id}
-                  onPress={() => {
-                    setActiveSourceId(source.id);
-                    setShowModal(false);
-                  }}
+                  onPress={() => handleSelectSource(source)}
                   style={[
                     styles.sourceRow,
                     { borderColor: colors.border },
@@ -103,25 +197,45 @@ export function SourceSwitcher() {
                   <View
                     style={[
                       styles.sourceIcon,
-                      { backgroundColor: isActive ? colors.primary : "rgba(255,255,255,0.08)" },
+                      {
+                        backgroundColor: isActive
+                          ? colors.primary
+                          : isCfBlocked
+                          ? "rgba(249,115,22,0.15)"
+                          : "rgba(255,255,255,0.08)",
+                      },
                     ]}
                   >
                     <Ionicons
-                      name="library-outline"
+                      name={isCfBlocked ? "shield-outline" : "library-outline"}
                       size={18}
-                      color={isActive ? "#fff" : colors.mutedForeground}
+                      color={
+                        isActive ? "#fff" : isCfBlocked ? "#f97316" : colors.mutedForeground
+                      }
                     />
                   </View>
                   <View style={styles.sourceInfo}>
                     <Text style={[styles.sourceName, { color: colors.foreground }]}>
                       {source.name}
+                      {source.requiresVerification && (
+                        <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>
+                          {" "}🔒
+                        </Text>
+                      )}
                     </Text>
                     <Text style={[styles.sourceUrl, { color: colors.mutedForeground }]}>
                       {source.baseUrl}
                     </Text>
                   </View>
-                  {isActive && (
+                  {isActive ? (
                     <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                  ) : (
+                    <View style={[styles.statusBadge, { backgroundColor: `${STATUS_COLORS[status]}20` }]}>
+                      <HealthDot status={status} />
+                      <Text style={[styles.statusText, { color: STATUS_COLORS[status] }]}>
+                        {STATUS_LABELS[status]}
+                      </Text>
+                    </View>
                   )}
                 </Pressable>
               );
@@ -129,7 +243,9 @@ export function SourceSwitcher() {
 
             {disabledSources.length > 0 && (
               <>
-                <Text style={[styles.sheetSection, { color: colors.mutedForeground, marginTop: 16 }]}>
+                <Text
+                  style={[styles.sheetSection, { color: colors.mutedForeground, marginTop: 16 }]}
+                >
                   COMING SOON
                 </Text>
                 {disabledSources.map((source) => (
@@ -137,8 +253,17 @@ export function SourceSwitcher() {
                     key={source.id}
                     style={[styles.sourceRow, { borderColor: colors.border, opacity: 0.45 }]}
                   >
-                    <View style={[styles.sourceIcon, { backgroundColor: "rgba(255,255,255,0.05)" }]}>
-                      <Ionicons name="lock-closed-outline" size={18} color={colors.mutedForeground} />
+                    <View
+                      style={[
+                        styles.sourceIcon,
+                        { backgroundColor: "rgba(255,255,255,0.05)" },
+                      ]}
+                    >
+                      <Ionicons
+                        name="lock-closed-outline"
+                        size={18}
+                        color={colors.mutedForeground}
+                      />
                     </View>
                     <View style={styles.sourceInfo}>
                       <Text style={[styles.sourceName, { color: colors.foreground }]}>
@@ -148,7 +273,15 @@ export function SourceSwitcher() {
                         {source.baseUrl}
                       </Text>
                     </View>
-                    <View style={[styles.soonBadge, { backgroundColor: `${colors.primary}20`, borderColor: `${colors.primary}30` }]}>
+                    <View
+                      style={[
+                        styles.soonBadge,
+                        {
+                          backgroundColor: `${colors.primary}20`,
+                          borderColor: `${colors.primary}30`,
+                        },
+                      ]}
+                    >
                       <Text style={[styles.soonText, { color: colors.primary }]}>Soon</Text>
                     </View>
                   </View>
@@ -165,6 +298,22 @@ export function SourceSwitcher() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Verification modal for CF-protected sources */}
+      {verifySource && (
+        <SourceVerificationModal
+          visible={verifySource !== null}
+          sourceId={verifySource.id}
+          sourceName={verifySource.name}
+          sourceUrl={verifySource.baseUrl}
+          onVerified={() => {
+            setActiveSourceId(verifySource.id);
+            setVerifySource(null);
+          }}
+          onDismiss={() => setVerifySource(null)}
+          onChangeSource={() => setVerifySource(null)}
+        />
+      )}
     </>
   );
 }
@@ -190,6 +339,11 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
     backgroundColor: "rgba(255,255,255,0.7)",
+  },
+  healthDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   label: {
     fontSize: 13,
@@ -253,6 +407,18 @@ const styles = StyleSheet.create({
   },
   sourceUrl: {
     fontSize: 11,
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: "600" as const,
   },
   soonBadge: {
     paddingHorizontal: 8,

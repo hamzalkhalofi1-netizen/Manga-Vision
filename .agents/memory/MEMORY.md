@@ -1,0 +1,2 @@
+- [Source proxy architecture](source-proxy-arch.md) — directOnWeb flag bypasses server proxy for CORS APIs; scraping sources always proxy
+- [Express 5 routing](express5-routing.md) — wildcard routes need regex, not string `/:id/*` patterns

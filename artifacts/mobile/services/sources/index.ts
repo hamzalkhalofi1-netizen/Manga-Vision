@@ -3,41 +3,73 @@ import { mangadexSource } from "./mangadex";
 import { comickSource } from "./comick";
 import { mangaplusSource } from "./mangaplus";
 import { naverSource } from "./naver";
+import { mangafireSource } from "./mangafire";
+import { asuraSource } from "./asura";
 
-function stub(id: string, name: string, baseUrl: string): MangaSource {
-  return {
-    id,
-    name,
-    baseUrl,
-    isEnabled: false,
-    async search() { return []; },
-    async getTrending() { return []; },
-    async getLatestUpdates() { return []; },
-    async getMangaDetails(mangaId) { return { id: mangaId, title: "", coverUrl: "", sourceId: id }; },
-    async getChapters() { return []; },
-    async getChapterPages() { return []; },
-  };
-}
+export { SourceError, SourceErrorType } from "./fetchClient";
+export type { SourceFetchOptions } from "./fetchClient";
 
 export const ALL_SOURCES: MangaSource[] = [
   mangadexSource,
   comickSource,
   mangaplusSource,
+  mangafireSource,
+  asuraSource,
   naverSource,
-  stub("mangafire", "MangaFire", "https://mangafire.to"),
-  stub("asura", "Asura Scans", "https://asuracomic.net"),
-  stub("kakao", "Kakao Webtoon", "https://webtoon.kakao.com"),
-  stub("bilibili", "Bilibili Comics", "https://www.bilibilicomics.com"),
-  stub("rawkuma", "Rawkuma", "https://rawkuma.com"),
+  {
+    id: "kakao",
+    name: "Kakao Webtoon",
+    baseUrl: "https://webtoon.kakao.com",
+    isEnabled: false,
+    requiresVerification: true,
+    async search() { return []; },
+    async getTrending() { return []; },
+    async getLatestUpdates() { return []; },
+    async getMangaDetails(id) { return { id, title: "", coverUrl: "", sourceId: "kakao" }; },
+    async getChapters() { return []; },
+    async getChapterPages() { return []; },
+  },
+  {
+    id: "bilibili",
+    name: "Bilibili Comics",
+    baseUrl: "https://www.bilibilicomics.com",
+    isEnabled: false,
+    async search() { return []; },
+    async getTrending() { return []; },
+    async getLatestUpdates() { return []; },
+    async getMangaDetails(id) { return { id, title: "", coverUrl: "", sourceId: "bilibili" }; },
+    async getChapters() { return []; },
+    async getChapterPages() { return []; },
+  },
+  {
+    id: "rawkuma",
+    name: "Rawkuma",
+    baseUrl: "https://rawkuma.com",
+    isEnabled: false,
+    requiresVerification: true,
+    async search() { return []; },
+    async getTrending() { return []; },
+    async getLatestUpdates() { return []; },
+    async getMangaDetails(id) { return { id, title: "", coverUrl: "", sourceId: "rawkuma" }; },
+    async getChapters() { return []; },
+    async getChapterPages() { return []; },
+  },
 ];
 
 export const sourceMap: Record<string, MangaSource> = Object.fromEntries(
-  ALL_SOURCES.map((s) => [s.id, s])
+  ALL_SOURCES.map((s) => [s.id, s]),
 );
 
 export function getSource(id: string): MangaSource {
   return sourceMap[id] ?? mangadexSource;
 }
 
-export { mangadexSource, comickSource, mangaplusSource, naverSource };
+export {
+  mangadexSource,
+  comickSource,
+  mangaplusSource,
+  naverSource,
+  mangafireSource,
+  asuraSource,
+};
 export * from "./types";

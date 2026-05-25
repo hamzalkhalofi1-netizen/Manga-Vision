@@ -1,0 +1,197 @@
+SOURCE ENGINE REFACTOR REQUIRED.
+
+Current problem:
+Only MangaDex works reliably.
+
+Other providers such as:
+
+- MangaFire
+- Asura Scans
+- Comick
+
+either fail to load,
+return empty content,
+or stop working because of anti-bot protections.
+
+We need a PROFESSIONAL SOURCE ADAPTER ARCHITECTURE similar to Tachiyomi/Mihon.
+
+IMPORTANT:
+Do NOT implement illegal bypasses.
+Do NOT attempt to break Cloudflare cryptographically.
+Do NOT use shady scraping hacks.
+
+Implement a clean browser-assisted source system.
+
+==================================================
+GOAL
+
+Create a robust multi-source manga provider engine capable of:
+
+- handling protected sites
+- maintaining sessions
+- supporting user verification
+- syncing cookies
+- parsing dynamic content
+- surviving anti-bot protections gracefully
+
+==================================================
+
+1. SOURCE ADAPTER ARCHITECTURE
+   ==================================================
+
+Refactor all manga providers into isolated source adapters.
+
+Each source should define:
+
+- base URL
+- search parser
+- chapter parser
+- image parser
+- cookies/session requirements
+- headers
+- fallback strategies
+
+Example:
+sources/
+mangadex/
+mangafire/
+asura/
+comick/
+
+Each source should be independently maintainable.
+
+==================================================
+2. EMBEDDED WEBVIEW FALLBACK
+
+When direct requests fail because of:
+
+- Cloudflare
+- anti-bot verification
+- browser checks
+- JavaScript challenges
+- captcha
+
+DO NOT fail silently.
+
+Instead:
+
+- open protected site in embedded WebView
+- allow user-assisted verification
+- allow login if required
+- preserve browser session
+- sync cookies back into app requests
+
+==================================================
+3. COOKIE + SESSION SYNCHRONIZATION
+
+Implement persistent session handling.
+
+Requirements:
+
+- sync WebView cookies into request client
+- reuse authenticated sessions
+- preserve Cloudflare clearance cookies
+- persist sessions between app launches
+
+Use:
+
+- shared cookie jar
+- persistent storage
+- secure session reuse
+
+==================================================
+4. REAL BROWSER HEADERS
+
+Use realistic request headers:
+
+- User-Agent
+- Accept
+- Referer
+- Accept-Language
+- Origin
+
+Avoid suspicious minimal scraper headers.
+
+==================================================
+5. JAVASCRIPT-RENDERED CONTENT
+
+Some sources render content dynamically.
+
+Implement:
+
+- WebView DOM extraction fallback
+  OR
+- lightweight headless browser parsing
+
+Only when necessary.
+
+Prefer lightweight parsing first.
+
+==================================================
+6. REQUEST STRATEGY
+
+Implement:
+
+- rate limiting
+- retry handling
+- exponential backoff
+- source cooldowns
+
+Avoid aggressive scraping behavior.
+
+==================================================
+7. USER-FRIENDLY PROTECTION UI
+
+If protection is triggered:
+show clear modal:
+
+"This source requires browser verification before content can load."
+
+Options:
+
+- Open Verification
+- Retry
+- Change Source
+
+Never show raw technical failures.
+
+==================================================
+8. SOURCE HEALTH SYSTEM
+
+Track:
+
+- source availability
+- parser failures
+- rate limit frequency
+- captcha frequency
+
+If source repeatedly fails:
+temporarily disable requests and notify user.
+
+==================================================
+9. PARSER STABILITY
+
+Use resilient parsing:
+
+- avoid brittle selectors
+- fallback selectors
+- DOM validation
+- safe parsing
+
+Log parser mismatches cleanly.
+
+==================================================
+10. FINAL GOAL
+
+The app should behave similarly to Mihon/Tachiyomi:
+
+- stable multi-source support
+- browser-assisted verification
+- persistent sessions
+- graceful handling of protected websites
+- user-assisted captcha solving
+- reliable chapter/image extraction
+
+WITHOUT illegal bypasses,
+WITHOUT unsafe scraping tricks,
+WITHOUT breaking website protections aggressively.
