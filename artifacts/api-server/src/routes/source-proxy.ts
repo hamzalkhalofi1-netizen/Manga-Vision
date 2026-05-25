@@ -11,7 +11,7 @@ const SOURCE_REGISTRY: Record<string, string> = {
   "comick-cdn": "https://meo.comick.pictures",
   "mangaplus": "https://api.mangaplus.shueisha.co.jp",
   "mangafire": "https://mangafire.to",
-  "asura": "https://asuracomic.net",
+  "asura": "https://asurascans.com",
   "naver": "https://www.webtoons.com",
 };
 
@@ -20,7 +20,7 @@ const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> =
   "comick-cdn":  { referer: "https://comick.io/",                origin: "https://comick.io" },
   "mangaplus":   { referer: "https://mangaplus.shueisha.co.jp/", origin: "https://mangaplus.shueisha.co.jp" },
   "mangafire":   { referer: "https://mangafire.to/",             origin: "https://mangafire.to" },
-  "asura":       { referer: "https://asuracomic.net/",           origin: "https://asuracomic.net" },
+  "asura":       { referer: "https://asurascans.com/",            origin: "https://asurascans.com" },
   "naver":       { referer: "https://www.webtoons.com/",         origin: "https://www.webtoons.com" },
 };
 
@@ -61,6 +61,10 @@ router.get(/^\/([^/]+)(?:\/(.*))?$/, async (req: Request, res: Response) => {
     "Accept-Language": "en-US,en;q=0.9",
     ...(siteInfo ? { Referer: siteInfo.referer, Origin: siteInfo.origin } : {}),
   };
+
+  // Forward XHR header when present (needed for AJAX endpoints like MangaFire /home)
+  const xrw = req.headers["x-requested-with"] as string | undefined;
+  if (xrw) headers["X-Requested-With"] = xrw;
 
   const cfClearance = req.headers["x-cf-clearance"] as string | undefined;
   const extraCookie = req.headers["x-source-cookie"] as string | undefined;

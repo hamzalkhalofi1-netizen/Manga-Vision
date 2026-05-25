@@ -84,6 +84,7 @@ export default function HomeScreen() {
   const [trending, setTrending] = useState<Manga[]>([]);
   const [latest, setLatest] = useState<Manga[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sourceError, setSourceError] = useState<string | null>(null);
   const [cfSource, setCfSource] = useState<{ id: string; name: string; url: string } | null>(null);
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
@@ -92,16 +93,28 @@ export default function HomeScreen() {
     setLoading(true);
     setTrending([]);
     setLatest([]);
+    setSourceError(null);
     const source = getSource(sourceId);
     Promise.all([source.getTrending(), source.getLatestUpdates()])
       .then(([t, l]) => {
         setTrending(t);
         setLatest(l);
+        if (t.length === 0 && l.length === 0) {
+          setSourceError(`${source.name} returned no content. The source may be temporarily unavailable.`);
+        }
       })
       .catch((err) => {
-        if (err instanceof SourceError && err.type === "cloudflare") {
-          const src = getSource(sourceId);
-          setCfSource({ id: sourceId, name: src.name, url: src.baseUrl });
+        if (err instanceof SourceError) {
+          if (err.type === "cloudflare") {
+            const src = getSource(sourceId);
+            setCfSource({ id: sourceId, name: src.name, url: src.baseUrl });
+          } else {
+            setSourceError(err.message);
+          }
+        } else if (err instanceof Error) {
+          setSourceError(err.message);
+        } else {
+          setSourceError("Failed to load from this source. Try switching sources.");
         }
       })
       .finally(() => setLoading(false));
@@ -140,6 +153,19 @@ export default function HomeScreen() {
           onDismiss={() => setCfSource(null)}
           onChangeSource={() => setCfSource(null)}
         />
+      )}
+
+      {/* Source error banner */}
+      {sourceError && !loading && (
+        <View style={[styles.errorBanner, { backgroundColor: "#1c1917", borderColor: "rgba(239,68,68,0.35)" }]}>
+          <Ionicons name="warning-outline" size={15} color="#ef4444" />
+          <Text style={[styles.errorBannerText, { color: "#d1d5db" }]} numberOfLines={2}>
+            {sourceError}
+          </Text>
+          <Pressable onPress={() => { setSourceError(null); loadSource(activeSourceId); }}>
+            <Ionicons name="refresh" size={15} color={colors.primary} />
+          </Pressable>
+        </View>
       )}
 
       {/* Header */}
@@ -365,5 +391,22 @@ const styles = StyleSheet.create({
   genreText: {
     fontSize: 13,
     fontWeight: "500" as const,
+  },
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 12,
+    marginTop: 8,
+    marginBottom: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
   },
 });

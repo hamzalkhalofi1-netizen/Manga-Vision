@@ -1,7 +1,7 @@
 import { Chapter, Manga, MangaSource } from "./types";
 import { proxiedFetch, SourceError } from "./fetchClient";
 
-const SITE_URL = "https://asuracomic.net";
+const SITE_URL = "https://asurascans.com";
 
 const FETCH_OPTS = {
   sourceId: "asura",
@@ -15,247 +15,340 @@ async function asuraFetch(path: string, query = ""): Promise<string> {
   return res.text();
 }
 
-async function asuraJsonFetch(path: string, query = ""): Promise<unknown> {
-  const res = await proxiedFetch("asura", path, query, {
-    ...FETCH_OPTS,
-    headers: { Accept: "application/json, */*" },
-  });
-  return res.json();
+// ── Astro v5 HTML parsing ──────────────────────────────────────────────────
+// Asura uses Astro v5 (SSG). Manga data is embedded as HTML-entity-encoded
+// JSON inside `<astro-island props="...">` attributes using the serialisation
+// format `[0, value]` (literal) / `[1, [...]]` (array).
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&quot;/g, '"')
+    .replace(/&#34;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/&#38;/g, "&")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
 }
 
-function parseHtmlMangaList(html: string): Manga[] {
+// Unwrap Astro [type, value] tuples recursively.
+function unpackAstro(v: unknown): unknown {
+  if (Array.isArray(v)) {
+    // [0, literal] or [1, [...array items]]
+    if (v.length === 2 && typeof v[0] === "number" && v[0] <= 1) {
+      const inner = v[1];
+      if (v[0] === 1 && Array.isArray(inner)) return inner.map(unpackAstro);
+      return unpackAstro(inner);
+    }
+    return v.map(unpackAstro);
+  }
+  if (v && typeof v === "object") {
+    return Object.fromEntries(
+      Object.entries(v as Record<string, unknown>).map(([k, val]) => [k, unpackAstro(val)])
+    );
+  }
+  return v;
+}
+
+function extractMangasFromAstroHtml(html: string): Manga[] {
   const results: Manga[] = [];
-  // Match series card links — asura uses /series/{slug}
-  const re =
-    /href="\/series\/([\w-]+)"[^>]*>[\s\S]{0,400}?<img[^>]+src="([^"]+)"[^>]*>[\s\S]{0,200}?<span[^>]*>([^<]{2,120})<\/span>/g;
+  const seen = new Set<string>();
+
+  // Strategy 1: Parse rendered HTML series cards (most reliable).
+  // Card structure: <a href="/comics/{slug}" ...><img src="{cover}" alt="{title}"
+  // The page renders full card HTML for each series including cover + alt title.
+  const cardRe =
+    /<a[^>]+href="(\/comics\/([\w-]+))"[^>]*>[\s\S]{0,600}?<img[^>]+src="([^"]+)"[^>]+alt="([^"]{2,150})"/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(html)) !== null) {
-    const [, slug, cover, title] = m;
-    if (slug && title) {
-      results.push({ id: slug, title: title.trim(), coverUrl: cover ?? "", sourceId: "asura" });
+  while ((m = cardRe.exec(html)) !== null) {
+    const [, , slug, cover, title] = m;
+    if (!seen.has(slug)) {
+      seen.add(slug);
+      results.push({ id: slug, title: title.trim(), coverUrl: cover, sourceId: "asura" });
     }
   }
-  // Broader fallback: series grid items
-  if (results.length === 0) {
-    const re2 = /\/series\/([\w-]+)/g;
-    const seen = new Set<string>();
-    let m2: RegExpExecArray | null;
-    while ((m2 = re2.exec(html)) !== null) {
-      if (!seen.has(m2[1])) {
-        seen.add(m2[1]);
-        results.push({ id: m2[1], title: m2[1].replace(/-/g, " "), coverUrl: "", sourceId: "asura" });
-      }
+  if (results.length > 0) {
+    console.log(`[asura] Strategy 1 (rendered HTML): ${results.length} cards`);
+    return results;
+  }
+
+  // Strategy 2: Astro v5 serialized data.
+  // Asura encodes props as HTML entities in `<astro-island props="...">` with
+  // `[0, value]` tuples. After entity-decoding, pattern is:
+  // "public_url":[0,"/comics/slug"]
+  const decoded = decodeEntities(html);
+  const urlRe = /"public_url":\[0,"(\/comics\/([\w-]+))"\]/g;
+  let um: RegExpExecArray | null;
+  while ((um = urlRe.exec(decoded)) !== null) {
+    const [, , slug] = um;
+    if (seen.has(slug)) continue;
+    seen.add(slug);
+    const ctxStart = Math.max(0, um.index - 1200);
+    const ctxEnd = Math.min(decoded.length, um.index + 300);
+    const ctx = decoded.slice(ctxStart, ctxEnd);
+    const titleM = ctx.match(/"title":\[0,"([^"]{2,150})"\]/);
+    const coverM = ctx.match(/"cover_url":\[0,"(https?:\/\/[^"]+)"\]/);
+    const title = titleM?.[1] ?? slug.replace(/-[0-9a-f]{6,8}$/, "").replace(/-/g, " ");
+    const coverUrl = coverM?.[1] ?? "";
+    console.log(`[asura] Strategy 2 (Astro JSON): slug=${slug} cover=${coverUrl ? "✓" : "✗"}`);
+    results.push({ id: slug, title, coverUrl, sourceId: "asura" });
+  }
+  if (results.length > 0) return results;
+
+  // Strategy 3: bare href fallback — get slugs with no metadata.
+  const hrefRe = /href="\/comics\/([\w-]+)"/g;
+  let hm: RegExpExecArray | null;
+  while ((hm = hrefRe.exec(html)) !== null) {
+    const slug = hm[1];
+    if (!seen.has(slug)) {
+      seen.add(slug);
+      results.push({
+        id: slug,
+        title: slug.replace(/-[0-9a-f]{6,8}$/, "").replace(/-/g, " "),
+        coverUrl: "",
+        sourceId: "asura",
+      });
     }
   }
-  return results.slice(0, 20);
+  console.log(`[asura] Strategy 3 (href fallback): ${results.length} slugs`);
+  return results;
 }
 
-function safeJson(html: string): unknown {
-  // Try to find embedded __NEXT_DATA__ JSON for Next.js pages
-  const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([^<]+)<\/script>/);
-  if (match?.[1]) {
-    try { return JSON.parse(match[1]); } catch {}
+function collectMangas(
+  obj: unknown,
+  results: Manga[],
+  seen: Set<string>,
+  depth = 0
+): void {
+  if (depth > 8 || !obj || typeof obj !== "object") return;
+  if (Array.isArray(obj)) {
+    for (const item of obj) collectMangas(item, results, seen, depth + 1);
+    return;
   }
-  return null;
+  const o = obj as Record<string, unknown>;
+  const pubUrl = typeof o.public_url === "string" ? o.public_url : null;
+  if (pubUrl && pubUrl.startsWith("/comics/")) {
+    const slug = pubUrl.replace("/comics/", "");
+    if (!seen.has(slug)) {
+      seen.add(slug);
+      const title = typeof o.title === "string" ? o.title : slug.replace(/-[0-9a-f]{6,8}$/, "").replace(/-/g, " ");
+      const coverUrl = typeof o.cover_url === "string" ? o.cover_url : "";
+      console.log(`[asura] island card: slug=${slug} title=${title} cover=${coverUrl ? "✓" : "✗"}`);
+      results.push({ id: slug, title, coverUrl, sourceId: "asura" });
+    }
+    return;
+  }
+  for (const val of Object.values(o)) collectMangas(val, results, seen, depth + 1);
 }
 
-function extractMangasFromNextData(data: unknown): Manga[] {
-  if (!data || typeof data !== "object") return [];
-  const d = data as Record<string, unknown>;
-  const props = d.props as Record<string, unknown> | undefined;
-  const pageProps = props?.pageProps as Record<string, unknown> | undefined;
-  const series =
-    pageProps?.series ??
-    pageProps?.comics ??
-    pageProps?.data ??
-    pageProps?.results;
-  if (!Array.isArray(series)) return [];
-  return series.map((item: unknown) => {
-    if (!item || typeof item !== "object") return null;
-    const i = item as Record<string, unknown>;
-    return {
-      id: (i.slug ?? i.id ?? i.series_slug ?? "") as string,
-      title: (i.title ?? i.name ?? "") as string,
-      coverUrl: (i.thumbnail ?? i.cover ?? i.image ?? "") as string,
-      sourceId: "asura",
-      status: i.status === "Completed" ? "completed" : "ongoing",
-    } satisfies Manga;
-  }).filter((m): m is Manga => m !== null && m.id.length > 0);
+// ── Chapter parsing from Astro HTML ──────────────────────────────────────────
+
+function extractChaptersFromAstroHtml(html: string): Chapter[] {
+  const decoded = decodeEntities(html);
+  const chapters: Chapter[] = [];
+  const seen = new Set<string>();
+
+  // Look for chapter objects with "number" and chapter ID patterns
+  // Asura encodes chapters in Astro props: {"id":"...","number":"1","title":"..."}
+  const chRe = /"id":"([\w-]+)"[^}]{0,200}?"number":"([\d.]+)"[^}]{0,200}?"(?:title|name)":"([^"]*)"/g;
+  let m: RegExpExecArray | null;
+  while ((m = chRe.exec(decoded)) !== null) {
+    const [, id, number, title] = m;
+    if (!seen.has(id)) {
+      seen.add(id);
+      chapters.push({ id, number, title: title || undefined, publishedAt: "" });
+    }
+  }
+  if (chapters.length > 0) {
+    console.log(`[asura] extracted ${chapters.length} chapters from Astro HTML`);
+    return chapters;
+  }
+
+  // Fallback: look for chapter href links on the detail page
+  // Pattern: /comics/slug/chapter-N or /comics/slug/N
+  const hrefRe = /href="(\/comics\/[\w-]+\/(?:chapter-)?[\d.]+(?:[-/][^"]*)?)"[^>]*>[\s\S]{0,80}?(?:Chapter\s*)?([\d.]+)/g;
+  while ((m = hrefRe.exec(html)) !== null) {
+    const [, path, num] = m;
+    const slug = path;
+    if (!seen.has(slug)) {
+      seen.add(slug);
+      chapters.push({ id: slug, number: num, publishedAt: "" });
+    }
+  }
+
+  console.log(`[asura] extracted ${chapters.length} chapters via href fallback`);
+  return chapters;
 }
+
+function extractChapterPagesFromAstroHtml(html: string): string[] {
+  const decoded = decodeEntities(html);
+
+  // Look for page image arrays in Astro props
+  const imageArrayRe = /"(?:images|pages|imageUrls?)"\s*:\s*\[([^\]]{20,})\]/g;
+  let m: RegExpExecArray | null;
+  while ((m = imageArrayRe.exec(decoded)) !== null) {
+    const urls = [...m[1].matchAll(/"(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"/gi)]
+      .map((u) => u[1]);
+    if (urls.length > 0) {
+      console.log(`[asura] extracted ${urls.length} chapter page images from Astro`);
+      return urls;
+    }
+  }
+
+  // Fallback: CDN image URLs
+  const cdnRe = /(https?:\/\/cdn\.asurascans\.com\/[^"'\s]{4,200}\.(?:jpg|jpeg|png|webp))/gi;
+  const urls = new Set<string>();
+  while ((m = cdnRe.exec(html)) !== null) urls.add(m[1]);
+  const result = [...urls];
+  console.log(`[asura] CDN fallback: ${result.length} images`);
+  return result;
+}
+
+// ── Source implementation ─────────────────────────────────────────────────
 
 export const asuraSource: MangaSource = {
   id: "asura",
   name: "Asura Scans",
   baseUrl: SITE_URL,
   isEnabled: true,
-  requiresVerification: true,
+  requiresVerification: false,
 
   async search(query: string, page = 0): Promise<Manga[]> {
     try {
-      const qs = new URLSearchParams({ name: query, page: String(page + 1) }).toString();
-      // Try JSON API first (Next.js internal)
-      try {
-        const json = await asuraJsonFetch("/series", `?${qs}`);
-        const extracted = extractMangasFromNextData(json);
-        if (extracted.length > 0) return extracted;
-      } catch (err) {
-        if (err instanceof SourceError && err.type === "cloudflare") throw err;
+      const qs = new URLSearchParams({
+        name: query,
+        page: String(page + 1),
+      }).toString();
+      const html = await asuraFetch("/browse", `?${qs}`);
+      console.log(`[asura] search response size: ${html.length}`);
+      if (/just a moment|checking your browser/i.test(html)) {
+        throw new SourceError("Asura Scans is protected by Cloudflare verification.", "cloudflare", 403, "asura");
       }
-      // HTML fallback
-      const html = await asuraFetch("/series", `?${qs}`);
-      const fromNext = safeJson(html);
-      if (fromNext) {
-        const extracted = extractMangasFromNextData(fromNext);
-        if (extracted.length > 0) return extracted;
-      }
-      return parseHtmlMangaList(html).filter(
-        (m) => !query || m.title.toLowerCase().includes(query.toLowerCase()),
+      const results = extractMangasFromAstroHtml(html).filter(
+        (m) => !query || m.title.toLowerCase().includes(query.toLowerCase())
       );
+      console.log(`[asura] search "${query}" → ${results.length} results`);
+      if (results.length === 0) {
+        console.warn("[asura] PARSER DIAGNOSTIC: search returned 0 results. HTML snippet:", html.slice(0, 300));
+      }
+      return results;
     } catch (err) {
-      if (err instanceof SourceError && err.type === "cloudflare") throw err;
-      return [];
+      if (err instanceof SourceError) throw err;
+      throw new SourceError(`Asura search failed: ${err instanceof Error ? err.message : "unknown"}`, "network", undefined, "asura");
     }
   },
 
   async getTrending(page = 0): Promise<Manga[]> {
     try {
-      const qs = new URLSearchParams({ page: String(page + 1), order: "rating" }).toString();
-      const html = await asuraFetch("/series", `?${qs}`);
-      const fromNext = safeJson(html);
-      if (fromNext) {
-        const extracted = extractMangasFromNextData(fromNext);
-        if (extracted.length > 0) return extracted;
+      const qs = new URLSearchParams({
+        page: String(page + 1),
+        order: "rating",
+      }).toString();
+      const html = await asuraFetch("/browse", `?${qs}`);
+      console.log(`[asura] getTrending response size: ${html.length}`);
+      if (/just a moment|checking your browser/i.test(html)) {
+        throw new SourceError("Asura Scans blocked by Cloudflare.", "cloudflare", 403, "asura");
       }
-      return parseHtmlMangaList(html);
+      const results = extractMangasFromAstroHtml(html);
+      console.log(`[asura] getTrending → ${results.length} results`);
+      if (results.length === 0) {
+        console.warn("[asura] PARSER DIAGNOSTIC: getTrending returned 0. HTML contains /comics/ links:", /\/comics\//.test(html));
+      }
+      return results;
     } catch (err) {
-      if (err instanceof SourceError && err.type === "cloudflare") throw err;
-      return [];
+      if (err instanceof SourceError) throw err;
+      throw new SourceError(`Asura trending failed: ${err instanceof Error ? err.message : "unknown"}`, "network", undefined, "asura");
     }
   },
 
   async getLatestUpdates(page = 0): Promise<Manga[]> {
     try {
-      const qs = new URLSearchParams({ page: String(page + 1), order: "update" }).toString();
-      const html = await asuraFetch("/series", `?${qs}`);
-      const fromNext = safeJson(html);
-      if (fromNext) {
-        const extracted = extractMangasFromNextData(fromNext);
-        if (extracted.length > 0) return extracted;
+      const qs = new URLSearchParams({
+        page: String(page + 1),
+        order: "update",
+      }).toString();
+      const html = await asuraFetch("/browse", `?${qs}`);
+      console.log(`[asura] getLatestUpdates response size: ${html.length}`);
+      if (/just a moment|checking your browser/i.test(html)) {
+        throw new SourceError("Asura Scans blocked by Cloudflare.", "cloudflare", 403, "asura");
       }
-      return parseHtmlMangaList(html);
+      const results = extractMangasFromAstroHtml(html);
+      console.log(`[asura] getLatestUpdates → ${results.length} results`);
+      if (results.length === 0) {
+        console.warn("[asura] PARSER DIAGNOSTIC: getLatestUpdates returned 0.");
+      }
+      return results;
     } catch (err) {
-      if (err instanceof SourceError && err.type === "cloudflare") throw err;
-      return [];
+      if (err instanceof SourceError) throw err;
+      throw new SourceError(`Asura latest failed: ${err instanceof Error ? err.message : "unknown"}`, "network", undefined, "asura");
     }
   },
 
   async getMangaDetails(id: string): Promise<Manga> {
     try {
-      const html = await asuraFetch(`/series/${id}`);
-      const fromNext = safeJson(html);
-      if (fromNext) {
-        const d = fromNext as Record<string, unknown>;
-        const props = (d.props as Record<string, unknown>)?.pageProps as Record<string, unknown> | undefined;
-        const s = (props?.series ?? props?.data ?? props?.comic) as Record<string, unknown> | undefined;
-        if (s) {
-          return {
-            id,
-            title: (s.title ?? s.name ?? id) as string,
-            coverUrl: (s.thumbnail ?? s.cover ?? s.image ?? "") as string,
-            sourceId: "asura",
-            status: s.status === "Completed" ? "completed" : "ongoing",
-            description: (s.synopsis ?? s.description ?? s.desc ?? "") as string,
-            author: (s.author ?? s.creator ?? "") as string,
-            genres: Array.isArray(s.genres)
-              ? (s.genres as Array<Record<string, unknown>>).map(
-                  (g) => (g.name ?? g) as string,
-                )
-              : [],
-          };
-        }
+      const html = await asuraFetch(`/comics/${id}`);
+      console.log(`[asura] getMangaDetails(${id}) response size: ${html.length}`);
+      if (/just a moment|checking your browser/i.test(html)) {
+        throw new SourceError("Asura detail page blocked by Cloudflare.", "cloudflare", 403, "asura");
       }
-      // Simple regex fallback
-      const titleMatch = html.match(/<h1[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)<\/h1>/i);
-      const coverMatch = html.match(/property="og:image"\s+content="([^"]+)"/);
+      const decoded = decodeEntities(html);
+
+      const titleM = decoded.match(/"title":"([^"]{2,150})"/) ?? html.match(/<h1[^>]*>([^<]{2,150})<\/h1>/);
+      const coverM = decoded.match(/"cover_url":"(https?:\/\/[^"]+)"/) ?? html.match(/property="og:image"\s+content="([^"]+)"/);
+      const descM = decoded.match(/"description":"([^"]{2,500})"/);
+      const authorM = decoded.match(/"author":"([^"]{2,100})"/);
+
+      const mangas = extractMangasFromAstroHtml(html);
+      const found = mangas.find((m) => m.id === id);
+
       return {
         id,
-        title: titleMatch?.[1]?.trim() ?? id.replace(/-/g, " "),
-        coverUrl: coverMatch?.[1] ?? "",
+        title: found?.title ?? titleM?.[1]?.trim() ?? id.replace(/-[0-9a-f]{6,8}$/, "").replace(/-/g, " "),
+        coverUrl: found?.coverUrl ?? coverM?.[1] ?? "",
         sourceId: "asura",
+        description: descM?.[1],
+        author: authorM?.[1],
       };
     } catch (err) {
-      if (err instanceof SourceError && err.type === "cloudflare") throw err;
-      return { id, title: id.replace(/-/g, " "), coverUrl: "", sourceId: "asura" };
+      if (err instanceof SourceError) throw err;
+      return { id, title: id.replace(/-[0-9a-f]{6,8}$/, "").replace(/-/g, " "), coverUrl: "", sourceId: "asura" };
     }
   },
 
   async getChapters(mangaId: string): Promise<Chapter[]> {
     try {
-      const html = await asuraFetch(`/series/${mangaId}`);
-      const fromNext = safeJson(html);
-      if (fromNext) {
-        const d = fromNext as Record<string, unknown>;
-        const props = (d.props as Record<string, unknown>)?.pageProps as Record<string, unknown> | undefined;
-        const chapters =
-          (props?.chapters ?? props?.episodes ?? props?.chapterList) as
-            | Array<Record<string, unknown>>
-            | undefined;
-        if (Array.isArray(chapters) && chapters.length > 0) {
-          return chapters.map((c) => ({
-            id: (c.id ?? c.chapter_id ?? c.slug ?? "") as string,
-            number: String(c.number ?? c.chapter ?? c.chap ?? "?"),
-            title: c.title ? String(c.title) : undefined,
-            publishedAt: (c.publishedAt ?? c.updated_at ?? c.date ?? "") as string,
-          }));
-        }
+      const html = await asuraFetch(`/comics/${mangaId}`);
+      console.log(`[asura] getChapters(${mangaId}) response size: ${html.length}`);
+      if (/just a moment|checking your browser/i.test(html)) {
+        throw new SourceError("Asura chapters blocked by Cloudflare.", "cloudflare", 403, "asura");
       }
-      // Regex fallback from HTML chapter list
-      const chapters: Chapter[] = [];
-      const re = /href="\/series\/[\w-]+\/(chapter-[\w-]+)"[^>]*>[\s\S]{0,50}?Chapter\s*([\d.]+)/gi;
-      let m: RegExpExecArray | null;
-      const seen = new Set<string>();
-      while ((m = re.exec(html)) !== null) {
-        const slug = m[1];
-        const num = m[2];
-        if (!seen.has(slug)) {
-          seen.add(slug);
-          chapters.push({ id: slug, number: num, publishedAt: "" });
-        }
+      const chapters = extractChaptersFromAstroHtml(html);
+      if (chapters.length === 0) {
+        console.warn(`[asura] PARSER DIAGNOSTIC: getChapters(${mangaId}) returned 0. Has /comics/ links:`, /\/comics\//.test(html));
       }
       return chapters;
     } catch (err) {
-      if (err instanceof SourceError && err.type === "cloudflare") throw err;
+      if (err instanceof SourceError) throw err;
       return [];
     }
   },
 
   async getChapterPages(chapterId: string): Promise<string[]> {
     try {
-      // chapterId for Asura is usually "series-slug/chapter-N"
-      const path = chapterId.startsWith("/") ? chapterId : `/${chapterId}`;
+      // chapterId is a path like "slug/chapter-1" or a full "/comics/slug/chapter-1"
+      const path = chapterId.startsWith("/") ? chapterId : `/comics/${chapterId}`;
       const html = await asuraFetch(path);
-      const fromNext = safeJson(html);
-      if (fromNext) {
-        const d = fromNext as Record<string, unknown>;
-        const props = (d.props as Record<string, unknown>)?.pageProps as Record<string, unknown> | undefined;
-        const pages = (props?.pages ?? props?.images ?? props?.chapter?.images) as
-          | Array<string | Record<string, unknown>>
-          | undefined;
-        if (Array.isArray(pages) && pages.length > 0) {
-          return pages
-            .map((p) => (typeof p === "string" ? p : (p as Record<string, unknown>).url as string))
-            .filter((u): u is string => typeof u === "string" && u.startsWith("http"));
-        }
+      console.log(`[asura] getChapterPages(${chapterId}) response size: ${html.length}`);
+      if (/just a moment|checking your browser/i.test(html)) {
+        throw new SourceError("Asura chapter page blocked by Cloudflare.", "cloudflare", 403, "asura");
       }
-      // Regex fallback: find CDN image URLs
-      const imgRe =
-        /(https?:\/\/(?:cdn\.|img\.|static\.|gg\.)?asura[^"'\s]{4,200}\.(?:jpg|jpeg|png|webp))/gi;
-      const urls = new Set<string>();
-      let m: RegExpExecArray | null;
-      while ((m = imgRe.exec(html)) !== null) urls.add(m[1]);
-      return [...urls];
+      const pages = extractChapterPagesFromAstroHtml(html);
+      if (pages.length === 0) {
+        console.warn(`[asura] PARSER DIAGNOSTIC: getChapterPages(${chapterId}) returned 0 images.`);
+      }
+      return pages;
     } catch (err) {
-      if (err instanceof SourceError && err.type === "cloudflare") throw err;
+      if (err instanceof SourceError) throw err;
       return [];
     }
   },

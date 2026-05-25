@@ -15,9 +15,10 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { MangaCard } from "@/components/MangaCard";
 import { SourceSwitcher } from "@/components/SourceSwitcher";
+import SourceVerificationModal from "@/components/SourceVerificationModal";
 import { useSettings } from "@/context/SettingsContext";
 import { useColors } from "@/hooks/useColors";
-import { getSource } from "@/services/sources";
+import { getSource, SourceError } from "@/services/sources";
 import { Manga } from "@/services/sources/types";
 
 const GENRES = [
@@ -37,6 +38,8 @@ export default function ExploreScreen() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [cfSource, setCfSource] = useState<{ id: string; name: string; url: string } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
@@ -45,6 +48,7 @@ export default function ExploreScreen() {
     async (q: string, pageNum: number, reset = false) => {
       const source = getSource(activeSourceId);
       setLoading(true);
+      if (reset) setSourceError(null);
       try {
         let data: Manga[];
         if (q.trim()) {
@@ -57,9 +61,21 @@ export default function ExploreScreen() {
         } else {
           setResults((prev) => [...prev, ...data]);
         }
-        setHasMore(data.length === 20);
-      } catch {
+        setHasMore(data.length >= 20);
+      } catch (err) {
         setHasMore(false);
+        if (err instanceof SourceError) {
+          if (err.type === "cloudflare") {
+            const src = getSource(activeSourceId);
+            setCfSource({ id: activeSourceId, name: src.name, url: src.baseUrl });
+          } else {
+            setSourceError(err.message);
+          }
+        } else if (err instanceof Error) {
+          setSourceError(err.message);
+        } else {
+          setSourceError("Failed to load content from this source.");
+        }
       } finally {
         setLoading(false);
       }
@@ -90,6 +106,23 @@ export default function ExploreScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* CF Verification modal */}
+      {cfSource && (
+        <SourceVerificationModal
+          visible
+          sourceId={cfSource.id}
+          sourceName={cfSource.name}
+          sourceUrl={cfSource.url}
+          onVerified={() => {
+            setCfSource(null);
+            setPage(0);
+            doSearch(query, 0, true);
+          }}
+          onDismiss={() => setCfSource(null)}
+          onChangeSource={() => setCfSource(null)}
+        />
+      )}
+
       {/* Header */}
       <View style={[styles.header, { paddingTop: topPadding + 12 }]}>
         <View
@@ -149,6 +182,19 @@ export default function ExploreScreen() {
           );
         })}
       </ScrollView>
+
+      {/* Source error banner */}
+      {sourceError && !loading && (
+        <View style={[styles.errorBanner, { backgroundColor: colors.card, borderColor: "rgba(239,68,68,0.35)" }]}>
+          <Ionicons name="warning-outline" size={16} color="#ef4444" />
+          <Text style={[styles.errorText, { color: colors.foreground }]} numberOfLines={3}>
+            {sourceError}
+          </Text>
+          <Pressable onPress={() => { setSourceError(null); setPage(0); doSearch(query, 0, true); }}>
+            <Ionicons name="refresh" size={16} color={colors.primary} />
+          </Pressable>
+        </View>
+      )}
 
       {/* Results */}
       <FlatList
@@ -267,5 +313,21 @@ const styles = StyleSheet.create({
   footer: {
     padding: 20,
     alignItems: "center",
+  },
+  errorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 12,
+    marginBottom: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
   },
 });
