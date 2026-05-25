@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   FlatList,
   Platform,
@@ -20,7 +21,9 @@ import {
   ViewToken,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useDownloads } from "@/context/DownloadContext";
 import { useLibrary } from "@/context/LibraryContext";
+import * as DM from "@/services/downloadManager";
 import { useSettings } from "@/context/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { AppErrorModal, classifyError } from "@/components/AppErrorModal";
@@ -96,6 +99,7 @@ export default function ReaderScreen() {
     return token.key;
   };
   const { saveProgress } = useLibrary();
+  const { dlState, dlProgress, downloadChapter: startDownload, deleteChapter } = useDownloads();
 
   // ── Page state ────────────────────────────────────────────────────────────
   const [pages, setPages] = useState<string[]>([]);
@@ -148,7 +152,8 @@ export default function ReaderScreen() {
   // chapter navigation triggers a fresh load without remounting the screen.
   useEffect(() => {
     if (!activeChapterId) return;
-    const source = getSource(params.sourceId || "mangadex");
+    const sid = params.sourceId || "mangadex";
+    const source = getSource(sid);
 
     setLoading(true);
     setLoadError(null);
@@ -159,25 +164,38 @@ export default function ReaderScreen() {
     setQueueProgress(null);
     translationQueue.cancel();
 
-    source
-      .getChapterPages(activeChapterId)
-      .then((p) => {
+    (async () => {
+      try {
+        // ── Offline first: use locally saved pages if available ──────────────
+        const local = await DM.getDownloadedPages(sid, params.mangaId, activeChapterId);
+        if (local && local.length > 0) {
+          setPages(local);
+          setTimeout(() => {
+            flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
+          }, 50);
+          return;
+        }
+
+        // ── Network fetch ────────────────────────────────────────────────────
+        const p = await source.getChapterPages(activeChapterId);
         const valid = (p || []).filter(
-          (u) => typeof u === "string" && u.startsWith("http")
+          (u) => typeof u === "string" && (u.startsWith("http") || u.startsWith("file://"))
         );
         if (valid.length === 0) {
           setLoadError("No pages found for this chapter.");
         } else {
           setPages(valid);
-          // Scroll to top when chapter changes
           setTimeout(() => {
             flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
           }, 50);
         }
-      })
-      .catch(() => setLoadError("Failed to load chapter. Please try again."))
-      .finally(() => setLoading(false));
-  }, [activeChapterId, params.sourceId]);
+      } catch {
+        setLoadError("Failed to load chapter. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [activeChapterId, params.sourceId, params.mangaId]);
 
   // ─── Save reading progress ─────────────────────────────────────────────────
   useEffect(() => {
@@ -408,6 +426,64 @@ export default function ReaderScreen() {
     resetControlsTimer();
   }, [resetControlsTimer]);
 
+  // ─── Download / delete chapter ────────────────────────────────────────────
+  const chDlState = dlState[activeChapterId] ?? "idle";
+  const chDlProgress = dlProgress[activeChapterId] ?? null;
+
+  const handleDownload = useCallback(async () => {
+    if (Platform.OS === "web") {
+      showBanner("Downloads are only available in the mobile app.");
+      return;
+    }
+    const sid = params.sourceId || "mangadex";
+    if (chDlState === "downloading") {
+      deleteChapter(sid, params.mangaId, activeChapterId);
+      return;
+    }
+    if (chDlState === "done") {
+      Alert.alert(
+        "Remove Download",
+        `Delete the offline copy of Chapter ${activeChapterNum}?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => deleteChapter(sid, params.mangaId, activeChapterId),
+          },
+        ]
+      );
+      return;
+    }
+    if (pages.length === 0) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      await startDownload(
+        params.mangaId,
+        activeChapterId,
+        activeChapterNum,
+        params.mangaTitle ?? "Unknown",
+        "",
+        sid,
+        pages
+      );
+      showBanner(`Chapter ${activeChapterNum} saved for offline reading.`);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes("cancelled")) showBanner(`Download failed: ${msg}`);
+    }
+  }, [
+    chDlState,
+    pages,
+    activeChapterId,
+    activeChapterNum,
+    params,
+    startDownload,
+    deleteChapter,
+    showBanner,
+  ]);
+
   // ─── Toggle reading mode ───────────────────────────────────────────────────
   const toggleMode = useCallback(() => {
     updateReaderSettings({
@@ -583,6 +659,38 @@ export default function ReaderScreen() {
                     {Object.keys(pageTranslations).length > 0 ? "More" : "All"}
                   </Text>
                 </>
+              )}
+            </Pressable>
+
+            {/* Download chapter button */}
+            <Pressable
+              onPress={handleDownload}
+              style={[
+                styles.chapterTranslateBtn,
+                {
+                  backgroundColor:
+                    chDlState === "done"
+                      ? "rgba(34,197,94,0.22)"
+                      : chDlState === "error"
+                      ? "rgba(239,68,68,0.22)"
+                      : "rgba(255,255,255,0.15)",
+                  paddingHorizontal: 7,
+                },
+              ]}
+            >
+              {chDlState === "downloading" ? (
+                <>
+                  <ActivityIndicator color="#fff" size="small" style={{ width: 14, height: 14 }} />
+                  <Text style={styles.chapterTranslateTxt}>
+                    {chDlProgress ? `${chDlProgress.done}/${chDlProgress.total}` : "…"}
+                  </Text>
+                </>
+              ) : chDlState === "done" ? (
+                <Ionicons name="checkmark-circle" size={17} color="rgb(34,197,94)" />
+              ) : chDlState === "error" ? (
+                <Ionicons name="alert-circle-outline" size={17} color="rgb(239,68,68)" />
+              ) : (
+                <Ionicons name="cloud-download-outline" size={17} color="#fff" />
               )}
             </Pressable>
 

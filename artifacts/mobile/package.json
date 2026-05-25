@@ -57,6 +57,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
+    "expo-file-system": "^56.0.7",
     "react-native-webview": "^13.16.1"
   }
 }
