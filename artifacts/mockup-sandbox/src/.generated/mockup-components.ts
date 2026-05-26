@@ -3,10 +3,10 @@ type ModuleMap = Record<string, () => Promise<Record<string, unknown>>>;
 export const modules: ModuleMap = {
   "./components/mockups/settings-refined/Elevated.tsx": () => import("../components/mockups/settings-refined/Elevated.tsx"),
   "./components/mockups/settings-refined/Sharper.tsx": () => import("../components/mockups/settings-refined/Sharper.tsx"),
-  "./components/mockups/settings-surprise/ControlDashboard.tsx": () => import("../components/mockups/settings-surprise/ControlDashboard.tsx"),
-  "./components/mockups/settings-surprise/FrequencyFirst.tsx": () => import("../components/mockups/settings-surprise/FrequencyFirst.tsx"),
-  "./components/mockups/settings-surprise/IntentDriven.tsx": () => import("../components/mockups/settings-surprise/IntentDriven.tsx"),
   "./components/mockups/settings-vibes/EnergeticManga.tsx": () => import("../components/mockups/settings-vibes/EnergeticManga.tsx"),
   "./components/mockups/settings-vibes/MinimalFormal.tsx": () => import("../components/mockups/settings-vibes/MinimalFormal.tsx"),
-  "./components/mockups/settings-vibes/WarmEditorial.tsx": () => import("../components/mockups/settings-vibes/WarmEditorial.tsx")
+  "./components/mockups/settings-vibes/WarmEditorial.tsx": () => import("../components/mockups/settings-vibes/WarmEditorial.tsx"),
+  "./components/mockups/settings-surprise/ControlDashboard.tsx": () => import("../components/mockups/settings-surprise/ControlDashboard.tsx"),
+  "./components/mockups/settings-surprise/FrequencyFirst.tsx": () => import("../components/mockups/settings-surprise/FrequencyFirst.tsx"),
+  "./components/mockups/settings-surprise/IntentDriven.tsx": () => import("../components/mockups/settings-surprise/IntentDriven.tsx")
 };
