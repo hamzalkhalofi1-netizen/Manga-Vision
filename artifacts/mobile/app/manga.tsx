@@ -20,7 +20,10 @@ import { useLibrary } from "@/context/LibraryContext";
 import { useSettings } from "@/context/SettingsContext";
 import { useTokens } from "@/context/TokenContext";
 import { useColors } from "@/hooks/useColors";
-import { getSource } from "@/services/sources";
+import SourceVerificationModal from "@/components/SourceVerificationModal";
+import { SourceErrorView } from "@/components/SourceErrorView";
+import { getSource, SourceError } from "@/services/sources";
+import type { SourceErrorType } from "@/services/sources";
 import { Chapter, LibraryStatus, Manga } from "@/services/sources/types";
 
 const STATUS_ICONS: Record<LibraryStatus, string> = {
@@ -44,6 +47,9 @@ export default function MangaScreen() {
   const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);
   const [translating, setTranslating] = useState(false);
   const [showAllChapters, setShowAllChapters] = useState(false);
+  const [sourceErr, setSourceErr] = useState<{ type: SourceErrorType; message: string } | null>(null);
+  const [verifyVisible, setVerifyVisible] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
 
   const sourceId = params.sourceId || activeSourceId;
   const mangaId = params.mangaId;
@@ -52,16 +58,26 @@ export default function MangaScreen() {
     if (!mangaId) return;
     const source = getSource(sourceId);
     setLoading(true);
+    setSourceErr(null);
     Promise.all([source.getMangaDetails(mangaId), source.getChapters(mangaId)])
       .then(([m, c]) => {
         setManga(m);
         setChapters(c);
       })
       .catch((err) => {
-        console.error("Failed to load manga details:", err);
+        console.error("[manga] load failed:", err);
+        if (err instanceof SourceError) {
+          setSourceErr({ type: err.type, message: err.message });
+          if (err.type === "cloudflare" || err.type === "auth") {
+            const src = getSource(sourceId);
+            if (src.requiresVerification) setVerifyVisible(true);
+          }
+        } else {
+          setSourceErr({ type: "network", message: err instanceof Error ? err.message : "Failed to load manga." });
+        }
       })
       .finally(() => setLoading(false));
-  }, [mangaId, sourceId]);
+  }, [mangaId, sourceId, retryKey]);
 
   const entry = mangaId ? getEntry(mangaId) : undefined;
   const progress = mangaId ? getProgress(mangaId) : undefined;
@@ -159,16 +175,30 @@ export default function MangaScreen() {
   }
 
   if (!manga) {
+    const src = getSource(sourceId);
     return (
-      <View style={[styles.center, { backgroundColor: colors.background }]}>
-        <Ionicons name="alert-circle-outline" size={48} color={colors.mutedForeground} />
-        <Text style={[styles.errorText, { color: colors.mutedForeground }]}>
-          Failed to load manga
-        </Text>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={{ color: colors.primary }}>Go Back</Text>
-        </Pressable>
-      </View>
+      <>
+        <SourceErrorView
+          errorType={sourceErr?.type}
+          message={sourceErr?.message}
+          sourceName={src.name}
+          onVerify={sourceErr?.type === "cloudflare" || sourceErr?.type === "auth"
+            ? () => setVerifyVisible(true) : undefined}
+          onRetry={() => setRetryKey((k) => k + 1)}
+          onBack={() => router.back()}
+        />
+        <SourceVerificationModal
+          visible={verifyVisible}
+          sourceId={sourceId}
+          sourceName={src.name}
+          sourceUrl={src.baseUrl}
+          onVerified={() => {
+            setVerifyVisible(false);
+            setRetryKey((k) => k + 1);
+          }}
+          onDismiss={() => setVerifyVisible(false)}
+        />
+      </>
     );
   }
 

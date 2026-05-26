@@ -43,23 +43,74 @@ if (Platform.OS !== "web") {
   } catch {}
 }
 
-const COOKIE_INJECT_JS = `
+/**
+ * Injected JS to extract:
+ * 1. document.cookie (non-HttpOnly cookies)
+ * 2. localStorage session tokens
+ * 3. Whether this is a Cloudflare challenge page
+ *
+ * On iOS with sharedCookiesEnabled, HttpOnly cookies (cf_clearance) are
+ * shared automatically with the native HTTP stack. We detect verification
+ * success by checking that the challenge UI is gone, not by reading cf_clearance.
+ */
+const SESSION_INJECT_JS = `
 (function() {
-  function sendCookies() {
+  var CF_SIGNATURES = [
+    'cf-browser-verification','challenge-form','__cf_chl_opt',
+    'chl-api','turnstile','_cf_chl_enter'
+  ];
+  var CF_TITLES = ['just a moment','checking your browser','attention required'];
+
+  function isChallengePage() {
+    try {
+      var t = document.title.toLowerCase();
+      if (CF_TITLES.some(function(w){ return t.indexOf(w) >= 0; })) return true;
+      var h = document.documentElement.innerHTML || '';
+      return CF_SIGNATURES.some(function(s){ return h.indexOf(s) >= 0; });
+    } catch(e){ return false; }
+  }
+
+  function parseCookies() {
+    var r = {};
     try {
       var pairs = document.cookie.split(';');
-      var cookies = {};
       for (var i = 0; i < pairs.length; i++) {
-        var eq = pairs[i].indexOf('=');
-        if (eq > 0) {
-          cookies[pairs[i].slice(0, eq).trim()] = pairs[i].slice(eq + 1).trim();
+        var p = pairs[i].trim(); var eq = p.indexOf('=');
+        if (eq > 0) r[p.slice(0,eq).trim()] = p.slice(eq+1).trim();
+      }
+    } catch(e){}
+    return r;
+  }
+
+  function getLS() {
+    var ls = {};
+    try {
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i); if (!k) continue;
+        var lk = k.toLowerCase();
+        if (lk.indexOf('token')>=0||lk.indexOf('session')>=0||
+            lk.indexOf('auth')>=0||lk.indexOf('user')>=0) {
+          ls[k] = localStorage.getItem(k)||'';
         }
       }
-      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'cookies', cookies: cookies }));
-    } catch(e) {}
+    } catch(e){}
+    return ls;
   }
-  sendCookies();
-  setInterval(sendCookies, 1500);
+
+  function send() {
+    try {
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type:'session',
+        cookies: parseCookies(),
+        isChallengePage: isChallengePage(),
+        url: window.location.href,
+        title: document.title,
+        localStorage: getLS(),
+      }));
+    } catch(e){}
+  }
+  send();
+  setInterval(send, 1500);
   true;
 })();
 `;
@@ -76,13 +127,17 @@ export default function SourceVerificationModal({
   const colors = useColors();
   const [loading, setLoading] = useState(true);
   const [verified, setVerified] = useState(false);
+  const [pageTitle, setPageTitle] = useState("");
   const verifiedRef = useRef(false);
+  const sessionSavedRef = useRef(false);
 
   useEffect(() => {
     if (visible) {
       setLoading(true);
       setVerified(false);
+      setPageTitle("");
       verifiedRef.current = false;
+      sessionSavedRef.current = false;
     }
   }, [visible]);
 
@@ -90,16 +145,51 @@ export default function SourceVerificationModal({
     async (event: { nativeEvent: { data: string } }) => {
       if (verifiedRef.current) return;
       try {
-        const data = JSON.parse(event.nativeEvent.data) as {
+        const raw = JSON.parse(event.nativeEvent.data) as {
           type: string;
           cookies?: Record<string, string>;
+          isChallengePage?: boolean;
+          url?: string;
+          title?: string;
+          localStorage?: Record<string, string>;
         };
-        if (data.type === "cookies" && data.cookies && "cf_clearance" in data.cookies) {
+        if (raw.type !== "session") return;
+
+        const { cookies = {}, isChallengePage, localStorage: ls = {}, title = "" } = raw;
+        if (title) setPageTitle(title);
+
+        // Save all readable cookies (non-HttpOnly)
+        if (Object.keys(cookies).length > 0) {
+          sessionSavedRef.current = true;
+          await sessionStore.setSession(sourceId, cookies);
+        }
+
+        // Save relevant localStorage values as session data
+        const relevantLs: Record<string, string> = {};
+        for (const [k, v] of Object.entries(ls)) {
+          relevantLs[`__ls_${k}`] = v;
+        }
+        if (Object.keys(relevantLs).length > 0) {
+          await sessionStore.setSession(sourceId, relevantLs);
+        }
+
+        // Verification success:
+        // 1. cf_clearance in document.cookie (rare — usually HttpOnly)
+        // 2. Page is NOT a challenge page AND we have any cookies saved
+        //    (on iOS with sharedCookiesEnabled, cf_clearance is auto-shared
+        //     with the native HTTP stack even though JS can't read it)
+        // 3. Page is NOT a challenge page AND session was previously saved
+        const cfCookie = "cf_clearance" in cookies;
+        const notChallenge = !isChallengePage;
+        const hasCookies = Object.keys(cookies).length > 0;
+
+        const isVerified = cfCookie || (notChallenge && (hasCookies || sessionSavedRef.current));
+
+        if (isVerified) {
           verifiedRef.current = true;
-          await sessionStore.setSession(sourceId, data.cookies);
           await sourceHealth.clearDisable(sourceId);
           setVerified(true);
-          setTimeout(() => onVerified(), 900);
+          setTimeout(() => onVerified(), 800);
         }
       } catch {}
     },
@@ -197,6 +287,14 @@ export default function SourceVerificationModal({
               🔒 Complete any security check below to unlock{" "}
               <Text style={{ fontWeight: "700" }}>{sourceName}</Text>
             </Text>
+            {pageTitle ? (
+              <Text
+                style={[st.infoBannerText, { color: colors.isDark ? "#64748b" : "#94a3b8", fontSize: 11, marginTop: 3 }]}
+                numberOfLines={1}
+              >
+                {pageTitle}
+              </Text>
+            ) : null}
           </View>
         )}
 
@@ -211,7 +309,7 @@ export default function SourceVerificationModal({
         ) : (
           <WebView
             source={{ uri: sourceUrl }}
-            injectedJavaScript={COOKIE_INJECT_JS}
+            injectedJavaScript={SESSION_INJECT_JS}
             onMessage={handleMessage}
             onLoadEnd={() => setLoading(false)}
             style={st.webview}

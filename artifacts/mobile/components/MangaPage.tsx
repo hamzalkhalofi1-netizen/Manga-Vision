@@ -2,6 +2,7 @@ import { Image } from "expo-image";
 import React, { memo, useCallback, useState } from "react";
 import { Dimensions, View } from "react-native";
 import PremiumOverlayRenderer from "./PremiumOverlayRenderer";
+import { getBasicImageHeaders } from "@/services/sourceImageHeaders";
 
 const SCREEN_W = Dimensions.get("window").width;
 const DEFAULT_ASPECT = 1.45;
@@ -66,6 +67,7 @@ interface MangaPageProps {
   onHeightKnown?: (height: number) => void;
   apiBase?: string;
   userApiKey?: string | null;
+  sourceId?: string;
 }
 
 function MangaPage({
@@ -74,7 +76,9 @@ function MangaPage({
   showOverlay,
   isRTL = false,
   onHeightKnown,
+  sourceId,
 }: MangaPageProps) {
+  const imageHeaders = sourceId ? getBasicImageHeaders(sourceId) : undefined;
   const [displayH, setDisplayH] = useState(Math.round(SCREEN_W * DEFAULT_ASPECT));
   const [nativeDims, setNativeDims] = useState({ w: 0, h: 0 });
 
@@ -94,7 +98,7 @@ function MangaPage({
   return (
     <View style={{ width: SCREEN_W, height: displayH, backgroundColor: "#000" }}>
       <Image
-        source={{ uri }}
+        source={{ uri, headers: imageHeaders }}
         style={{ width: SCREEN_W, height: displayH }}
         contentFit="fill"
         transition={100}

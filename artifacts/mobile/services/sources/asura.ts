@@ -390,7 +390,7 @@ export const asuraSource: MangaSource = {
   name: "Asura Scans",
   baseUrl: SITE_URL,
   isEnabled: true,
-  requiresVerification: false,
+  requiresVerification: true,
 
   async search(query: string, page = 0): Promise<Manga[]> {
     try {
