@@ -1,2 +1,3 @@
 - [Source proxy architecture](source-proxy-arch.md) — directOnWeb flag bypasses server proxy for CORS APIs; scraping sources always proxy
-- [Express 5 routing](express5-routing.md) — wildcard routes need regex, not string `/:id/*` patterns
+- [Express 5 routing](express5-routing.md) — wildcard routes need regex, not string `/:id(*) ` patterns
+- [Manga overlay rendering](manga-overlay-rendering.md) — mask must cover OCR bbox (original text), not glyph bounds of translation; heuristic 0.47 not 0.55

@@ -1,24 +1,22 @@
 /**
- * SkiaOverlayCanvas — Glyph-tight deterministic manga text overlay.
+ * SkiaOverlayCanvas — Professional scanlation-style manga text overlay.
  *
  * Pipeline per OCR region:
- *   1. Extract placement center from OCR polygon bbox (or x/y/w/h fallback)
- *   2. Layout translated text using the OCR width as a wrapping constraint
- *   3. Measure ACTUAL rendered glyph extents line-by-line via measureLine()
- *      → Canvas.measureText() on web (real glyph metrics)
- *      → Calibrated Arabic heuristic on native (0.55 × fontSize × chars)
- *   4. Draw a rounded-rect mask sized to the MEASURED glyph bounds + tiny PAD
- *   5. Render translated text centered on the same measured bounds
+ *   1. Extract OCR placement center + dimensions from polygon bbox (or x/y/w/h)
+ *   2. Layout translated text using OCR width as wrapping constraint
+ *   3. Measure ACTUAL rendered glyph extents via measureLine()
+ *   4. Draw a FULL-COVERAGE mask over the ORIGINAL text area (OCR bbox + 3px pad)
+ *      at 100% opacity using the exact sampled bubble background color
+ *   5. Add a soft feathering stroke around the mask edges to blend with bubble art
+ *   6. Render translated Arabic text centered on the same OCR center point
  *
- * Key invariant: mask size follows actual rendered text — not OCR bbox, not
- * bubble size, not character count estimates.
+ * Key invariant: mask covers the ORIGINAL text bounding box to ensure complete
+ * erasure of source glyphs. Text is independently sized to its own glyph bounds.
  *
- *   small word   →  tiny mask
- *   multi-line   →  mask grows to wrap rendered lines only
+ *   original long line  → mask covers full OCR width → no text leaks at edges
+ *   short translation   → mask still covers full OCR area → clean patch
  *
- * No OpenCV. No contour detection. No bubble detection. No region merging.
- * No AI repainting. No native CV dependencies.
- * If polygon/bbox is invalid, falls back gracefully — never skips a region.
+ * No OpenCV. No contour detection. No AI repainting. No native CV dependencies.
  */
 
 import React, { memo, useMemo } from "react";
@@ -50,34 +48,35 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
 }
 
 /**
- * maskFill — derive mask color + opacity from the background color immediately
- * behind the text glyphs.
+ * maskFill — exact bubble background color at 100% opacity.
  *
- * Light backgrounds: high opacity to cleanly cover original glyphs.
- * Dark backgrounds:  lower opacity to preserve panel artwork texture.
+ * Professional scanlation technique: paint over the original text with
+ * the exact background fill so the patch is visually invisible.
+ * Full opacity ensures ZERO bleed-through of original glyphs.
+ *
+ * Stroke feathering (separate, low-opacity) handles edge blending.
  */
-function maskFill(bgColor: string): { color: string; opacity: number } {
+function maskFill(bgColor: string): { color: string; strokeColor: string } {
   const rgb = hexToRgb(bgColor);
-  if (!rgb) return { color: "#f5f2eb", opacity: 0.92 };
-  const lum = (0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b) / 255;
-  const opacity = lum > 0.6 ? 0.93 : lum > 0.35 ? 0.88 : 0.82;
-  return { color: `rgb(${rgb.r},${rgb.g},${rgb.b})`, opacity };
+  if (!rgb) return { color: "#f5f2eb", strokeColor: "rgba(245,242,235,0.35)" };
+  const colorStr = `rgb(${rgb.r},${rgb.g},${rgb.b})`;
+  // Stroke is same hue but very translucent — blends mask edge into surrounding art
+  const strokeStr = `rgba(${rgb.r},${rgb.g},${rgb.b},0.35)`;
+  return { color: colorStr, strokeColor: strokeStr };
 }
 
 // ── Placement ──────────────────────────────────────────────────────────────────
 
 /**
- * getPlacement — extract the text center and OCR container size in pixel space.
+ * getPlacement — extract OCR center and ORIGINAL text dimensions.
  *
- * The CENTER (cx, cy) is used for WHERE to place the overlay.
- * The container dimensions (ocrW, ocrH) are used ONLY as wrapping constraints
- * for the font scaler — they do NOT determine mask size.
+ * The CENTER (cx, cy) is where the translated text will be placed.
+ * The OCR dimensions (ocrW, ocrH) define the MASK size (original text area)
+ * AND are used as the wrapping constraint for the font scaler.
  *
  * Priority:
  *   1. Polygon bounding box (tight around OCR text glyphs)
  *   2. x / y / w / h bbox (always-available fallback)
- *
- * Returns null only for degenerate (near-zero) boxes.
  */
 function getPlacement(
   region: TextRegion,
@@ -111,17 +110,14 @@ function getPlacement(
 // ── Glyph measurement ──────────────────────────────────────────────────────────
 
 /**
- * glyphBounds — compute the ACTUAL rendered extent of the laid-out text block.
+ * glyphBounds — actual rendered extent of the translated text block.
  *
- * Uses the same measurement path as the font scaler:
- *   Web:    Canvas.measureText() via measureLine() — real glyph widths
- *   Native: Calibrated Arabic heuristic via measureLine() — 0.55 × fs × chars
- *
- * This is the core of glyph-tight masking: mask size follows text, not OCR box.
+ * Used ONLY for positioning the text view, not for mask sizing.
+ * Mask sizing is always driven by OCR dimensions (original text area).
  */
 function glyphBounds(typeset: ScaledTypeset): { w: number; h: number } {
   const { lines, fontSize, lineHeight } = typeset;
-  const lhr = fontSize > 0 ? lineHeight / fontSize : 1.35;
+  const lhr = fontSize > 0 ? lineHeight / fontSize : 1.3;
 
   const w = lines.length === 0 ? 0
     : Math.max(...lines.map((l) => measureLine(l, fontSize)));
@@ -133,10 +129,18 @@ function glyphBounds(typeset: ScaledTypeset): { w: number; h: number } {
 // ── Component ─────────────────────────────────────────────────────────────────
 
 /**
- * Tiny adaptive padding around measured glyph bounds.
- * 4 px covers antialiased glyph edges without leaking into surrounding art.
+ * How much to expand the mask beyond the OCR bbox on each side.
+ *
+ * 3px catches anti-aliased glyph edges that extend just past the bbox boundary.
+ * Large enough to guarantee full coverage, small enough to avoid bubble art bleed.
  */
-const PAD = 4;
+const MASK_EXPAND = 3;
+
+/**
+ * Stroke width for the feathering ring around the mask.
+ * Same color as mask fill at low opacity — creates a soft blend into bubble art.
+ */
+const STROKE_W = 2.5;
 
 function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
   const items = useMemo(() => {
@@ -145,7 +149,7 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
         const text = region.translated?.trim();
         if (!text) return null;
 
-        // Step 1: placement center + OCR container (for wrapping constraint only)
+        // Step 1: OCR placement center + original text dimensions
         const placement = getPlacement(region, displayW, displayH);
         if (!placement) return null;
         const { cx, cy, ocrW, ocrH } = placement;
@@ -153,45 +157,51 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
         const isSFX     = region.type === "sfx";
         const isThought = region.type === "thought";
 
-        // Step 2: layout text using OCR container as wrapping constraint
+        // Step 2: layout translated text, constrained by OCR dimensions
         const typeset = isSFX
           ? scaleSFXFont(text, ocrW, ocrH)
           : scaleFontToFit(text, ocrW, ocrH);
 
-        // Step 3: measure ACTUAL rendered glyph extents
-        // mask/text box are sized to this, NOT to OCR dimensions
+        // Step 3: measure rendered glyph extents (for text view positioning only)
         const glyph = glyphBounds(typeset);
         if (glyph.w < 4 || glyph.h < 4) return null;
 
-        // Step 4: build mask geometry — glyph bounds + PAD, clamped to display
-        const maskLeft = Math.max(0, cx - glyph.w / 2 - PAD);
-        const maskTop  = Math.max(0, cy - glyph.h / 2 - PAD);
-        const maskW    = Math.min(glyph.w + PAD * 2, displayW - maskLeft);
-        const maskH    = Math.min(glyph.h + PAD * 2, displayH - maskTop);
-        // Gentle corner rounding — never more than 20% of height
-        const maskRx   = Math.min(5, maskH * 0.18);
+        // ── Step 4: MASK covers the ORIGINAL text area (OCR bbox) + expansion ──
+        //
+        // This is the critical professional-quality rule:
+        //   mask follows WHERE THE ORIGINAL TEXT WAS, not where Arabic text will be.
+        //   If translated text is shorter, original still gets fully covered.
+        //
+        const maskLeft = Math.max(0, cx - ocrW / 2 - MASK_EXPAND);
+        const maskTop  = Math.max(0, cy - ocrH / 2 - MASK_EXPAND);
+        const maskW    = Math.min(ocrW + MASK_EXPAND * 2, displayW - maskLeft);
+        const maskH    = Math.min(ocrH + MASK_EXPAND * 2, displayH - maskTop);
 
-        // Mask fill from background color immediately behind the text
-        const { color: maskColor, opacity: maskOpacity } = maskFill(
+        // Corner radius: speech bubbles have rounded corners.
+        // Scale with bubble height — taller bubble = more pronounced rounding.
+        const maskRx = Math.min(maskH * 0.28, 14);
+
+        // Step 5: bubble-matched fill colors
+        const { color: maskColor, strokeColor } = maskFill(
           region.bgColor ?? "#f5f5f0"
         );
 
-        // Text color
+        // Text color derived from bubble background or Gemini hint
         const colorProfile = region.textColor
           ? resolveFromGeminiTextColor(region.textColor)
           : resolveFromCss(region.bgColor ?? "#ffffff");
 
         return {
           key: idx,
-          // Placement
+          // OCR center (placement target)
           cx, cy,
-          // Glyph-tight text box (NOT OCR dimensions)
+          // Glyph-tight text box dimensions (NOT mask dimensions)
           glyphW: glyph.w,
           glyphH: glyph.h,
-          // Mask geometry
+          // Mask geometry (covers original text area)
           maskLeft, maskTop, maskW, maskH, maskRx,
-          maskColor, maskOpacity,
-          // Text
+          maskColor, strokeColor,
+          // Text layout
           typeset,
           renderedText: typeset.lines.join("\n"),
           colorProfile,
@@ -207,7 +217,7 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
   return (
     <View style={[styles.root, { pointerEvents: "none" }]}>
 
-      {/* ── Layer 1: Glyph-tight rounded-rect masks ───────────────────────── */}
+      {/* ── Layer 1: Full-coverage OCR-bbox masks with feathered stroke ───── */}
       <Svg
         width={displayW}
         height={displayH}
@@ -225,13 +235,15 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
               rx={item.maskRx}
               ry={item.maskRx}
               fill={item.maskColor}
-              fillOpacity={item.maskOpacity}
+              fillOpacity={1}
+              stroke={item.strokeColor}
+              strokeWidth={STROKE_W}
             />
           );
         })}
       </Svg>
 
-      {/* ── Layer 2: Translated text — platform RTL engine ────────────────── */}
+      {/* ── Layer 2: Translated Arabic text — platform RTL engine ────────── */}
       {items.map((item) => {
         if (!item) return null;
         const {
@@ -246,7 +258,7 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
             style={[
               styles.textBox,
               {
-                // Text box is glyph-sized, not OCR-sized
+                // Text view is glyph-sized, centered on OCR center
                 left:   cx - glyphW / 2,
                 top:    cy - glyphH / 2,
                 width:  glyphW,
@@ -304,7 +316,7 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     justifyContent:  "center",
     alignItems:      "center",
-    overflow:        "hidden",
+    overflow:        "visible",
   },
   label: {
     includeFontPadding: false,

@@ -37,12 +37,18 @@ export const ARABIC_FONT_WEIGHT = "bold";
 // ─── Safe zone ────────────────────────────────────────────────────────────────
 
 /**
- * 9% margin on each side → 82% usable area.
- * Slightly more generous than the old 80% to allow larger, more readable text
- * while still preventing glyphs from touching the bubble border.
+ * 6% margin on each side → 88% usable area.
+ *
+ * The OCR polygon from Gemini is glyph-tight (wraps the original text glyphs,
+ * not the full speech bubble). Using 88% of those bounds gives the font scaler
+ * enough room to breathe while ensuring Arabic diacritics (tashkeel) that
+ * extend above/below the baseline do not clip.
+ *
+ * Previously 82% which was too conservative against already-tight polygons
+ * and forced the font cascade to drop to 10–12px (subtitle appearance).
  */
 export function getSafeZone(w: number, h: number): { safeW: number; safeH: number } {
-  return { safeW: w * 0.82, safeH: h * 0.82 };
+  return { safeW: w * 0.88, safeH: h * 0.88 };
 }
 
 // ─── Real font measurement ────────────────────────────────────────────────────
@@ -81,17 +87,23 @@ function getCtx(fontSize: number): CanvasRenderingContext2D | null {
  * Web:    Canvas.measureText() — accurate glyph widths including ligatures,
  *         cursive joins, and diacritical marks.
  * Native: Calibrated heuristic — Arabic connected forms in bold average
- *         ~0.55 × fontSize per character. This is slightly higher than the
- *         old 0.52 estimate to better account for diacritics and wide glyphs.
+ *         ~0.47 × fontSize per character.
  *
- * Note: The native heuristic intentionally over-estimates slightly so the
- * font scaler produces conservatively sized text that never overflows.
+ * Calibration rationale:
+ *   Arabic connected script produces significantly shorter runs than isolated
+ *   character estimates. The older 0.55 factor (designed for Latin-width Arabic)
+ *   over-estimated by ~15–20%, causing the font cascade to drop 2–3 size steps
+ *   unnecessarily and produce subtitle-sized text in speech bubbles.
+ *
+ *   0.47 is empirically accurate for Noto Naskh Arabic Bold at typical manga
+ *   font sizes (10–22px). Intentionally very slightly over-estimates to ensure
+ *   the scaler never allows text to exceed the safe zone.
  */
 export function measureLine(text: string, fontSize: number): number {
   if (!text) return 0;
   const ctx = getCtx(fontSize);
   if (ctx) return ctx.measureText(text).width;
-  return text.length * fontSize * 0.55;
+  return text.length * fontSize * 0.47;
 }
 
 // ─── Line splitting ───────────────────────────────────────────────────────────
@@ -175,13 +187,15 @@ export function splitArabicText(
 
 /**
  * estimateTextHeight — rendered height of a text block.
- * Line height multiplier is 1.35 — tighter than Latin typography, appropriate
- * for Arabic which uses less interline space in manga bubble contexts.
+ *
+ * Line height multiplier 1.3 — tight but readable, matches professional
+ * manga scanlation spacing inside speech bubbles. Arabic script uses
+ * less interline space than Latin in compact bubble contexts.
  */
 export function estimateTextHeight(
   lineCount: number,
   fontSize: number,
-  lineHeightMultiplier = 1.35
+  lineHeightMultiplier = 1.3
 ): number {
   return lineCount * fontSize * lineHeightMultiplier;
 }

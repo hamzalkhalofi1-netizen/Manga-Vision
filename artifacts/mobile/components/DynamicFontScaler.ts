@@ -1,18 +1,24 @@
 /**
  * DynamicFontScaler
  *
- * Conservative cascade font scaler for Arabic manga text.
+ * Professional manga-quality font cascade for Arabic speech bubble text.
+ *
  * Tries sizes from largest to smallest until the text block fits within
- * the OCR bbox safe zone (82% of bubble dimensions).
+ * the OCR bbox safe zone (88% of OCR dimensions).
+ *
+ * Why 88%: The OCR polygon from Gemini is glyph-tight (original text bounds,
+ * not the full speech bubble). 88% gives the Arabic text a small breathing
+ * margin for diacritics and descenders without excessive shrinking.
  *
  * Uses measureLine() from ArabicTypesettingEngine for accurate block-width
  * checks — Canvas.measureText() on web, calibrated heuristic on native.
  *
- * Dialogue ladder : 20 → 18 → 16 → 14 → 12 → 10
- * SFX ladder      : 22 → 20 → 18 → 16 → 14
- * Hard floors     : 10 px dialogue, 14 px SFX (accepted even if overflowing)
+ * Dialogue ladder : 22 → 20 → 18 → 16 → 14 → 12 → 10
+ * SFX ladder      : 26 → 24 → 22 → 20 → 18 → 16
+ * Hard floors     : 10 px dialogue, 16 px SFX (accepted even if overflowing)
  *
- * Line-height ratio is 1.35 — tighter than Latin, matches Arabic manga style.
+ * Line-height ratio is 1.3 — tight but readable, matches professional
+ * manga scanlation spacing. Arabic needs less interline space than Latin.
  */
 
 import {
@@ -22,8 +28,8 @@ import {
   measureLine,
 } from "./ArabicTypesettingEngine";
 
-const FONT_SIZE_LADDER = [20, 18, 16, 14, 12, 10] as const;
-const LINE_HEIGHT_RATIO = 1.35;
+const FONT_SIZE_LADDER = [22, 20, 18, 16, 14, 12, 10] as const;
+const LINE_HEIGHT_RATIO = 1.3;
 
 export interface ScaledTypeset {
   fontSize: number;
@@ -61,7 +67,10 @@ export function scaleFontToFit(
 
 /**
  * scaleSFXFont — for short sound-effect / emphasis bursts.
- * Larger initial sizes and tighter line-height since SFX are typically 1–2 words.
+ *
+ * Larger initial sizes since SFX are typically 1–2 words with no multiline.
+ * Tighter line-height ratio (1.15) matches the compressed, punchy style of
+ * manga sound effects.
  */
 export function scaleSFXFont(
   text: string,
@@ -69,8 +78,8 @@ export function scaleSFXFont(
   bubbleH: number
 ): ScaledTypeset {
   const { safeW, safeH } = getSafeZone(bubbleW, bubbleH);
-  const sfxLadder = [22, 20, 18, 16, 14] as const;
-  const sfxLHR = 1.2;
+  const sfxLadder = [26, 24, 22, 20, 18, 16] as const;
+  const sfxLHR = 1.15;
 
   for (const fontSize of sfxLadder) {
     const lines = splitArabicText(text, safeW, fontSize);
@@ -82,6 +91,6 @@ export function scaleSFXFont(
     }
   }
 
-  const fallback = splitArabicText(text, safeW, 14);
-  return { fontSize: 14, lines: fallback, lineHeight: 14 * sfxLHR };
+  const fallback = splitArabicText(text, safeW, 16);
+  return { fontSize: 16, lines: fallback, lineHeight: 16 * sfxLHR };
 }
