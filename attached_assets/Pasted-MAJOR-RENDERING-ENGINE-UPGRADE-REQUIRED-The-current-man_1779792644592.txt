@@ -1,0 +1,293 @@
+MAJOR RENDERING ENGINE UPGRADE REQUIRED.
+
+The current manga translation system still behaves like:
+OCR → rectangle → drawText
+
+This creates:
+- floating overlays
+- visible white rectangles
+- inaccurate masking
+- poor Arabic centering
+- subtitle-like appearance
+- bad bubble fitting
+- masks not aligned with original text
+- translated text not matching manga composition
+
+I want to redesign the overlay rendering architecture using the professional concepts used in the Koharu project.
+
+REFERENCE PROJECT:
+https://github.com/mayocream/koharu
+
+IMPORTANT:
+Do NOT copy the Koharu repository directly.
+Do NOT attempt to port Rust/Tauri code.
+
+Instead:
+study the repository architecture, rendering concepts, OCR flow, masking flow, typesetting logic, and inpainting pipeline,
+then rebuild equivalent systems adapted for the CURRENT React Native + Expo app.
+
+==================================================
+YOUR TASK
+==================================================
+
+FIRST:
+Carefully inspect the Koharu repository.
+
+Read and analyze ONLY the files relevant to:
+- OCR geometry
+- text detection
+- speech bubble handling
+- mask generation
+- inpainting orchestration
+- text layout
+- typesetting
+- overlay rendering
+- Arabic/RTL rendering
+- dynamic font sizing
+
+DO NOT waste time on desktop/Tauri-specific code.
+
+Focus ONLY on the rendering pipeline concepts.
+
+==================================================
+CURRENT PROBLEMS TO FIX
+==================================================
+
+1. White masks are not aligned with the ORIGINAL text.
+2. Overlay positioning is inaccurate.
+3. Arabic text sizing is heuristic and unstable.
+4. Large white rectangles destroy manga art.
+5. Overlay feels like subtitles instead of real scanlation.
+6. OCR regions are reduced into bad rectangles.
+7. Text is centered using translated text bounds instead of original bubble geometry.
+8. Bubble composition is ignored.
+9. Text spacing and line balancing feel unnatural.
+10. Some original English text leaks outside masks.
+
+==================================================
+NEW TARGET ARCHITECTURE
+==================================================
+
+Transform the rendering engine into:
+professional manga scanlation rendering.
+
+The final result should feel like:
+the manga was originally written in Arabic.
+
+==================================================
+IMPLEMENT THESE CONCEPTS
+==================================================
+
+==================================================
+1. POLYGON-BASED OCR REGIONS
+==================================================
+
+Stop reducing OCR regions into simple rectangles.
+
+Use:
+- OCR polygons
+- quadrilateral coordinates
+- text contours
+
+Preserve:
+- rotation
+- skew
+- multiline geometry
+
+The overlay engine must operate on polygon geometry.
+
+==================================================
+2. BUBBLE-AWARE LAYOUT
+==================================================
+
+Add speech bubble detection or bubble-aware grouping.
+
+The speech bubble geometry must become the layout container for:
+- mask generation
+- font sizing
+- text centering
+- line wrapping
+- overlay positioning
+
+Do NOT size masks using translated Arabic text bounds anymore.
+
+==================================================
+3. PROFESSIONAL MASK SYSTEM
+==================================================
+
+Replace giant white rectangles with:
+- local polygon masks
+- soft masks
+- adaptive masks
+- OCR-aware masks
+
+Mask rules:
+- cover ONLY original text area
+- preserve bubble borders
+- preserve gradients
+- preserve textures
+- preserve manga art
+- avoid visible overlay blocks
+
+Masks should become nearly invisible.
+
+==================================================
+4. INPAINTING-STYLE CLEANUP
+==================================================
+
+Study how Koharu orchestrates text cleanup and emulate the same concept.
+
+Even if full AI inpainting is unavailable in Replit:
+simulate cleaner reconstruction using:
+- sampled local colors
+- adaptive fills
+- soft edge feathering
+- local blur blending
+- polygon-aware cleanup
+
+The goal is:
+remove original text naturally.
+
+==================================================
+5. REAL ARABIC TYPESETTING
+==================================================
+
+Replace heuristic Arabic layout.
+
+Implement:
+- proper RTL shaping
+- contextual glyph shaping
+- ligatures
+- balanced multiline layout
+- compact manga spacing
+- paragraph centering
+
+Use:
+- Skia Paragraph API
+OR
+- advanced glyph metrics
+OR
+- HarfBuzz-style shaping logic
+
+DO NOT estimate width using character count.
+
+==================================================
+6. DYNAMIC FONT FITTING
+==================================================
+
+Create a professional font fitting engine.
+
+Requirements:
+- automatically resize text
+- preserve readability
+- preserve manga composition
+- avoid oversized text
+- avoid tiny subtitle text
+- compact multiline balance
+
+Text should visually match real manga scanlations.
+
+==================================================
+7. OVERLAY POSITIONING
+==================================================
+
+Overlay placement must use:
+- OCR polygon centroid
+- bubble geometry
+- original text alignment
+- multiline flow
+
+NOT:
+simple rectangle center positioning.
+
+==================================================
+8. RENDERING ENGINE
+==================================================
+
+Rewrite the overlay renderer professionally.
+
+Requirements:
+- bubble-aware
+- polygon-aware
+- rotation-aware
+- mobile optimized
+- GPU friendly
+- clean typography
+- stable rendering
+
+Avoid:
+- giant cards
+- centered popup blocks
+- subtitle appearance
+- floating overlays
+
+==================================================
+9. IMPORTANT PRESERVATION RULE
+==================================================
+
+DO NOT rewrite:
+- translation batching
+- cache system
+- reader UI
+- source system
+- chapter navigation
+- translation API flow
+
+ONLY refactor:
+- overlay renderer
+- OCR geometry handling
+- mask system
+- typesetting engine
+- overlay layout logic
+
+==================================================
+10. FINAL VISUAL TARGET
+==================================================
+
+The final result should visually resemble:
+professional manga scanlation overlays.
+
+The reader should feel:
+only the language changed.
+
+NOT:
+that text was pasted on top of the manga.
+
+==================================================
+IMPORTANT IMPLEMENTATION STRATEGY
+==================================================
+
+Use the Koharu repository ONLY as:
+- architectural inspiration
+- rendering reference
+- pipeline reference
+- layout reference
+
+DO NOT directly port Rust/Tauri code.
+
+Adapt the concepts cleanly into:
+- React Native
+- Expo
+- Skia
+- mobile rendering constraints
+
+==================================================
+WORKFLOW
+==================================================
+
+1. Analyze the Koharu rendering pipeline
+2. Identify the concepts responsible for professional quality
+3. Compare them against the current app weaknesses
+4. Refactor the current renderer cleanly
+5. Replace rectangle-based logic progressively
+6. Preserve app stability while upgrading rendering quality
+
+==================================================
+END GOAL
+==================================================
+
+Transform the app from:
+"AI text overlay"
+
+into:
+"a professional manga scanlation renderer with integrated live translation."

@@ -15,8 +15,19 @@
  *  - Android: HarfBuzz (built into Android text stack) — full OpenType support
  *  - Web:     Browser Unicode bidi + CSS writing-direction
  *
- * The platform handles all glyph shaping, ligatures, and bidi automatically
- * when letterSpacing is exactly 0 and writingDirection is "rtl".
+ * Safe zone — 91% of polygon dimensions:
+ *  The OCR polygon from Gemini is glyph-tight (wraps the original text glyphs,
+ *  not the full speech bubble). 91% gives the Arabic text breathing room for
+ *  diacritics (tashkeel) without over-shrinking.
+ *
+ *  The text CONTAINER is the full polygon area (ocrW × ocrH). Pre-wrapped
+ *  lines fill ~91% of the container width, centered within the remaining 9%.
+ *  This creates natural speech-bubble spacing that mirrors how scanlation
+ *  teams leave a small margin between text and bubble edge.
+ *
+ *  Previously 88%, which was too conservative and forced the font cascade
+ *  to drop to 10–12px (subtitle appearance). 91% produces larger, more
+ *  natural-looking manga text while keeping everything within the polygon.
  */
 
 // ─── Font constants (shared with SkiaOverlayCanvas) ───────────────────────────
@@ -26,8 +37,8 @@
  * MUST match the fontFamily applied to Text in SkiaOverlayCanvas.
  *
  * iOS:     Geeza Pro → excellent Arabic, system default
- * Android: Noto Naskh Arabic → bundled in Android since 5.0
- * Web:     Noto Naskh Arabic → widely available or falls through to system
+ * Android: Noto Naskh Arabic → bundled since Android 5.0
+ * Web:     Noto Naskh Arabic → widely available
  */
 export const ARABIC_FONT_FAMILY =
   '"Noto Naskh Arabic", "Geeza Pro", "Noto Sans Arabic", "Amiri", "Segoe UI", Arial, sans-serif';
@@ -37,18 +48,18 @@ export const ARABIC_FONT_WEIGHT = "bold";
 // ─── Safe zone ────────────────────────────────────────────────────────────────
 
 /**
- * 6% margin on each side → 88% usable area.
+ * 4.5% margin on each side → 91% usable area.
  *
- * The OCR polygon from Gemini is glyph-tight (wraps the original text glyphs,
- * not the full speech bubble). Using 88% of those bounds gives the font scaler
- * enough room to breathe while ensuring Arabic diacritics (tashkeel) that
- * extend above/below the baseline do not clip.
+ * The text container is now the full OCR polygon (ocrW × ocrH).
+ * Pre-wrapped lines are sized to fit in 91% of that width, giving
+ * natural bubble breathing room that matches professional scanlations.
  *
- * Previously 82% which was too conservative against already-tight polygons
- * and forced the font cascade to drop to 10–12px (subtitle appearance).
+ * Font sizing: the scaler tries each font size and checks if all wrapped
+ * lines fit within safeW × safeH. If yes, use that size. If not, try
+ * the next smaller size.
  */
 export function getSafeZone(w: number, h: number): { safeW: number; safeH: number } {
-  return { safeW: w * 0.88, safeH: h * 0.88 };
+  return { safeW: w * 0.91, safeH: h * 0.91 };
 }
 
 // ─── Real font measurement ────────────────────────────────────────────────────
@@ -73,7 +84,7 @@ function getCtx(fontSize: number): CanvasRenderingContext2D | null {
     const font = `${ARABIC_FONT_WEIGHT} ${fontSize}px ${ARABIC_FONT_FAMILY}`;
     if (font !== _ctxFont) {
       _ctx.font = font;
-      _ctxFont = font;
+      _ctxFont  = font;
     }
     return _ctx;
   } catch {
@@ -86,23 +97,24 @@ function getCtx(fontSize: number): CanvasRenderingContext2D | null {
  *
  * Web:    Canvas.measureText() — accurate glyph widths including ligatures,
  *         cursive joins, and diacritical marks.
+ *
  * Native: Calibrated heuristic — Arabic connected forms in bold average
- *         ~0.47 × fontSize per character.
+ *         ~0.47 × fontSize per character. Used for font SIZE selection only;
+ *         actual text wrapping is performed by React Native's text engine.
  *
- * Calibration rationale:
- *   Arabic connected script produces significantly shorter runs than isolated
- *   character estimates. The older 0.55 factor (designed for Latin-width Arabic)
- *   over-estimated by ~15–20%, causing the font cascade to drop 2–3 size steps
- *   unnecessarily and produce subtitle-sized text in speech bubbles.
- *
- *   0.47 is empirically accurate for Noto Naskh Arabic Bold at typical manga
- *   font sizes (10–22px). Intentionally very slightly over-estimates to ensure
- *   the scaler never allows text to exceed the safe zone.
+ * The 0.47 factor is intentionally slightly over-estimating to ensure the
+ * scaler never chooses a font that React Native would then wrap incorrectly.
+ * Over-estimation (choosing a smaller font step than strictly necessary) is
+ * safe; under-estimation (choosing too large a font that then wraps badly)
+ * is what causes text to overflow or look cramped.
  */
 export function measureLine(text: string, fontSize: number): number {
   if (!text) return 0;
   const ctx = getCtx(fontSize);
   if (ctx) return ctx.measureText(text).width;
+  // Native heuristic: Arabic connected script is compact.
+  // 0.47 per character is empirically accurate for Noto Naskh Arabic Bold
+  // at manga font sizes (10–24px). Intentionally slightly over-estimates.
   return text.length * fontSize * 0.47;
 }
 
@@ -110,8 +122,8 @@ export function measureLine(text: string, fontSize: number): number {
 
 /**
  * greedyWrap — fills lines with whole words until the next word would exceed
- * maxW.  A word that is itself wider than maxW goes on its own line untouched
- * (never character-split — that destroys Arabic glyph shaping).
+ * maxW. A word wider than maxW goes on its own line untouched — never
+ * character-split, which destroys Arabic contextual glyph shaping.
  */
 function greedyWrap(words: string[], maxW: number, fontSize: number): string[] {
   if (!words.length) return [];
@@ -139,18 +151,19 @@ function greedyWrap(words: string[], maxW: number, fontSize: number): string[] {
  *   2. Divide by target line count to get per-line target width.
  *   3. Re-wrap at that target (+10% slack to avoid choppy rhythm).
  *   4. Accept only if result does not produce MORE lines than input.
+ *
+ * This creates symmetrical, centred Arabic text that looks like professional
+ * scanlation rather than ragged left/right aligned text.
  */
 function balanceLines(
   words: string[],
   lineCount: number,
   safeW: number,
-  fontSize: number
+  fontSize: number,
 ): string[] {
   if (lineCount <= 1 || words.length <= 1) return [words.join(" ")];
-
-  const totalW = measureLine(words.join(" "), fontSize);
+  const totalW  = measureLine(words.join(" "), fontSize);
   const targetW = Math.min(safeW, (totalW / lineCount) * 1.10);
-
   const balanced = greedyWrap(words, targetW, fontSize);
   return balanced;
 }
@@ -162,12 +175,17 @@ function balanceLines(
  *
  * 1. Greedy-wrap at safeW to determine the minimum required line count.
  * 2. Balance pass redistributes words for visual symmetry.
- * Returns an array of line strings; join with "\n" for React Native Text.
+ *
+ * Returns an array of line strings. Joined with "\n" for React Native Text.
+ *
+ * NOTE: The resulting lines are PRE-WRAPPED to fit safeW (91% of ocrW).
+ * They are rendered inside a container of ocrW width, so they appear centered
+ * with ~9% breathing room on each side — exactly like manga scanlations.
  */
 export function splitArabicText(
   text: string,
   safeW: number,
-  fontSize: number
+  fontSize: number,
 ): string[] {
   const trimmed = text.trim();
   if (!trimmed) return [""];
@@ -188,14 +206,14 @@ export function splitArabicText(
 /**
  * estimateTextHeight — rendered height of a text block.
  *
- * Line height multiplier 1.3 — tight but readable, matches professional
- * manga scanlation spacing inside speech bubbles. Arabic script uses
- * less interline space than Latin in compact bubble contexts.
+ * Line-height multiplier 1.3 — tight but readable, matches professional
+ * manga scanlation spacing inside speech bubbles. Arabic uses less interline
+ * space than Latin in compact bubble contexts.
  */
 export function estimateTextHeight(
   lineCount: number,
   fontSize: number,
-  lineHeightMultiplier = 1.3
+  lineHeightMultiplier = 1.3,
 ): number {
   return lineCount * fontSize * lineHeightMultiplier;
 }

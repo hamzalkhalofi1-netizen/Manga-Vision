@@ -1,28 +1,30 @@
 /**
- * SkiaOverlayCanvas — Polygon-anchored professional manga text overlay.
+ * SkiaOverlayCanvas — Professional manga scanlation renderer.
  *
- * Architecture: every geometric decision flows from the ORIGINAL OCR polygon.
- * The polygon is the single source of truth for:
- *   • mask shape  (SVG Polygon covering original text area)
- *   • text anchor (true area-weighted polygon centroid, not bbox center)
- *   • font sizing  (dimensions along the polygon's dominant axis)
- *   • text tilt    (polygon rotation angle applied to the text view)
+ * Core architectural principle (Koharu-inspired):
+ *   The OCR polygon is the SINGLE source of truth for ALL geometry decisions.
+ *   The TEXT CONTAINER is sized to the POLYGON DIMENSIONS, not the translated
+ *   glyph bounds. This is the key difference between "subtitle overlay" and
+ *   "professional scanlation" — translated text fills the speech bubble the
+ *   same way the original did.
  *
- * Pipeline per region:
- *   1. Convert normalized polygon → absolute pixel coordinates
- *   2. Compute true centroid via Shoelace formula
- *   3. Detect rotation angle from the polygon's top edge direction
- *   4. Measure polygon extents along its own axes (handles rotated text)
- *   5. Scale Arabic font to fit those rotated dimensions
- *   6. Expand polygon vertices outward from centroid by MASK_EXPAND px
- *   7. Draw SVG Polygon mask (bubble-matched color at 100% opacity)
- *   8. Render Arabic text centered on centroid, rotated to match polygon
+ * Mask system — three-layer soft masking:
+ *   Layer 1  Halo  (polygon + ~8px)  : very faint fill + faint stroke   → soft outer glow
+ *   Layer 2  Mid   (polygon + ~5px)  : 40% opacity fill + light stroke  → intermediate feather
+ *   Layer 3  Core  (polygon + 4px)   : 100% solid fill                  → fully hides original text
  *
- * Key invariants:
- *   • Mask shape follows the original OCR polygon — not a rectangle
- *   • Mask covers original text area (not translated text area)
- *   • Text anchor is the true centroid — not (minX+maxX)/2 bbox center
- *   • Rotation is applied so text aligns with tilted bubbles
+ *   The gradient effect from halo→core makes the mask edge nearly invisible,
+ *   blending naturally into the bubble background without visible rectangle edges.
+ *
+ * Text placement:
+ *   • Container = ocrW × ocrH   (polygon dimensions, NOT translated glyph bounds)
+ *   • Anchor    = true centroid  (Shoelace area-weighted, not bbox center)
+ *   • Rotation  = polygon top-edge angle, clamped ±30°
+ *   • Font      = largest size from ladder that fits within 91% of polygon dims
+ *   • Wrapping  = pre-computed by ArabicTypesettingEngine, centered in container
+ *
+ * What is NOT changed (per instructions):
+ *   translationQueue, inpaintClient, reader UI, source system, API flow.
  */
 
 import React, { memo, useMemo } from "react";
@@ -30,10 +32,8 @@ import { Platform, StyleSheet, Text, View } from "react-native";
 import Svg, { Polygon as SvgPolygon } from "react-native-svg";
 import type { TextRegion } from "./MangaPage";
 import { scaleFontToFit, scaleSFXFont } from "./DynamicFontScaler";
-import type { ScaledTypeset } from "./DynamicFontScaler";
-import { measureLine, estimateTextHeight } from "./ArabicTypesettingEngine";
+import { measureLine, ARABIC_FONT_FAMILY } from "./ArabicTypesettingEngine";
 import { resolveFromCss, resolveFromGeminiTextColor } from "./AdaptiveTextColorEngine";
-import { ARABIC_FONT_FAMILY } from "./ArabicTypesettingEngine";
 
 interface Props {
   regions:  TextRegion[];
@@ -42,39 +42,29 @@ interface Props {
   isRTL?:   boolean;
 }
 
-// ── Polygon geometry ───────────────────────────────────────────────────────────
+// ── Polygon geometry ─────────────────────────────────────────────────────────
 
 /**
- * polygonCentroid — area-weighted centroid of a simple polygon.
- *
- * Uses the standard Shoelace formula centroid:
- *   Cx = (1/6A) Σ (xi + xi+1)(xi·yi+1 − xi+1·yi)
- *   Cy = (1/6A) Σ (yi + yi+1)(xi·yi+1 − xi+1·yi)
- *
- * Falls back to a simple vertex average for degenerate (nearly collinear)
- * polygons where the signed area approaches zero.
- *
+ * polygonCentroid — area-weighted centroid via Shoelace formula.
+ * Falls back to simple vertex average for degenerate polygons.
  * Absolute pixel coordinates expected (not normalized).
  */
 function polygonCentroid(pts: [number, number][]): { x: number; y: number } {
   const n = pts.length;
   if (n === 0) return { x: 0, y: 0 };
-  if (n === 1) return { x: pts[0][0], y: pts[0][1] };
-  if (n === 2) return { x: (pts[0][0] + pts[1][0]) / 2, y: (pts[0][1] + pts[1][1]) / 2 };
+  if (n < 3)   return { x: (pts[0][0] + pts[n - 1][0]) / 2, y: (pts[0][1] + pts[n - 1][1]) / 2 };
 
   let cx = 0, cy = 0, area = 0;
   for (let i = 0; i < n; i++) {
     const [x0, y0] = pts[i];
     const [x1, y1] = pts[(i + 1) % n];
     const cross = x0 * y1 - x1 * y0;
-    area  += cross;
-    cx    += (x0 + x1) * cross;
-    cy    += (y0 + y1) * cross;
+    area += cross;
+    cx   += (x0 + x1) * cross;
+    cy   += (y0 + y1) * cross;
   }
   area /= 2;
-
   if (Math.abs(area) < 0.5) {
-    // Degenerate polygon — use simple average
     return {
       x: pts.reduce((s, [x]) => s + x, 0) / n,
       y: pts.reduce((s, [, y]) => s + y, 0) / n,
@@ -84,16 +74,14 @@ function polygonCentroid(pts: [number, number][]): { x: number; y: number } {
 }
 
 /**
- * expandPolygon — push each vertex outward from the polygon centroid by px pixels.
- *
- * This expands the polygon uniformly in all directions, ensuring the mask
- * covers the 2–3px anti-aliased fringe at the edge of original text glyphs.
+ * expandPolygon — push each vertex outward from the centroid by `px` pixels.
+ * Used to grow the mask polygon for halo and feather rings.
  */
 function expandPolygon(
   pts: [number, number][],
   cx: number,
   cy: number,
-  px: number
+  px: number,
 ): [number, number][] {
   return pts.map(([x, y]) => {
     const dx = x - cx;
@@ -105,65 +93,55 @@ function expandPolygon(
 }
 
 /**
- * polygonRotationDeg — angle of the polygon's dominant axis in degrees.
- *
- * Uses the top edge direction (pts[0] → pts[1] for clockwise ordering).
- * Clamped to ±30° — beyond that usually indicates wrong vertex ordering
- * or a near-vertical bubble (which we treat as 0° to avoid upside-down text).
- *
- * Small angles < 2° are normalized to 0 to avoid unnecessary transform cost.
+ * polygonRotationDeg — angle of the polygon dominant axis in degrees.
+ * Uses the top-edge direction (pts[0]→pts[1], clockwise ordering).
+ * Clamped to ±30°; angles < 2° are treated as 0 to skip needless transforms.
  */
 function polygonRotationDeg(pts: [number, number][]): number {
   if (pts.length < 2) return 0;
   const dx = pts[1][0] - pts[0][0];
   const dy = pts[1][1] - pts[0][1];
   let deg = Math.atan2(dy, dx) * (180 / Math.PI);
-  // Wrap to (−90, 90] so horizontal text stays near 0
   if (deg > 90)  deg -= 180;
   if (deg < -90) deg += 180;
-  // Clamp to ±30° — extreme angles usually indicate a wrong top edge
   deg = Math.max(-30, Math.min(30, deg));
-  // Skip tiny rotations — not worth the rendering overhead
   return Math.abs(deg) < 2 ? 0 : Math.round(deg * 10) / 10;
 }
 
 /**
  * polygonDimensions — width and height along the polygon's own axes.
  *
- * Rotates all vertices into the polygon's local coordinate system (defined
- * by the rotation angle), then measures the bounding box in that frame.
- * This correctly captures the text region size for angled bubbles where
- * the axis-aligned bbox would over-estimate one dimension.
+ * Rotates all vertices into the polygon's local coordinate frame so that
+ * the measurement captures true text-region size for angled bubbles.
+ * An axis-aligned bbox would over-estimate width for rotated text.
  */
 function polygonDimensions(
   pts: [number, number][],
   cx: number,
   cy: number,
-  rotDeg: number
+  rotDeg: number,
 ): { w: number; h: number } {
-  const angle  = rotDeg * (Math.PI / 180);
-  const cosA   = Math.cos(-angle);
-  const sinA   = Math.sin(-angle);
-
+  const angle = rotDeg * (Math.PI / 180);
+  const cosA  = Math.cos(-angle);
+  const sinA  = Math.sin(-angle);
   const us: number[] = [];
   const vs: number[] = [];
-
   for (const [x, y] of pts) {
     const rx = x - cx;
     const ry = y - cy;
     us.push(rx * cosA - ry * sinA);
     vs.push(rx * sinA + ry * cosA);
   }
-
-  const w = Math.max(...us) - Math.min(...us);
-  const h = Math.max(...vs) - Math.min(...vs);
-  return { w: Math.max(w, 8), h: Math.max(h, 6) };
+  return {
+    w: Math.max(Math.max(...us) - Math.min(...us), 8),
+    h: Math.max(Math.max(...vs) - Math.min(...vs), 6),
+  };
 }
 
-// ── Color ──────────────────────────────────────────────────────────────────────
+// ── Color helpers ────────────────────────────────────────────────────────────
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-  const h = hex.replace("#", "");
+  const h    = hex.replace("#", "");
   const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
   if (full.length !== 6) return null;
   const n = parseInt(full, 16);
@@ -172,13 +150,10 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
 }
 
 /**
- * maskFill — exact bubble background color at 100% opacity + feathering stroke.
+ * maskFill — exact bubble background color for mask layers.
  *
- * Full opacity = zero bleed-through of original glyphs (professional scanlation
- * technique: paint over text with exact bubble fill color).
- *
- * Stroke: same hue at 30% opacity — creates a soft blend into the bubble art
- * at the polygon edge without requiring SVG filter effects.
+ * Core fill at 100% opacity guarantees original glyphs are fully hidden.
+ * Feather stroke at 30% opacity blends the polygon edge into bubble art.
  */
 function maskFill(bgColor: string): { color: string; strokeColor: string } {
   const rgb = hexToRgb(bgColor);
@@ -189,102 +164,72 @@ function maskFill(bgColor: string): { color: string; strokeColor: string } {
   };
 }
 
-// ── Placement ─────────────────────────────────────────────────────────────────
+// ── Placement ────────────────────────────────────────────────────────────────
 
 interface Placement {
-  /** True polygon centroid in absolute pixels */
   cx: number;
   cy: number;
-  /** Polygon extent along its own axes (for font sizing) */
+  /** Polygon extent along its own axes — used for text container sizing */
   ocrW: number;
   ocrH: number;
-  /** Absolute pixel coordinates of all polygon vertices */
   absolutePts: [number, number][];
-  /** Text tilt angle in degrees */
   rotDeg: number;
 }
 
-/**
- * getPlacement — extract the polygon-anchored geometry for one OCR region.
- *
- * When a polygon is available:
- *   • centroid: server-supplied true centroid, or computed via Shoelace
- *   • rotation: server-supplied angle, or derived from top edge direction
- *   • dimensions: measured along the polygon's own axes (not axis-aligned bbox)
- *
- * When only bbox is available (no polygon):
- *   • synthetic 4-point rectangle polygon is constructed
- *   • center-of-bbox used as centroid fallback
- */
 function getPlacement(
   region: TextRegion,
   displayW: number,
-  displayH: number
+  displayH: number,
 ): Placement | null {
   if (region.polygon && region.polygon.length >= 3) {
     const absolutePts = region.polygon.map(
-      ([nx, ny]) => [nx * displayW, ny * displayH] as [number, number]
+      ([nx, ny]) => [nx * displayW, ny * displayH] as [number, number],
     );
 
-    // True centroid: prefer server-computed (already normalized), else Shoelace
     const centroid = region.centroid
       ? { x: region.centroid.x * displayW, y: region.centroid.y * displayH }
       : polygonCentroid(absolutePts);
 
     const { x: cx, y: cy } = centroid;
-
-    // Rotation: prefer server-computed, else derive from polygon top edge
     const rotDeg = region.rotation ?? polygonRotationDeg(absolutePts);
-
-    // Font-sizing dimensions along the polygon's own axes
     const { w: ocrW, h: ocrH } = polygonDimensions(absolutePts, cx, cy, rotDeg);
 
     if (ocrW < 8 || ocrH < 6) return null;
     return { cx, cy, ocrW, ocrH, absolutePts, rotDeg };
   }
 
-  // Fallback: construct synthetic polygon from bbox
-  const ocrW = region.w * displayW;
-  const ocrH = region.h * displayH;
-  const cx   = (region.centroid?.x ?? (region.centerX ?? region.x + region.w / 2)) * displayW;
-  const cy   = (region.centroid?.y ?? (region.centerY ?? region.y + region.h / 2)) * displayH;
+  // Fallback: synthetic rectangle from bbox
+  const ocrW  = region.w * displayW;
+  const ocrH  = region.h * displayH;
+  const cx    = (region.centroid?.x ?? region.x + region.w / 2) * displayW;
+  const cy    = (region.centroid?.y ?? region.y + region.h / 2) * displayH;
   const rotDeg = region.rotation ?? 0;
-
-  const hw = ocrW / 2;
-  const hh = ocrH / 2;
+  const hw = ocrW / 2, hh = ocrH / 2;
   const absolutePts: [number, number][] = [
-    [cx - hw, cy - hh],
-    [cx + hw, cy - hh],
-    [cx + hw, cy + hh],
-    [cx - hw, cy + hh],
+    [cx - hw, cy - hh], [cx + hw, cy - hh],
+    [cx + hw, cy + hh], [cx - hw, cy + hh],
   ];
-
   if (ocrW < 8 || ocrH < 6) return null;
   return { cx, cy, ocrW, ocrH, absolutePts, rotDeg };
 }
 
-// ── Glyph measurement ──────────────────────────────────────────────────────────
+// ── ptsToStr ─────────────────────────────────────────────────────────────────
 
-function glyphBounds(typeset: ScaledTypeset): { w: number; h: number } {
-  const { lines, fontSize, lineHeight } = typeset;
-  const lhr = fontSize > 0 ? lineHeight / fontSize : 1.3;
-  const w = lines.length === 0 ? 0 : Math.max(...lines.map((l) => measureLine(l, fontSize)));
-  const h = estimateTextHeight(lines.length, fontSize, lhr);
-  return { w, h };
+function ptsToStr(pts: [number, number][]): string {
+  return pts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-/**
- * Pixels to expand each polygon vertex outward from the centroid.
- * Covers anti-aliased glyph fringe + 1px sub-pixel rounding margin.
- */
-const MASK_EXPAND = 3;
+/** Core mask expansion — fully covers anti-aliased glyph fringe */
+const CORE_EXPAND  = 4;
 
-/** Feathering stroke width around the polygon mask. */
-const STROKE_W = 2;
+/** Stroke widths for the feather rings */
+const HALO_STROKE_W  = 14;
+const MID_STROKE_W   = 6;
+const CORE_STROKE_W  = 1.5;
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Component ────────────────────────────────────────────────────────────────
 
 function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
   const items = useMemo(() => {
@@ -293,7 +238,6 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
         const text = region.translated?.trim();
         if (!text) return null;
 
-        // ── Step 1–4: polygon-anchored geometry ───────────────────────────────
         const placement = getPlacement(region, displayW, displayH);
         if (!placement) return null;
         const { cx, cy, ocrW, ocrH, absolutePts, rotDeg } = placement;
@@ -301,25 +245,35 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
         const isSFX     = region.type === "sfx";
         const isThought = region.type === "thought";
 
-        // ── Step 5: scale Arabic font to fit polygon's own dimensions ─────────
+        // ── Font scaling ──────────────────────────────────────────────────────
+        //
+        // scaleFontToFit uses 91% of ocrW × ocrH as the safe zone.
+        // The returned fontSize + lines are used for rendering.
         const typeset = isSFX
           ? scaleSFXFont(text, ocrW, ocrH)
           : scaleFontToFit(text, ocrW, ocrH);
 
-        const glyph = glyphBounds(typeset);
-        if (glyph.w < 4 || glyph.h < 4) return null;
+        // Skip invisible text
+        if (typeset.lines.length === 0) return null;
 
-        // ── Step 6: expand polygon vertices outward from centroid ─────────────
+        // ── Three-layer mask geometry ─────────────────────────────────────────
         //
-        // maskPoints covers the ORIGINAL text area (not translated glyph area).
-        // This guarantees no original text bleeds around the mask edge.
-        //
-        const expanded = expandPolygon(absolutePts, cx, cy, MASK_EXPAND);
-        // SVG Polygon points: "x1,y1 x2,y2 ..."
-        const maskPoints = expanded.map(([x, y]) => `${x},${y}`).join(" ");
+        // Halo expand: proportional to polygon size, clamped 5–10px.
+        // This ensures the feather effect scales reasonably with text regions
+        // of different sizes (large SFX vs. small dialogue bubbles).
+        const haloExpand = Math.max(5, Math.min(10, ocrW * 0.08));
+        const midExpand  = haloExpand * 0.55;
 
-        // ── Step 7: bubble-matched mask fill ──────────────────────────────────
-        const { color: maskColor, strokeColor } = maskFill(region.bgColor ?? "#f5f5f0");
+        const haloExpanded = expandPolygon(absolutePts, cx, cy, haloExpand);
+        const midExpanded  = expandPolygon(absolutePts, cx, cy, midExpand);
+        const coreExpanded = expandPolygon(absolutePts, cx, cy, CORE_EXPAND);
+
+        const haloPoints = ptsToStr(haloExpanded);
+        const midPoints  = ptsToStr(midExpanded);
+        const corePoints = ptsToStr(coreExpanded);
+
+        // ── Mask colors ───────────────────────────────────────────────────────
+        const { color: maskColor, strokeColor } = maskFill(region.bgColor ?? "#f5f2eb");
 
         // ── Text color ────────────────────────────────────────────────────────
         const colorProfile = region.textColor
@@ -328,22 +282,19 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
 
         return {
           key: idx,
-          // Polygon centroid — master anchor for text and mask
           cx, cy,
-          // Glyph-tight text box (independent from mask size)
-          glyphW: glyph.w,
-          glyphH: glyph.h,
-          // SVG polygon mask
-          maskPoints,
-          maskColor,
-          strokeColor,
-          // Text
+          // Polygon dimensions → text container size.
+          // Key invariant: container = polygon bounds, NOT translated glyph bounds.
+          ocrW, ocrH,
+          // Three-layer mask points
+          haloPoints, midPoints, corePoints,
+          maskColor, strokeColor,
+          // Typography
           typeset,
           renderedText: typeset.lines.join("\n"),
           colorProfile,
           rotDeg,
-          isSFX,
-          isThought,
+          isSFX, isThought,
         };
       })
       .filter(Boolean);
@@ -354,33 +305,85 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
   return (
     <View style={[styles.root, { pointerEvents: "none" }]}>
 
-      {/* ── Layer 1: Polygon-shaped masks (original text area, 100% opacity) ── */}
+      {/*
+       * ── Layer 1: Three-layer soft mask system ─────────────────────────────
+       *
+       * All mask polygons render before text to establish correct z-order.
+       * Three separate map passes ensure consistent layering across all
+       * regions (halo-of-A never renders above core-of-B).
+       *
+       * Rendering order (back to front):
+       *   1a. All halo rings (widest, most transparent)
+       *   1b. All mid rings  (intermediate feather)
+       *   1c. All solid cores (100% opacity, primary text cover)
+       */}
       <Svg
         width={displayW}
         height={displayH}
         style={StyleSheet.absoluteFillObject}
       >
-        {items.map((item) => {
-          if (!item) return null;
-          return (
-            <SvgPolygon
-              key={`mask-${item.key}`}
-              points={item.maskPoints}
-              fill={item.maskColor}
-              fillOpacity={1}
-              stroke={item.strokeColor}
-              strokeWidth={STROKE_W}
-              strokeLinejoin="round"
-            />
-          );
-        })}
+        {/* 1a: Halo — outer soft glow, very faint */}
+        {items.map((item) => item && (
+          <SvgPolygon
+            key={`halo-${item.key}`}
+            points={item.haloPoints}
+            fill={item.maskColor}
+            fillOpacity={0.10}
+            stroke={item.maskColor}
+            strokeWidth={HALO_STROKE_W}
+            strokeLinejoin="round"
+            strokeOpacity={0.06}
+          />
+        ))}
+
+        {/* 1b: Mid ring — intermediate feather zone */}
+        {items.map((item) => item && (
+          <SvgPolygon
+            key={`mid-${item.key}`}
+            points={item.midPoints}
+            fill={item.maskColor}
+            fillOpacity={0.42}
+            stroke={item.maskColor}
+            strokeWidth={MID_STROKE_W}
+            strokeLinejoin="round"
+            strokeOpacity={0.18}
+          />
+        ))}
+
+        {/* 1c: Solid core — fully hides original text */}
+        {items.map((item) => item && (
+          <SvgPolygon
+            key={`core-${item.key}`}
+            points={item.corePoints}
+            fill={item.maskColor}
+            fillOpacity={1}
+            stroke={item.strokeColor}
+            strokeWidth={CORE_STROKE_W}
+            strokeLinejoin="round"
+          />
+        ))}
       </Svg>
 
-      {/* ── Layer 2: Arabic text — centered on polygon centroid + rotated ───── */}
+      {/*
+       * ── Layer 2: Arabic text ──────────────────────────────────────────────
+       *
+       * KEY CHANGE vs previous implementation:
+       *   Container is sized to POLYGON DIMENSIONS (ocrW × ocrH), not to the
+       *   translated glyph bounds. This fills the speech bubble the same way
+       *   the original text did, eliminating the "subtitle" appearance.
+       *
+       *   Text is pre-wrapped by ArabicTypesettingEngine to fit within 91%
+       *   of ocrW, then centered inside the full ocrW container.
+       *   The 9% breathing room creates natural speech-bubble spacing.
+       *
+       *   The View is rotated around its center, which is the polygon centroid.
+       *   React Native rotates around (left + width/2, top + height/2) =
+       *   (cx - ocrW/2 + ocrW/2, cy - ocrH/2 + ocrH/2) = (cx, cy). Correct.
+       */}
       {items.map((item) => {
         if (!item) return null;
         const {
-          key, cx, cy, glyphW, glyphH,
+          key, cx, cy, ocrW, ocrH,
           typeset, renderedText, colorProfile,
           rotDeg, isSFX, isThought,
         } = item;
@@ -391,14 +394,10 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
             style={[
               styles.textBox,
               {
-                left:   cx - glyphW / 2,
-                top:    cy - glyphH / 2,
-                width:  glyphW,
-                height: glyphH,
-                // Rotate text to match polygon orientation.
-                // Since the view is positioned with its center on the centroid,
-                // React Native rotates around the view center — which is exactly
-                // the centroid. No additional translate is needed.
+                left:   cx - ocrW / 2,
+                top:    cy - ocrH / 2,
+                width:  ocrW,
+                height: ocrH,
                 transform: rotDeg !== 0 ? [{ rotate: `${rotDeg}deg` }] : undefined,
               },
             ]}
@@ -407,14 +406,15 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
               style={[
                 styles.label,
                 {
-                  fontSize:      typeset.fontSize,
-                  lineHeight:    typeset.lineHeight,
-                  color:         colorProfile.color,
-                  fontFamily:    ARABIC_FONT_FAMILY,
-                  fontWeight:    isSFX     ? "900" : "700",
-                  fontStyle:     isThought ? "italic" : "normal",
-                  // Arabic: letterSpacing MUST be 0 — any positive value
-                  // breaks contextual glyph joining (initial/medial/final forms)
+                  fontSize:   typeset.fontSize,
+                  lineHeight: typeset.lineHeight,
+                  color:      colorProfile.color,
+                  fontFamily: ARABIC_FONT_FAMILY,
+                  fontWeight: isSFX     ? "900" : "700",
+                  fontStyle:  isThought ? "italic" : "normal",
+                  // Arabic: letterSpacing MUST be 0.
+                  // Any positive value breaks contextual glyph joining
+                  // (initial / medial / final / isolated forms).
                   letterSpacing: 0,
                   ...Platform.select({
                     web: {
@@ -452,6 +452,8 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     justifyContent:  "center",
     alignItems:      "center",
+    // overflow: "visible" — allow text to extend slightly past container
+    // in edge cases where the font scaler and native measurement diverge.
     overflow:        "visible",
   },
   label: {
