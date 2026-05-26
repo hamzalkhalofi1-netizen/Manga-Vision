@@ -75,6 +75,58 @@ async function fetchImageAsBase64(
   return { data, mimeType };
 }
 
+// ── Polygon geometry helpers ───────────────────────────────────────────────────
+
+/**
+ * computeCentroid — area-weighted centroid of a normalized polygon (Shoelace).
+ * Returns the visual center of mass, which is more accurate than bbox center
+ * for skewed or non-rectangular OCR regions.
+ */
+function computeCentroid(
+  poly: [number, number][]
+): { x: number; y: number } {
+  const n = poly.length;
+  let cx = 0, cy = 0, area = 0;
+  for (let i = 0; i < n; i++) {
+    const [x0, y0] = poly[i];
+    const [x1, y1] = poly[(i + 1) % n];
+    const cross = x0 * y1 - x1 * y0;
+    area += cross;
+    cx   += (x0 + x1) * cross;
+    cy   += (y0 + y1) * cross;
+  }
+  area /= 2;
+  if (Math.abs(area) < 1e-8) {
+    // Degenerate — fall back to vertex average
+    return {
+      x: poly.reduce((s, [x]) => s + x, 0) / n,
+      y: poly.reduce((s, [, y]) => s + y, 0) / n,
+    };
+  }
+  return {
+    x: Math.max(0, Math.min(1, cx / (6 * area))),
+    y: Math.max(0, Math.min(1, cy / (6 * area))),
+  };
+}
+
+/**
+ * computeRotation — dominant axis angle of a polygon in degrees.
+ * Derived from the top edge direction (pts[0] → pts[1] for clockwise winding).
+ * Clamped to ±30° and rounded to one decimal.
+ */
+function computeRotation(poly: [number, number][]): number {
+  if (poly.length < 2) return 0;
+  const dx = poly[1][0] - poly[0][0];
+  const dy = poly[1][1] - poly[0][1];
+  let deg = Math.atan2(dy, dx) * (180 / Math.PI);
+  if (deg > 90)  deg -= 180;
+  if (deg < -90) deg += 180;
+  deg = Math.max(-30, Math.min(30, deg));
+  return Math.abs(deg) < 2 ? 0 : Math.round(deg * 10) / 10;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
 /**
  * Derive a 4-point polygon from a bounding box when Gemini doesn't supply one.
  * Order: top-left, top-right, bottom-right, bottom-left (clockwise).
@@ -298,6 +350,10 @@ RULES:
               const polygon =
                 validatePolygon(r.polygon) ?? bboxToPolygon(cx, cy, cw, ch);
 
+              // Compute true centroid and rotation from the validated polygon
+              const centroid  = computeCentroid(polygon);
+              const rotation  = computeRotation(polygon);
+
               return {
                 ...r,
                 x: cx,
@@ -305,8 +361,13 @@ RULES:
                 w: cw,
                 h: ch,
                 polygon,
-                centerX: cx + cw / 2,
-                centerY: cy + ch / 2,
+                // True polygon centroid (area-weighted) — more accurate than
+                // bbox center for skewed / non-rectangular OCR regions
+                centroid,
+                rotation,
+                // Legacy bbox-center fields kept for backwards compatibility
+                centerX: centroid.x,
+                centerY: centroid.y,
                 bgColor: r.bgColor || "#ffffff",
                 textColor: r.textColor || "#000000",
                 emphasis: !!r.emphasis,

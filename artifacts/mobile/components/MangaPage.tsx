@@ -9,7 +9,6 @@ const DEFAULT_ASPECT = 1.45;
 /**
  * A 4-point polygon in normalized [0,1] image coordinates.
  * Order: top-left, top-right, bottom-right, bottom-left (clockwise).
- * Used for precise bubble-shape mask rendering via react-native-svg.
  */
 export type BubblePolygon = [
   [number, number],
@@ -21,16 +20,31 @@ export type BubblePolygon = [
 export interface TextRegion {
   original: string;
   translated: string;
-  /** Normalized bounding box (0–1) of the bubble body */
+  /** Normalized bounding box (0–1) of the text glyphs */
   x: number;
   y: number;
   w: number;
   h: number;
-  /** Normalized center of the bounding box */
+  /**
+   * Normalized center of the bounding box (legacy fallback).
+   * Prefer centroid when available.
+   */
   centerX?: number;
   centerY?: number;
   /**
-   * 4-point clockwise polygon describing the actual bubble boundary.
+   * True polygon centroid (area-weighted), normalized 0–1.
+   * Computed server-side from the OCR polygon. More accurate than
+   * bbox center for skewed or non-rectangular text regions.
+   */
+  centroid?: { x: number; y: number };
+  /**
+   * Rotation angle of the text block in degrees (−45 to 45).
+   * Derived from the polygon's dominant axis (top edge direction).
+   * 0 for horizontal text, positive = clockwise tilt.
+   */
+  rotation?: number;
+  /**
+   * 4-point clockwise polygon describing the actual glyph boundary.
    * Falls back to a rectangle derived from x/y/w/h if absent.
    */
   polygon?: BubblePolygon;

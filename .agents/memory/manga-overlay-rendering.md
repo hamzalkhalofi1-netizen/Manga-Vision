@@ -3,6 +3,20 @@ name: Manga overlay rendering
 description: Key rules for the scanlation-quality text overlay system in MangaVerse
 ---
 
+## Polygon-anchored architecture (single source of truth)
+
+The OCR polygon is the single source of truth for mask shape, text anchor, font sizing, and text rotation. Never derive positioning from bbox center or translated text dimensions.
+
+- **Centroid**: computed server-side via Shoelace formula, sent as `centroid: {x,y}` (normalized). Client-side Shoelace fallback if absent.
+- **Rotation**: server-side from top-edge angle of polygon, clamped ±30°, sent as `rotation` (degrees). Client-side fallback from `polygonRotationDeg()`.
+- **Mask shape**: SVG `<Polygon>` (not `<Rect>`) — vertices expanded outward from centroid by `MASK_EXPAND=3px`.
+- **Font sizing**: `polygonDimensions()` measures along polygon's own axes (handles rotated text correctly — axis-aligned bbox would over-estimate one dimension).
+- **Text rotation**: React Native `transform: [{ rotate }]` applied to text view centered on centroid — rotates exactly around centroid with no additional translate.
+
+**Why:** `(minX+maxX)/2` bbox center is inaccurate for skewed polygons; `<Rect>` mask ignores polygon shape; axis-aligned bbox over-estimates dimensions for rotated text.
+
+**How to apply:** `getPlacement()` in `SkiaOverlayCanvas.tsx` always uses polygon centroid + rotation + `polygonDimensions()`. Server's `translate-image.ts` computes `centroid` and `rotation` after polygon validation.
+
 ## The mask must cover the ORIGINAL text area, not the translated glyph bounds
 
 **Why:** The OCR polygon is the bounds of the *source* text (e.g., English). If the Arabic translation is shorter/narrower, a glyph-tight mask leaves the original text visible around the edges. Mask size = OCR bbox + 3px expansion at 100% opacity.
