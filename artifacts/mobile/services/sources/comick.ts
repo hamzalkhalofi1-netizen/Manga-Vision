@@ -2,14 +2,8 @@ import { Chapter, Manga, MangaSource } from "./types";
 import { proxiedFetch, SourceError } from "./fetchClient";
 
 const SITE_URL = "https://comick.io";
-
-// ComicK changed their API infrastructure.
-// api.comick.io now redirects to comick.dev, but the API paths there return 404.
-// From native devices (directOnWeb=true), we use the device's own fetch which
-// follows redirects. We try api.comick.io → device follows to redirect target.
-// The api.comick.fun domain does not resolve. We keep api.comick.io as primary
-// and add a CDN fallback.
 const API_URL = "https://api.comick.io";
+// ComicK CDN for chapter images (b2key-based paths)
 const CDN = "https://meo.comick.pictures";
 
 const FETCH_OPTS = {
@@ -70,7 +64,6 @@ async function comickFetch(path: string, query = ""): Promise<unknown> {
   console.log(`[comick] ${path}${query} → status=${res.status} content-type=${ct}`);
 
   if (!ct.includes("application/json") && !ct.includes("text/json")) {
-    // Got HTML instead of JSON — likely Cloudflare challenge or redirect to frontend
     const body = await res.text();
     const isCF = /just a moment|checking your browser|cf-ray/i.test(body);
     const isNotFound = res.status === 404 || /not.found|404/i.test(body.slice(0, 200));
@@ -82,8 +75,14 @@ async function comickFetch(path: string, query = ""): Promise<unknown> {
         "cloudflare", res.status, "comick"
       );
     }
+    if (isNotFound) {
+      throw new SourceError(
+        `ComicK: resource not found — ${path}`,
+        "not_found", res.status, "comick"
+      );
+    }
     throw new SourceError(
-      "ComicK API is currently unavailable — the API endpoint has moved. Try MangaDex or Asura Scans instead.",
+      "ComicK API is currently unavailable — try MangaDex or Asura Scans instead.",
       "upstream", res.status, "comick"
     );
   }
@@ -113,6 +112,74 @@ function requireArray(data: unknown, context: string): Array<Record<string, unkn
     console.log(`[comick] ${context} → ${items.length} items`);
   }
   return items as Array<Record<string, unknown>>;
+}
+
+/**
+ * Construct a full CDN image URL from a ComicK image object.
+ * ComicK images can have:
+ *   - img.url       (direct full URL)
+ *   - img.b2key     (Backblaze key: "comicHid/chapterHid/page.jpg")
+ *   - img.name      (filename only, needs chapter path prefix — use with CDN)
+ */
+function resolveComickImageUrl(img: Record<string, unknown>, chapterId?: string): string {
+  // Direct URL (highest priority)
+  if (typeof img.url === "string" && img.url.startsWith("http")) return img.url;
+
+  // b2key — full CDN path (most common in API responses)
+  if (typeof img.b2key === "string") {
+    const key = img.b2key as string;
+    return key.startsWith("http") ? key : `${CDN}/${key}`;
+  }
+
+  // name — filename only; reconstruct with chapter context if available
+  if (typeof img.name === "string") {
+    const name = img.name as string;
+    if (name.startsWith("http")) return name;
+    // If we have chapterId, we can try to construct a path
+    if (chapterId) return `${CDN}/${chapterId}/${name}`;
+    return `${CDN}/${name}`;
+  }
+
+  // gpurl — Google-proxied CDN URL (used in some listing responses)
+  if (typeof img.gpurl === "string" && img.gpurl.startsWith("http")) return img.gpurl;
+
+  return "";
+}
+
+async function fetchAllChapters(mangaId: string): Promise<Array<Record<string, unknown>>> {
+  const all: Array<Record<string, unknown>> = [];
+  let page = 1;
+  const limit = 300; // ComicK max per page
+
+  while (true) {
+    const qs = new URLSearchParams({
+      lang: "en",
+      limit: String(limit),
+      page: String(page),
+    }).toString();
+
+    const data = await comickFetch(`/comic/${mangaId}/chapters`, `?${qs}`) as Record<string, unknown>;
+    const chapters = (data.chapters as Array<Record<string, unknown>>) ?? [];
+
+    if (!Array.isArray(chapters) || chapters.length === 0) {
+      if (page === 1) {
+        console.warn(`[comick] PARSER DIAGNOSTIC: getChapters(${mangaId}) page=${page} → 0. data keys:`, Object.keys(data).slice(0, 8));
+      }
+      break;
+    }
+
+    console.log(`[comick] getChapters(${mangaId}) page=${page} → ${chapters.length} chapters`);
+    all.push(...chapters);
+
+    // ComicK returns `total` in the response; stop if we have all
+    const total = typeof data.total === "number" ? data.total : null;
+    if (total !== null && all.length >= total) break;
+    if (chapters.length < limit) break;
+
+    page++;
+  }
+
+  return all;
 }
 
 export const comickSource: MangaSource = {
@@ -172,15 +239,13 @@ export const comickSource: MangaSource = {
   },
 
   async getChapters(mangaId: string): Promise<Chapter[]> {
-    const qs = new URLSearchParams({ lang: "en", limit: "100", page: "1" }).toString();
-    const data = await comickFetch(`/comic/${mangaId}/chapters`, `?${qs}`) as Record<string, unknown>;
-    const chapters = (data.chapters as Array<Record<string, unknown>>) ?? [];
-    if (!Array.isArray(chapters) || chapters.length === 0) {
-      console.warn(`[comick] PARSER DIAGNOSTIC: getChapters(${mangaId}) → 0. data keys:`, Object.keys(data).slice(0, 8));
-      return [];
-    }
-    console.log(`[comick] getChapters(${mangaId}) → ${chapters.length} chapters`);
-    return chapters.map((c) => ({
+    const rawChapters = await fetchAllChapters(mangaId);
+
+    if (rawChapters.length === 0) return [];
+
+    console.log(`[comick] getChapters(${mangaId}) total → ${rawChapters.length} chapters`);
+
+    return rawChapters.map((c) => ({
       id: (c.hid ?? c.id) as string,
       number: String(c.chap ?? c.chapter ?? "?"),
       title: c.title as string | undefined,
@@ -193,18 +258,21 @@ export const comickSource: MangaSource = {
 
   async getChapterPages(chapterId: string): Promise<string[]> {
     const data = await comickFetch(`/chapter/${chapterId}`) as Record<string, unknown>;
-    const chapterObj = data.chapter as Record<string, unknown> | undefined;
-    const images = chapterObj?.images ?? data.images ?? [];
+
+    // ComicK response: { chapter: { hid, images: [...] } }
+    const chapterObj = (data.chapter ?? data) as Record<string, unknown>;
+    const images = chapterObj.images ?? data.images ?? [];
 
     if (!Array.isArray(images) || images.length === 0) {
-      console.warn(`[comick] PARSER DIAGNOSTIC: getChapterPages(${chapterId}) → 0 images. keys:`, Object.keys(data).slice(0, 8));
+      console.warn(`[comick] PARSER DIAGNOSTIC: getChapterPages(${chapterId}) → 0 images. chapter keys:`, Object.keys(chapterObj).slice(0, 8));
       return [];
     }
 
-    return (images as Array<Record<string, unknown>>).map((img) => {
-      const url = (img.url ?? img.b2key ?? "") as string;
-      if (url.startsWith("http")) return url;
-      return `${CDN}/${url}`;
-    }).filter((u) => u.length > 5);
+    const urls = (images as Array<Record<string, unknown>>)
+      .map((img) => resolveComickImageUrl(img, chapterId))
+      .filter((u) => u.length > 5);
+
+    console.log(`[comick] getChapterPages(${chapterId}) → ${urls.length} images`);
+    return urls;
   },
 };

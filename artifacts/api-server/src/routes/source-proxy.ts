@@ -11,7 +11,7 @@ const SOURCE_REGISTRY: Record<string, string> = {
   "comick-cdn": "https://meo.comick.pictures",
   "mangaplus": "https://api.mangaplus.shueisha.co.jp",
   "mangafire": "https://mangafire.to",
-  "asura": "https://asurascans.com",
+  "asura": "https://asuracomic.net",
   "naver": "https://www.webtoons.com",
 };
 
@@ -20,7 +20,7 @@ const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> =
   "comick-cdn":  { referer: "https://comick.io/",                origin: "https://comick.io" },
   "mangaplus":   { referer: "https://mangaplus.shueisha.co.jp/", origin: "https://mangaplus.shueisha.co.jp" },
   "mangafire":   { referer: "https://mangafire.to/",             origin: "https://mangafire.to" },
-  "asura":       { referer: "https://asurascans.com/",            origin: "https://asurascans.com" },
+  "asura":       { referer: "https://asuracomic.net/",             origin: "https://asuracomic.net" },
   "naver":       { referer: "https://www.webtoons.com/",         origin: "https://www.webtoons.com" },
 };
 
