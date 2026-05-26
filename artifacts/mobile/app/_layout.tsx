@@ -16,6 +16,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import GlobalWebViewBridge from "@/components/GlobalWebViewBridge";
 import { DownloadProvider } from "@/context/DownloadContext";
 import { LibraryProvider } from "@/context/LibraryContext";
 import { SettingsProvider } from "@/context/SettingsContext";
@@ -89,7 +90,9 @@ export default function RootLayout() {
               <DownloadProvider>
                 <GestureHandlerRootView style={{ flex: 1 }}>
                   <KeyboardProvider>
-                    <RootLayoutNav />
+                    <GlobalWebViewBridge>
+                      <RootLayoutNav />
+                    </GlobalWebViewBridge>
                   </KeyboardProvider>
                 </GestureHandlerRootView>
               </DownloadProvider>

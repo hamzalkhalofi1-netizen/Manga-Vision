@@ -1,5 +1,7 @@
+import { Platform } from "react-native";
 import { Chapter, Manga, MangaSource } from "./types";
 import { proxiedFetch, SourceError } from "./fetchClient";
+import { webViewBridge } from "../webViewBridge";
 
 const SITE_URL = "https://mangafire.to";
 
@@ -39,15 +41,44 @@ async function mfHtmlFetch(path: string, query = ""): Promise<string> {
 }
 
 async function mfXhrFetch(path: string, query = ""): Promise<Record<string, unknown>> {
-  const res = await proxiedFetch("mangafire", path, query, XHR_OPTS);
-  const json = await res.json() as Record<string, unknown>;
+  const url = `${SITE_URL}${path}${query}`;
+  let jsonText: string;
+
+  if (Platform.OS !== "web") {
+    // Native: run the XHR inside the persistent mangafire WebView.
+    // That WebView already has cf_clearance in its cookie store, so the
+    // AJAX endpoint accepts the request without any extra setup.
+    const resp = await webViewBridge.fetch("mangafire", url, {
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+      timeoutMs: 18000,
+    });
+    if (!resp.ok && (resp.status === 403 || resp.status === 503)) {
+      throw new SourceError(
+        "MangaFire requires browser verification.",
+        "cloudflare", resp.status, "mangafire",
+      );
+    }
+    jsonText = resp.body;
+  } else {
+    // Web: route through server-side proxy (CORS + cookie forwarding)
+    const res = await proxiedFetch("mangafire", path, query, XHR_OPTS);
+    jsonText = await res.text();
+  }
+
+  let json: Record<string, unknown>;
+  try {
+    json = JSON.parse(jsonText) as Record<string, unknown>;
+  } catch {
+    throw new SourceError("MangaFire: invalid JSON from AJAX endpoint", "upstream", undefined, "mangafire");
+  }
+
   const status = typeof json.status === "number" ? json.status : 200;
   console.log(`[mangafire] XHR ${path}${query} → status=${status}`);
   if (status === 404) {
     throw new SourceError(`MangaFire: ${path} not found (404)`, "not_found", 404, "mangafire");
   }
   if (status === 403) {
-    throw new SourceError(`MangaFire: ${path} blocked (403) — may require session cookies`, "auth", 403, "mangafire");
+    throw new SourceError(`MangaFire: ${path} blocked (403)`, "cloudflare", 403, "mangafire");
   }
   return json;
 }

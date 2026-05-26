@@ -28,9 +28,8 @@ import { useSettings } from "@/context/SettingsContext";
 import { useColors } from "@/hooks/useColors";
 import { AppErrorModal, classifyError } from "@/components/AppErrorModal";
 import { getSource, SourceError } from "@/services/sources";
-import type { SourceErrorType } from "@/services/sources";
-import SourceVerificationModal from "@/components/SourceVerificationModal";
 import { SourceErrorView } from "@/components/SourceErrorView";
+import SourceStatusBanner from "@/components/SourceStatusBanner";
 import MangaPage, { TextRegion } from "@/components/MangaPage";
 import {
   translationQueue,
@@ -108,8 +107,6 @@ export default function ReaderScreen() {
   const [pages, setPages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [sourceErr, setSourceErr] = useState<{ type: SourceErrorType; message: string } | null>(null);
-  const [verifyVisible, setVerifyVisible] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
 
   // ── Reader state ──────────────────────────────────────────────────────────
@@ -163,7 +160,6 @@ export default function ReaderScreen() {
 
     setLoading(true);
     setLoadError(null);
-    setSourceErr(null);
     setPages([]);
     setCurrentPage(0);
     currentPageRef.current = 0;
@@ -198,14 +194,10 @@ export default function ReaderScreen() {
         }
       } catch (err) {
         console.error("[reader] getChapterPages failed:", err);
-        if (err instanceof SourceError) {
-          setSourceErr({ type: err.type, message: err.message });
-          if ((err.type === "cloudflare" || err.type === "auth") && source.requiresVerification) {
-            setVerifyVisible(true);
-          }
-        } else {
-          setLoadError("Failed to load chapter. Please try again.");
-        }
+        const msg = err instanceof SourceError
+          ? err.message
+          : err instanceof Error ? err.message : "Failed to load chapter.";
+        setLoadError(msg);
       } finally {
         setLoading(false);
       }
@@ -549,37 +541,30 @@ export default function ReaderScreen() {
     );
   }
 
-  if (sourceErr || loadError || pages.length === 0) {
+  if (loadError || pages.length === 0) {
     const sid = params.sourceId || "mangadex";
     const src = getSource(sid);
     return (
-      <>
+      <View style={[styles.root, { justifyContent: "center" }]}>
+        <SourceStatusBanner sourceId={sid} sourceName={src.name} />
         <SourceErrorView
-          errorType={sourceErr?.type ?? (loadError ? "network" : undefined)}
-          message={sourceErr?.message ?? loadError ?? "No pages found for this chapter."}
+          message={loadError ?? "No pages found for this chapter."}
           sourceName={src.name}
-          onVerify={sourceErr && (sourceErr.type === "cloudflare" || sourceErr.type === "auth")
-            ? () => setVerifyVisible(true) : undefined}
           onRetry={() => setRetryKey((k) => k + 1)}
           onBack={() => router.back()}
         />
-        <SourceVerificationModal
-          visible={verifyVisible}
-          sourceId={sid}
-          sourceName={src.name}
-          sourceUrl={src.baseUrl}
-          onVerified={() => {
-            setVerifyVisible(false);
-            setRetryKey((k) => k + 1);
-          }}
-          onDismiss={() => setVerifyVisible(false)}
-        />
-      </>
+      </View>
     );
   }
 
+  const sid = params.sourceId || "mangadex";
+  const readerSrc = getSource(sid);
+
   return (
     <View style={styles.root}>
+      {/* CF verification banner — slides in if bridge detects a challenge mid-read */}
+      <SourceStatusBanner sourceId={sid} sourceName={readerSrc.name} />
+
       {/* ── Pages ─────────────────────────────────────────────────────────── */}
       <FlatList
         ref={flatListRef}

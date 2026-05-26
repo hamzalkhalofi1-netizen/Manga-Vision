@@ -1,4 +1,4 @@
 - [Source proxy architecture](source-proxy-arch.md) — directOnWeb flag bypasses server proxy for CORS APIs; scraping sources always proxy
 - [Express 5 routing](express5-routing.md) — wildcard routes need regex, not string `/:id/*` patterns
 - [MangaFire chapter structure](mangafire-chapters.md) — 2025 HTML uses data-number (not data-id) + /read/slug/en/chapter-N paths; images need browser session token
-- [Asura SPA limitation](asura-spa.md) — asuracomic.net is a pure SPA; ALL URLs return same 594KB shell; chapter data needs browser JS rendering
+- [WebView bridge architecture](webview-bridge-arch.md) — Mihon-grade networking: persistent hidden WebViews for CF sources; no popup loops; verify once per session

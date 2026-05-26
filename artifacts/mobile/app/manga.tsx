@@ -20,10 +20,9 @@ import { useLibrary } from "@/context/LibraryContext";
 import { useSettings } from "@/context/SettingsContext";
 import { useTokens } from "@/context/TokenContext";
 import { useColors } from "@/hooks/useColors";
-import SourceVerificationModal from "@/components/SourceVerificationModal";
 import { SourceErrorView } from "@/components/SourceErrorView";
+import SourceStatusBanner from "@/components/SourceStatusBanner";
 import { getSource, SourceError } from "@/services/sources";
-import type { SourceErrorType } from "@/services/sources";
 import { Chapter, LibraryStatus, Manga } from "@/services/sources/types";
 
 const STATUS_ICONS: Record<LibraryStatus, string> = {
@@ -47,8 +46,7 @@ export default function MangaScreen() {
   const [translatedDesc, setTranslatedDesc] = useState<string | null>(null);
   const [translating, setTranslating] = useState(false);
   const [showAllChapters, setShowAllChapters] = useState(false);
-  const [sourceErr, setSourceErr] = useState<{ type: SourceErrorType; message: string } | null>(null);
-  const [verifyVisible, setVerifyVisible] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
 
   const sourceId = params.sourceId || activeSourceId;
@@ -58,7 +56,7 @@ export default function MangaScreen() {
     if (!mangaId) return;
     const source = getSource(sourceId);
     setLoading(true);
-    setSourceErr(null);
+    setLoadError(null);
     Promise.all([source.getMangaDetails(mangaId), source.getChapters(mangaId)])
       .then(([m, c]) => {
         setManga(m);
@@ -66,15 +64,10 @@ export default function MangaScreen() {
       })
       .catch((err) => {
         console.error("[manga] load failed:", err);
-        if (err instanceof SourceError) {
-          setSourceErr({ type: err.type, message: err.message });
-          if (err.type === "cloudflare" || err.type === "auth") {
-            const src = getSource(sourceId);
-            if (src.requiresVerification) setVerifyVisible(true);
-          }
-        } else {
-          setSourceErr({ type: "network", message: err instanceof Error ? err.message : "Failed to load manga." });
-        }
+        const msg = err instanceof SourceError
+          ? err.message
+          : err instanceof Error ? err.message : "Failed to load manga.";
+        setLoadError(msg);
       })
       .finally(() => setLoading(false));
   }, [mangaId, sourceId, retryKey]);
@@ -82,6 +75,7 @@ export default function MangaScreen() {
   const entry = mangaId ? getEntry(mangaId) : undefined;
   const progress = mangaId ? getProgress(mangaId) : undefined;
   const inLib = mangaId ? isInLibrary(mangaId) : false;
+  const src = getSource(sourceId);
 
   const handleAddToLibrary = (status: LibraryStatus) => {
     if (!manga) return;
@@ -175,30 +169,16 @@ export default function MangaScreen() {
   }
 
   if (!manga) {
-    const src = getSource(sourceId);
     return (
-      <>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <SourceStatusBanner sourceId={sourceId} sourceName={src.name} />
         <SourceErrorView
-          errorType={sourceErr?.type}
-          message={sourceErr?.message}
+          message={loadError ?? undefined}
           sourceName={src.name}
-          onVerify={sourceErr?.type === "cloudflare" || sourceErr?.type === "auth"
-            ? () => setVerifyVisible(true) : undefined}
           onRetry={() => setRetryKey((k) => k + 1)}
           onBack={() => router.back()}
         />
-        <SourceVerificationModal
-          visible={verifyVisible}
-          sourceId={sourceId}
-          sourceName={src.name}
-          sourceUrl={src.baseUrl}
-          onVerified={() => {
-            setVerifyVisible(false);
-            setRetryKey((k) => k + 1);
-          }}
-          onDismiss={() => setVerifyVisible(false)}
-        />
-      </>
+      </View>
     );
   }
 
@@ -206,6 +186,9 @@ export default function MangaScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* CF verification banner — slides in automatically when bridge detects a challenge */}
+      <SourceStatusBanner sourceId={sourceId} sourceName={src?.name ?? sourceId} />
+
       {/* Back Button */}
       <Pressable
         onPress={() => router.back()}

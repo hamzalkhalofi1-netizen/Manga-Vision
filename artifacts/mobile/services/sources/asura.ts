@@ -1,5 +1,7 @@
+import { Platform } from "react-native";
 import { Chapter, Manga, MangaSource } from "./types";
 import { proxiedFetch, SourceError } from "./fetchClient";
+import { webViewBridge } from "../webViewBridge";
 
 // Asura has moved domains multiple times. Current domain as of 2025:
 // asuracomic.net (redirects from asurascans.com handled server-side)
@@ -16,6 +18,18 @@ const FETCH_OPTS = {
 };
 
 async function asuraFetch(path: string, query = ""): Promise<string> {
+  if (Platform.OS !== "web") {
+    // Native: navigate the persistent Asura WebView to the URL and extract
+    // the fully JS-rendered DOM. This handles both Cloudflare challenges and
+    // the SPA rendering requirement (all asuracomic.net pages need client-side JS).
+    const url = `${SITE_URL}${path}${query}`;
+    const resp = await webViewBridge.fetchRendered("asura", url, 3000);
+    if (!resp.ok && (resp.status === 403 || resp.status === 503)) {
+      throw new SourceError("Asura blocked by Cloudflare.", "cloudflare", resp.status, "asura");
+    }
+    return resp.body;
+  }
+  // Web: route through server-side proxy
   const res = await proxiedFetch("asura", path, query, FETCH_OPTS);
   return res.text();
 }
