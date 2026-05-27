@@ -1,0 +1,124 @@
+Continue the rendering refinement phase.
+
+The current Koharu-inspired architecture upgrade is working correctly:
+- mask geometry is independent from layout geometry
+- OCR polygons are used for masking
+- expanded bubble containers are used for Arabic layout
+- subtitle appearance is mostly fixed
+- multi-layer feathering is implemented
+
+Now implement the FINAL visual quality upgrade:
+
+==================================================
+PER-REGION BUBBLE COLOR SAMPLING
+==================================================
+
+Current problem:
+The mask still sometimes looks slightly visible because bgColor is estimated heuristically instead of sampled from the real manga image.
+
+Implement a true local bubble color sampler.
+
+==================================================
+GOAL
+==================================================
+
+For each OCR polygon / text region:
+
+1. Sample actual pixel colors from the manga image around the polygon centroid.
+2. Detect the dominant local bubble/background color.
+3. Use the sampled color as the mask fill color.
+4. Preserve gradients and local bubble tones as much as possible.
+
+The mask should visually disappear into the original bubble background.
+
+==================================================
+IMPLEMENTATION REQUIREMENTS
+==================================================
+
+1. SAMPLE STRATEGY
+
+Sample multiple points:
+- polygon centroid
+- inner polygon offsets
+- surrounding pixels
+- edge-safe sampling
+
+Avoid:
+- black text pixels
+- panel borders
+- line art
+
+==================================================
+2. COLOR FILTERING
+
+Ignore:
+- near-black pixels
+- high-contrast ink lines
+- text remnants
+
+Prefer:
+- dominant light bubble tones
+- low-variance background pixels
+
+==================================================
+3. MULTI-LAYER MASK BLENDING
+
+Apply sampled colors to:
+- outer halo
+- mid feather ring
+- solid core
+
+Use:
+- adaptive opacity gradients
+- soft edge blending
+- anti-rectangle visual behavior
+
+==================================================
+4. GRADIENT/TEXTURE PRESERVATION
+
+If the bubble contains:
+- gradients
+- off-white tones
+- textured manga shading
+
+Blend naturally instead of forcing pure white.
+
+==================================================
+5. PERFORMANCE
+
+Keep implementation lightweight and mobile-friendly.
+
+Do NOT introduce:
+- heavy AI segmentation models
+- GPU-only processing
+- expensive image reconstruction
+
+Use efficient local pixel sampling only.
+
+==================================================
+6. FINAL VISUAL TARGET
+==================================================
+
+The overlay mask should become nearly invisible.
+
+The result should resemble:
+professional manga scanlation cleanup.
+
+The user should feel:
+the original manga bubble itself was edited naturally,
+not covered with rectangles.
+
+==================================================
+IMPORTANT
+==================================================
+
+Continue from the current upgraded rendering architecture.
+
+Do NOT restart analysis.
+Do NOT rewrite the renderer again.
+
+Only refine:
+- mask blending
+- bubble color sampling
+- local compositing quality
+- visual integration

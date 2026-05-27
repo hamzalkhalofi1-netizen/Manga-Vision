@@ -1,17 +1,11 @@
 /**
  * PremiumOverlayRenderer
  *
- * Pure text overlay — no fill shapes, no inpaint colors, no rectangles.
+ * Transparent wrapper around SkiaOverlayCanvas.
+ * Guarantees zero pointer-event capture and a fully transparent root.
  *
- * The text-erase step now happens entirely on the server (POST /api/inpaint
- * in MangaPage). By the time this component renders, the underlying image
- * already has its original text pixel-erased. This layer only places the
- * translated Arabic (or other language) text, centered on each OCR bbox.
- *
- * Guarantees:
- *  ✅ Zero fill rectangles  ✅ Zero white shapes  ✅ Zero synthetic geometry
- *  ✅ Overlay root 100% transparent  ✅ pointerEvents: 'none'
- *  ✅ Text snapped dead-center on OCR bbox using centerX / centerY
+ * Passes imageUri to SkiaOverlayCanvas so it can perform per-region
+ * pixel sampling via BubbleColorSampler (web only, async, with CORS fallback).
  */
 
 import React, { memo } from "react";
@@ -20,12 +14,14 @@ import type { TextRegion } from "./MangaPage";
 import SkiaOverlayCanvas from "./SkiaOverlayCanvas";
 
 interface PremiumOverlayRendererProps {
-  regions: TextRegion[];
-  displayW: number;
-  displayH: number;
-  nativeW: number;
-  nativeH: number;
-  isRTL?: boolean;
+  regions:   TextRegion[];
+  displayW:  number;
+  displayH:  number;
+  nativeW:   number;
+  nativeH:   number;
+  isRTL?:    boolean;
+  /** Full URL of the manga page image — forwarded to pixel color sampler. */
+  imageUri?: string;
 }
 
 function PremiumOverlayRenderer({
@@ -33,6 +29,7 @@ function PremiumOverlayRenderer({
   displayW,
   displayH,
   isRTL = true,
+  imageUri,
 }: PremiumOverlayRendererProps) {
   if (regions.length === 0) return null;
 
@@ -48,6 +45,7 @@ function PremiumOverlayRenderer({
         displayW={displayW}
         displayH={displayH}
         isRTL={isRTL}
+        imageUri={imageUri}
       />
     </View>
   );
@@ -55,10 +53,11 @@ function PremiumOverlayRenderer({
 
 const styles = StyleSheet.create({
   overlayRoot: {
-    position: "absolute",
+    position:        "absolute",
     top: 0,
     left: 0,
     backgroundColor: "transparent",
+    pointerEvents:   "none",
   },
 });
 

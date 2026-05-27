@@ -114,6 +114,7 @@ function MangaPage({
           nativeW={nativeDims.w}
           nativeH={nativeDims.h}
           isRTL={isRTL}
+          imageUri={uri}
         />
       )}
     </View>
