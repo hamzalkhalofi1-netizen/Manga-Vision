@@ -39,6 +39,7 @@ import {
 import { useTokens } from "@/context/TokenContext";
 import { useInpaintServer } from "@/hooks/useInpaintServer";
 import { callInpaintServer } from "@/services/inpaintClient";
+import { useReaderPreloader } from "@/hooks/useReaderPreloader";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -113,6 +114,14 @@ export default function ReaderScreen() {
   const [currentPage, setCurrentPage] = useState(0);
   const [showControls, setShowControls] = useState(true);
   const [overlayVisible, setOverlayVisible] = useState(true);
+
+  // ── Preloader — warms expo-image cache ahead/behind viewport ─────────────
+  useReaderPreloader({
+    pages,
+    sourceId: params.sourceId || "mangadex",
+    currentPage,
+    enabled: Platform.OS !== "web" && pages.length > 0,
+  });
 
   // ── Translation state ─────────────────────────────────────────────────────
   const [pageTranslations, setPageTranslations] = useState<PageTranslations>({});

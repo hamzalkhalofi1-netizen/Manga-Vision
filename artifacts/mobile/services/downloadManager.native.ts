@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as FileSystem from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 
 const DL_INDEX_KEY = "@mangaverse_dl_v1";
 
@@ -124,9 +124,9 @@ export async function isChapterDownloaded(chapterId: string): Promise<boolean> {
 export async function getDownloadedSizeMB(): Promise<number> {
   try {
     const dir = baseDir();
-    const info = await FileSystem.getInfoAsync(dir, { size: true });
+    const info = await FileSystem.getInfoAsync(dir);
     if (!info.exists) return 0;
-    const sizeBytes = (info as FileSystem.FileInfo & { size?: number }).size ?? 0;
+    const sizeBytes = (info as { exists: boolean; size?: number; isDirectory?: boolean }).size ?? 0;
     return Math.round((sizeBytes / 1024 / 1024) * 10) / 10;
   } catch {
     return 0;

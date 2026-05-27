@@ -5,63 +5,167 @@ import { mangaplusSource } from "./mangaplus";
 import { naverSource } from "./naver";
 import { mangafireSource } from "./mangafire";
 import { asuraSource } from "./asura";
+import { SourceRegistry } from "./SourceRegistry";
 
 export { SourceError, SourceErrorType } from "./fetchClient";
 export type { SourceFetchOptions } from "./fetchClient";
+export { SourceRegistry } from "./SourceRegistry";
+export type { SourceMetadata, RegisteredSource } from "./SourceRegistry";
+export { BaseSource } from "./BaseSource";
 
-export const ALL_SOURCES: MangaSource[] = [
-  mangadexSource,
-  comickSource,
-  mangaplusSource,
-  mangafireSource,
-  asuraSource,
-  naverSource,
+// ── Register all sources with metadata ────────────────────────────────────
+
+SourceRegistry.registerAll([
   {
-    id: "kakao",
-    name: "Kakao Webtoon",
-    baseUrl: "https://webtoon.kakao.com",
-    isEnabled: false,
-    requiresVerification: true,
-    async search() { return []; },
-    async getTrending() { return []; },
-    async getLatestUpdates() { return []; },
-    async getMangaDetails(id) { return { id, title: "", coverUrl: "", sourceId: "kakao" }; },
-    async getChapters() { return []; },
-    async getChapterPages() { return []; },
+    source: mangadexSource,
+    meta: {
+      language: "en",
+      nsfw: false,
+      requiresVerification: false,
+      isEnabled: true,
+      hasOfficialApi: true,
+      tags: ["official-api", "multi-language"],
+      websiteUrl: "https://mangadex.org",
+    },
   },
   {
-    id: "bilibili",
-    name: "Bilibili Comics",
-    baseUrl: "https://www.bilibilicomics.com",
-    isEnabled: false,
-    async search() { return []; },
-    async getTrending() { return []; },
-    async getLatestUpdates() { return []; },
-    async getMangaDetails(id) { return { id, title: "", coverUrl: "", sourceId: "bilibili" }; },
-    async getChapters() { return []; },
-    async getChapterPages() { return []; },
+    source: comickSource,
+    meta: {
+      language: ["en", "multi"],
+      nsfw: false,
+      requiresVerification: false,
+      isEnabled: true,
+      hasOfficialApi: true,
+      tags: ["api", "aggregator"],
+      websiteUrl: "https://comick.io",
+    },
   },
   {
-    id: "rawkuma",
-    name: "Rawkuma",
-    baseUrl: "https://rawkuma.com",
-    isEnabled: false,
-    requiresVerification: true,
-    async search() { return []; },
-    async getTrending() { return []; },
-    async getLatestUpdates() { return []; },
-    async getMangaDetails(id) { return { id, title: "", coverUrl: "", sourceId: "rawkuma" }; },
-    async getChapters() { return []; },
-    async getChapterPages() { return []; },
+    source: mangaplusSource,
+    meta: {
+      language: "en",
+      nsfw: false,
+      requiresVerification: false,
+      isEnabled: true,
+      hasOfficialApi: true,
+      tags: ["official", "shueisha"],
+      websiteUrl: "https://mangaplus.shueisha.co.jp",
+    },
   },
-];
+  {
+    source: mangafireSource,
+    meta: {
+      language: "en",
+      nsfw: false,
+      requiresVerification: true,
+      isEnabled: true,
+      tags: ["scraper", "cloudflare"],
+      websiteUrl: "https://mangafire.to",
+    },
+  },
+  {
+    source: asuraSource,
+    meta: {
+      language: "en",
+      nsfw: false,
+      requiresVerification: true,
+      isEnabled: true,
+      tags: ["scraper", "cloudflare", "manhwa"],
+      websiteUrl: "https://asuracomic.net",
+    },
+  },
+  {
+    source: naverSource,
+    meta: {
+      language: ["en", "ko"],
+      nsfw: false,
+      requiresVerification: false,
+      isEnabled: true,
+      tags: ["webtoon", "official"],
+      websiteUrl: "https://www.webtoons.com",
+    },
+  },
+  // Stub sources (not yet fully implemented)
+  {
+    source: {
+      id: "kakao",
+      name: "Kakao Webtoon",
+      baseUrl: "https://webtoon.kakao.com",
+      isEnabled: false,
+      requiresVerification: true,
+      async search() { return []; },
+      async getTrending() { return []; },
+      async getLatestUpdates() { return []; },
+      async getMangaDetails(id) { return { id, title: "", coverUrl: "", sourceId: "kakao" }; },
+      async getChapters() { return []; },
+      async getChapterPages() { return []; },
+    } as MangaSource,
+    meta: {
+      language: "ko",
+      nsfw: false,
+      requiresVerification: true,
+      isEnabled: false,
+      tags: ["webtoon", "official", "korean"],
+      websiteUrl: "https://webtoon.kakao.com",
+    },
+  },
+  {
+    source: {
+      id: "bilibili",
+      name: "Bilibili Comics",
+      baseUrl: "https://www.bilibilicomics.com",
+      isEnabled: false,
+      async search() { return []; },
+      async getTrending() { return []; },
+      async getLatestUpdates() { return []; },
+      async getMangaDetails(id) { return { id, title: "", coverUrl: "", sourceId: "bilibili" }; },
+      async getChapters() { return []; },
+      async getChapterPages() { return []; },
+    } as MangaSource,
+    meta: {
+      language: ["en", "zh"],
+      nsfw: false,
+      requiresVerification: false,
+      isEnabled: false,
+      tags: ["official", "chinese"],
+      websiteUrl: "https://www.bilibilicomics.com",
+    },
+  },
+  {
+    source: {
+      id: "rawkuma",
+      name: "Rawkuma",
+      baseUrl: "https://rawkuma.com",
+      isEnabled: false,
+      requiresVerification: true,
+      async search() { return []; },
+      async getTrending() { return []; },
+      async getLatestUpdates() { return []; },
+      async getMangaDetails(id) { return { id, title: "", coverUrl: "", sourceId: "rawkuma" }; },
+      async getChapters() { return []; },
+      async getChapterPages() { return []; },
+    } as MangaSource,
+    meta: {
+      language: "ja",
+      nsfw: false,
+      requiresVerification: true,
+      isEnabled: false,
+      tags: ["scraper", "cloudflare", "raw", "japanese"],
+      websiteUrl: "https://rawkuma.com",
+    },
+  },
+]);
+
+// ── Legacy exports (backward compat) ──────────────────────────────────────
+
+export const ALL_SOURCES: MangaSource[] = SourceRegistry.getAll();
 
 export const sourceMap: Record<string, MangaSource> = Object.fromEntries(
-  ALL_SOURCES.map((s) => [s.id, s]),
+  SourceRegistry.getIds().map((id) => [id, SourceRegistry.get(id)!]),
 );
 
 export function getSource(id: string): MangaSource {
-  return sourceMap[id] ?? mangadexSource;
+  return SourceRegistry.get(id) ?? mangadexSource;
 }
 
 export {
