@@ -2,3 +2,4 @@
 - [Express 5 routing](express5-routing.md) — wildcard routes need regex, not string `/:id/*` patterns
 - [MangaFire chapter structure](mangafire-chapters.md) — 2025 HTML uses data-number (not data-id) + /read/slug/en/chapter-N paths; images need browser session token
 - [WebView bridge architecture](webview-bridge-arch.md) — Mihon-grade networking: persistent hidden WebViews for CF sources; no popup loops; verify once per session
+- [Overlay rendering architecture](overlay-rendering-arch.md) — BUBBLE_LAYOUT_SCALE=1.35 separates mask geometry (glyph-tight) from text layout (bubble-estimated); three-layer feather mask; safe zone 91%

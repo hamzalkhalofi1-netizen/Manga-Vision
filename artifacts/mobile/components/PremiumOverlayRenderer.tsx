@@ -40,7 +40,7 @@ function PremiumOverlayRenderer({
     <View
       style={[
         styles.overlayRoot,
-        { width: displayW, height: displayH, pointerEvents: "none" },
+        { width: displayW, height: displayH },
       ]}
     >
       <SkiaOverlayCanvas

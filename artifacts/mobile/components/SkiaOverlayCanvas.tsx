@@ -1,29 +1,40 @@
 /**
  * SkiaOverlayCanvas — Professional manga scanlation renderer.
  *
- * Core architectural principle (Koharu-inspired):
- *   The OCR polygon is the SINGLE source of truth for ALL geometry decisions.
- *   The TEXT CONTAINER is sized to the POLYGON DIMENSIONS, not the translated
- *   glyph bounds. This is the key difference between "subtitle overlay" and
- *   "professional scanlation" — translated text fills the speech bubble the
- *   same way the original did.
+ * ── Architecture (Koharu-inspired) ──────────────────────────────────────────
  *
- * Mask system — three-layer soft masking:
- *   Layer 1  Halo  (polygon + ~8px)  : very faint fill + faint stroke   → soft outer glow
- *   Layer 2  Mid   (polygon + ~5px)  : 40% opacity fill + light stroke  → intermediate feather
- *   Layer 3  Core  (polygon + 4px)   : 100% solid fill                  → fully hides original text
+ * The Gemini OCR polygon is glyph-tight — it wraps the ORIGINAL TEXT GLYPHS,
+ * not the full speech bubble.  Professional scanlation requires two distinct
+ * geometry layers:
  *
- *   The gradient effect from halo→core makes the mask edge nearly invisible,
- *   blending naturally into the bubble background without visible rectangle edges.
+ *   MASK layer   → original glyph polygon (tight, covers exactly the ink)
+ *   LAYOUT layer → estimated bubble area  (≈1.35× the glyph polygon)
  *
- * Text placement:
- *   • Container = ocrW × ocrH   (polygon dimensions, NOT translated glyph bounds)
- *   • Anchor    = true centroid  (Shoelace area-weighted, not bbox center)
- *   • Rotation  = polygon top-edge angle, clamped ±30°
- *   • Font      = largest size from ladder that fits within 91% of polygon dims
- *   • Wrapping  = pre-computed by ArabicTypesettingEngine, centered in container
+ * The LAYOUT layer is the text container.  Expanding beyond the glyph bounds
+ * to approximate the speech bubble is the single most impactful change from
+ * the previous "subtitle overlay" approach — translated text now fills the
+ * bubble the same way the original did.
  *
- * What is NOT changed (per instructions):
+ * ── Mask system (three-layer soft feathering) ────────────────────────────────
+ *
+ *   Halo  polygon + haloExpand px  :  10% fill opacity + very faint stroke
+ *   Mid   polygon + midExpand px   :  42% fill opacity + light stroke
+ *   Core  polygon + CORE_EXPAND px :  100% fill, full cover of original glyphs
+ *
+ *   Approaching the edge from outside: bubble art → faint halo → mid feather →
+ *   solid core.  The gradient is nearly invisible against the bubble background
+ *   because all layers use the exact bgColor sampled by Gemini.
+ *
+ * ── Text placement ────────────────────────────────────────────────────────────
+ *
+ *   Container  = layoutW × layoutH  (BUBBLE_LAYOUT_SCALE × polygon dims)
+ *   Anchor     = true Shoelace centroid of the OCR polygon
+ *   Rotation   = polygon top-edge angle, clamped ±30°
+ *   Font size  = largest ladder step that fits 91% of layoutW × layoutH
+ *   Wrapping   = ArabicTypesettingEngine pre-wraps to 91% of layoutW,
+ *                centered inside the full layoutW container (9% breathing room)
+ *
+ * ── What is NOT changed ───────────────────────────────────────────────────────
  *   translationQueue, inpaintClient, reader UI, source system, API flow.
  */
 
@@ -32,7 +43,7 @@ import { Platform, StyleSheet, Text, View } from "react-native";
 import Svg, { Polygon as SvgPolygon } from "react-native-svg";
 import type { TextRegion } from "./MangaPage";
 import { scaleFontToFit, scaleSFXFont } from "./DynamicFontScaler";
-import { measureLine, ARABIC_FONT_FAMILY } from "./ArabicTypesettingEngine";
+import { ARABIC_FONT_FAMILY } from "./ArabicTypesettingEngine";
 import { resolveFromCss, resolveFromGeminiTextColor } from "./AdaptiveTextColorEngine";
 
 interface Props {
@@ -42,12 +53,36 @@ interface Props {
   isRTL?:   boolean;
 }
 
-// ── Polygon geometry ─────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 /**
- * polygonCentroid — area-weighted centroid via Shoelace formula.
- * Falls back to simple vertex average for degenerate polygons.
- * Absolute pixel coordinates expected (not normalized).
+ * BUBBLE_LAYOUT_SCALE — how much larger the text container is vs. the OCR polygon.
+ *
+ * The Gemini OCR polygon is glyph-tight (wraps original text characters only).
+ * In professional manga, translated text fills the speech bubble — which is
+ * roughly 1.3–1.5× the text column area.  1.35 is the midpoint, producing
+ * natural bubble-filling without risking overflow into adjacent art.
+ *
+ * This scale applies to the TEXT CONTAINER and font sizing only.
+ * The SVG mask always uses the ORIGINAL glyph-tight polygon.
+ */
+const BUBBLE_LAYOUT_SCALE = 1.35;
+
+/** Core mask expansion — pushes polygon vertices outward from centroid.
+ *  Covers the 2–4 px anti-aliased fringe at glyph edges. */
+const CORE_EXPAND = 4;
+
+/** Feather ring stroke widths */
+const HALO_STROKE_W = 14;
+const MID_STROKE_W  = 6;
+const CORE_STROKE_W = 1.5;
+
+// ── Polygon geometry ──────────────────────────────────────────────────────────
+
+/**
+ * polygonCentroid — area-weighted centroid via the Shoelace formula.
+ * Falls back to a simple vertex average for degenerate (collinear) polygons.
+ * Expects absolute pixel coordinates.
  */
 function polygonCentroid(pts: [number, number][]): { x: number; y: number } {
   const n = pts.length;
@@ -64,6 +99,7 @@ function polygonCentroid(pts: [number, number][]): { x: number; y: number } {
     cy   += (y0 + y1) * cross;
   }
   area /= 2;
+
   if (Math.abs(area) < 0.5) {
     return {
       x: pts.reduce((s, [x]) => s + x, 0) / n,
@@ -75,7 +111,7 @@ function polygonCentroid(pts: [number, number][]): { x: number; y: number } {
 
 /**
  * expandPolygon — push each vertex outward from the centroid by `px` pixels.
- * Used to grow the mask polygon for halo and feather rings.
+ * Used to generate the halo, mid, and core mask rings.
  */
 function expandPolygon(
   pts: [number, number][],
@@ -84,8 +120,7 @@ function expandPolygon(
   px: number,
 ): [number, number][] {
   return pts.map(([x, y]) => {
-    const dx = x - cx;
-    const dy = y - cy;
+    const dx = x - cx, dy = y - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
     if (dist < 0.5) return [x, y] as [number, number];
     return [x + (dx / dist) * px, y + (dy / dist) * px] as [number, number];
@@ -93,16 +128,16 @@ function expandPolygon(
 }
 
 /**
- * polygonRotationDeg — angle of the polygon dominant axis in degrees.
- * Uses the top-edge direction (pts[0]→pts[1], clockwise ordering).
- * Clamped to ±30°; angles < 2° are treated as 0 to skip needless transforms.
+ * polygonRotationDeg — angle of the dominant axis in degrees.
+ * Derived from the top edge direction (pts[0]→pts[1], clockwise winding).
+ * Clamped to ±30°; angles < 2° are treated as 0 to skip redundant transforms.
  */
 function polygonRotationDeg(pts: [number, number][]): number {
   if (pts.length < 2) return 0;
   const dx = pts[1][0] - pts[0][0];
   const dy = pts[1][1] - pts[0][1];
   let deg = Math.atan2(dy, dx) * (180 / Math.PI);
-  if (deg > 90)  deg -= 180;
+  if (deg >  90) deg -= 180;
   if (deg < -90) deg += 180;
   deg = Math.max(-30, Math.min(30, deg));
   return Math.abs(deg) < 2 ? 0 : Math.round(deg * 10) / 10;
@@ -111,9 +146,9 @@ function polygonRotationDeg(pts: [number, number][]): number {
 /**
  * polygonDimensions — width and height along the polygon's own axes.
  *
- * Rotates all vertices into the polygon's local coordinate frame so that
- * the measurement captures true text-region size for angled bubbles.
- * An axis-aligned bbox would over-estimate width for rotated text.
+ * Rotates vertices into the polygon's local frame so that angled text
+ * regions are measured along their true dominant axis, not the screen axes.
+ * An axis-aligned bbox would over-estimate one dimension for rotated text.
  */
 function polygonDimensions(
   pts: [number, number][],
@@ -124,11 +159,9 @@ function polygonDimensions(
   const angle = rotDeg * (Math.PI / 180);
   const cosA  = Math.cos(-angle);
   const sinA  = Math.sin(-angle);
-  const us: number[] = [];
-  const vs: number[] = [];
+  const us: number[] = [], vs: number[] = [];
   for (const [x, y] of pts) {
-    const rx = x - cx;
-    const ry = y - cy;
+    const rx = x - cx, ry = y - cy;
     us.push(rx * cosA - ry * sinA);
     vs.push(rx * sinA + ry * cosA);
   }
@@ -138,7 +171,7 @@ function polygonDimensions(
   };
 }
 
-// ── Color helpers ────────────────────────────────────────────────────────────
+// ── Color helpers ─────────────────────────────────────────────────────────────
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const h    = hex.replace("#", "");
@@ -150,28 +183,32 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
 }
 
 /**
- * maskFill — exact bubble background color for mask layers.
+ * maskFill — bubble background color for the three mask layers.
  *
- * Core fill at 100% opacity guarantees original glyphs are fully hidden.
- * Feather stroke at 30% opacity blends the polygon edge into bubble art.
+ * All three rings (halo, mid, core) share the same hue so the gradient
+ * blends naturally — it only changes in opacity, not in color.
+ * Full 100% opacity on the core ensures zero bleed-through of original glyphs.
  */
 function maskFill(bgColor: string): { color: string; strokeColor: string } {
   const rgb = hexToRgb(bgColor);
-  if (!rgb) return { color: "#f5f2eb", strokeColor: "rgba(245,242,235,0.30)" };
+  if (!rgb) return { color: "#f5f2eb", strokeColor: "rgba(245,242,235,0.28)" };
   return {
     color:       `rgb(${rgb.r},${rgb.g},${rgb.b})`,
-    strokeColor: `rgba(${rgb.r},${rgb.g},${rgb.b},0.30)`,
+    strokeColor: `rgba(${rgb.r},${rgb.g},${rgb.b},0.28)`,
   };
 }
 
-// ── Placement ────────────────────────────────────────────────────────────────
+// ── Placement ─────────────────────────────────────────────────────────────────
 
 interface Placement {
   cx: number;
   cy: number;
-  /** Polygon extent along its own axes — used for text container sizing */
+  /** Glyph-tight polygon dimensions (for mask sizing) */
   ocrW: number;
   ocrH: number;
+  /** Estimated bubble dimensions for text layout (BUBBLE_LAYOUT_SCALE × ocr) */
+  layoutW: number;
+  layoutH: number;
   absolutePts: [number, number][];
   rotDeg: number;
 }
@@ -189,20 +226,25 @@ function getPlacement(
     const centroid = region.centroid
       ? { x: region.centroid.x * displayW, y: region.centroid.y * displayH }
       : polygonCentroid(absolutePts);
-
     const { x: cx, y: cy } = centroid;
+
     const rotDeg = region.rotation ?? polygonRotationDeg(absolutePts);
     const { w: ocrW, h: ocrH } = polygonDimensions(absolutePts, cx, cy, rotDeg);
 
     if (ocrW < 8 || ocrH < 6) return null;
-    return { cx, cy, ocrW, ocrH, absolutePts, rotDeg };
+
+    // Scale up to estimated bubble area (see BUBBLE_LAYOUT_SCALE comment)
+    const layoutW = ocrW * BUBBLE_LAYOUT_SCALE;
+    const layoutH = ocrH * BUBBLE_LAYOUT_SCALE;
+
+    return { cx, cy, ocrW, ocrH, layoutW, layoutH, absolutePts, rotDeg };
   }
 
   // Fallback: synthetic rectangle from bbox
-  const ocrW  = region.w * displayW;
-  const ocrH  = region.h * displayH;
-  const cx    = (region.centroid?.x ?? region.x + region.w / 2) * displayW;
-  const cy    = (region.centroid?.y ?? region.y + region.h / 2) * displayH;
+  const ocrW   = region.w * displayW;
+  const ocrH   = region.h * displayH;
+  const cx     = (region.centroid?.x ?? region.x + region.w / 2) * displayW;
+  const cy     = (region.centroid?.y ?? region.y + region.h / 2) * displayH;
   const rotDeg = region.rotation ?? 0;
   const hw = ocrW / 2, hh = ocrH / 2;
   const absolutePts: [number, number][] = [
@@ -210,26 +252,22 @@ function getPlacement(
     [cx + hw, cy + hh], [cx - hw, cy + hh],
   ];
   if (ocrW < 8 || ocrH < 6) return null;
-  return { cx, cy, ocrW, ocrH, absolutePts, rotDeg };
+
+  return {
+    cx, cy, ocrW, ocrH,
+    layoutW: ocrW * BUBBLE_LAYOUT_SCALE,
+    layoutH: ocrH * BUBBLE_LAYOUT_SCALE,
+    absolutePts, rotDeg,
+  };
 }
 
-// ── ptsToStr ─────────────────────────────────────────────────────────────────
+// ── Utility ───────────────────────────────────────────────────────────────────
 
 function ptsToStr(pts: [number, number][]): string {
   return pts.map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
 }
 
-// ── Constants ─────────────────────────────────────────────────────────────────
-
-/** Core mask expansion — fully covers anti-aliased glyph fringe */
-const CORE_EXPAND  = 4;
-
-/** Stroke widths for the feather rings */
-const HALO_STROKE_W  = 14;
-const MID_STROKE_W   = 6;
-const CORE_STROKE_W  = 1.5;
-
-// ── Component ────────────────────────────────────────────────────────────────
+// ── Component ─────────────────────────────────────────────────────────────────
 
 function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
   const items = useMemo(() => {
@@ -240,28 +278,34 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
 
         const placement = getPlacement(region, displayW, displayH);
         if (!placement) return null;
-        const { cx, cy, ocrW, ocrH, absolutePts, rotDeg } = placement;
 
+        const { cx, cy, ocrW, ocrH, layoutW, layoutH, absolutePts, rotDeg } = placement;
         const isSFX     = region.type === "sfx";
         const isThought = region.type === "thought";
+        const isNarration = region.type === "narration" || region.type === "sign";
 
-        // ── Font scaling ──────────────────────────────────────────────────────
+        // ── Font scaling against estimated bubble area ─────────────────────────
         //
-        // scaleFontToFit uses 91% of ocrW × ocrH as the safe zone.
-        // The returned fontSize + lines are used for rendering.
+        // scaleFontToFit targets layoutW × layoutH (the estimated bubble),
+        // NOT the glyph-tight ocrW × ocrH.  This is the primary font-size
+        // improvement: larger bubbles → larger, more readable manga fonts.
+        //
+        // SFX uses a separate ladder starting at 30 px for punchy rendering.
         const typeset = isSFX
-          ? scaleSFXFont(text, ocrW, ocrH)
-          : scaleFontToFit(text, ocrW, ocrH);
+          ? scaleSFXFont(text, layoutW, layoutH)
+          : scaleFontToFit(text, layoutW, layoutH);
 
-        // Skip invisible text
         if (typeset.lines.length === 0) return null;
 
-        // ── Three-layer mask geometry ─────────────────────────────────────────
+        // ── Three-layer mask geometry (glyph-tight polygon) ────────────────────
         //
-        // Halo expand: proportional to polygon size, clamped 5–10px.
-        // This ensures the feather effect scales reasonably with text regions
-        // of different sizes (large SFX vs. small dialogue bubbles).
-        const haloExpand = Math.max(5, Math.min(10, ocrW * 0.08));
+        // Mask geometry is computed from the ORIGINAL glyph polygon (absolutePts),
+        // not the expanded layout area.  The mask only needs to cover the original
+        // ink — it should not bleed into surrounding bubble art.
+        //
+        // haloExpand scales proportionally with the polygon size so large SFX
+        // regions get a wider feather halo than small dialogue bubbles.
+        const haloExpand = Math.max(5, Math.min(11, ocrW * 0.08));
         const midExpand  = haloExpand * 0.55;
 
         const haloExpanded = expandPolygon(absolutePts, cx, cy, haloExpand);
@@ -272,27 +316,30 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
         const midPoints  = ptsToStr(midExpanded);
         const corePoints = ptsToStr(coreExpanded);
 
-        // ── Mask colors ───────────────────────────────────────────────────────
         const { color: maskColor, strokeColor } = maskFill(region.bgColor ?? "#f5f2eb");
 
-        // ── Text color ────────────────────────────────────────────────────────
+        // ── Text color from Gemini-detected or bg-derived profile ──────────────
         const colorProfile = region.textColor
           ? resolveFromGeminiTextColor(region.textColor)
           : resolveFromCss(region.bgColor ?? "#ffffff");
 
+        // Narration boxes: slight increase in shadow radius for crisp text
+        // on textured rectangular backgrounds (screen tone, color panels).
+        const shadowRadius = isNarration
+          ? Math.max(colorProfile.shadowRadius, 2.0)
+          : colorProfile.shadowRadius;
+
         return {
           key: idx,
           cx, cy,
-          // Polygon dimensions → text container size.
-          // Key invariant: container = polygon bounds, NOT translated glyph bounds.
-          ocrW, ocrH,
-          // Three-layer mask points
+          // Text container uses LAYOUT dimensions (estimated bubble area).
+          // Mask polygons use OCR glyph-tight dimensions.
+          layoutW, layoutH,
           haloPoints, midPoints, corePoints,
           maskColor, strokeColor,
-          // Typography
           typeset,
           renderedText: typeset.lines.join("\n"),
-          colorProfile,
+          colorProfile: { ...colorProfile, shadowRadius },
           rotDeg,
           isSFX, isThought,
         };
@@ -306,23 +353,21 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
     <View style={[styles.root, { pointerEvents: "none" }]}>
 
       {/*
-       * ── Layer 1: Three-layer soft mask system ─────────────────────────────
+       * ── Layer 1: Three-layer mask system ────────────────────────────────────
        *
-       * All mask polygons render before text to establish correct z-order.
-       * Three separate map passes ensure consistent layering across all
-       * regions (halo-of-A never renders above core-of-B).
+       * Separate map() passes ensure all halo rings render behind all mid rings,
+       * which render behind all solid cores — regardless of region z-order.
+       * This prevents a halo from one region overlapping the core of another.
        *
-       * Rendering order (back to front):
-       *   1a. All halo rings (widest, most transparent)
-       *   1b. All mid rings  (intermediate feather)
-       *   1c. All solid cores (100% opacity, primary text cover)
+       * All layers use the GLYPH-TIGHT polygon (not layoutW/layoutH).
+       * The mask covers original ink only — not the full bubble.
        */}
       <Svg
         width={displayW}
         height={displayH}
         style={StyleSheet.absoluteFillObject}
       >
-        {/* 1a: Halo — outer soft glow, very faint */}
+        {/* 1a — Halo: widest ring, most transparent (outer soft glow) */}
         {items.map((item) => item && (
           <SvgPolygon
             key={`halo-${item.key}`}
@@ -336,7 +381,7 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
           />
         ))}
 
-        {/* 1b: Mid ring — intermediate feather zone */}
+        {/* 1b — Mid: intermediate feather zone */}
         {items.map((item) => item && (
           <SvgPolygon
             key={`mid-${item.key}`}
@@ -350,7 +395,7 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
           />
         ))}
 
-        {/* 1c: Solid core — fully hides original text */}
+        {/* 1c — Core: solid fill, completely hides original text glyphs */}
         {items.map((item) => item && (
           <SvgPolygon
             key={`core-${item.key}`}
@@ -365,25 +410,28 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
       </Svg>
 
       {/*
-       * ── Layer 2: Arabic text ──────────────────────────────────────────────
+       * ── Layer 2: Arabic text ─────────────────────────────────────────────────
        *
-       * KEY CHANGE vs previous implementation:
-       *   Container is sized to POLYGON DIMENSIONS (ocrW × ocrH), not to the
-       *   translated glyph bounds. This fills the speech bubble the same way
-       *   the original text did, eliminating the "subtitle" appearance.
+       * KEY INVARIANTS:
        *
-       *   Text is pre-wrapped by ArabicTypesettingEngine to fit within 91%
-       *   of ocrW, then centered inside the full ocrW container.
-       *   The 9% breathing room creates natural speech-bubble spacing.
+       *  1. Container is layoutW × layoutH (estimated bubble, not glyph bounds).
+       *     This fills the speech bubble naturally, eliminating subtitle appearance.
        *
-       *   The View is rotated around its center, which is the polygon centroid.
-       *   React Native rotates around (left + width/2, top + height/2) =
-       *   (cx - ocrW/2 + ocrW/2, cy - ocrH/2 + ocrH/2) = (cx, cy). Correct.
+       *  2. Text is pre-wrapped by ArabicTypesettingEngine to fit 91% of layoutW.
+       *     The remaining 9% becomes breathing room on each side — exactly how
+       *     professional scanlation teams set text inside speech bubbles.
+       *
+       *  3. justifyContent: "center" + alignItems: "center" centers the text
+       *     block vertically and horizontally within the bubble container.
+       *
+       *  4. The View is positioned so its center (left + layoutW/2, top + layoutH/2)
+       *     lands exactly on the polygon centroid (cx, cy).  React Native rotates
+       *     around the view center by default, so the rotate transform is correct.
        */}
       {items.map((item) => {
         if (!item) return null;
         const {
-          key, cx, cy, ocrW, ocrH,
+          key, cx, cy, layoutW, layoutH,
           typeset, renderedText, colorProfile,
           rotDeg, isSFX, isThought,
         } = item;
@@ -394,10 +442,11 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
             style={[
               styles.textBox,
               {
-                left:   cx - ocrW / 2,
-                top:    cy - ocrH / 2,
-                width:  ocrW,
-                height: ocrH,
+                // Center the container on the polygon centroid
+                left:   cx - layoutW / 2,
+                top:    cy - layoutH / 2,
+                width:  layoutW,
+                height: layoutH,
                 transform: rotDeg !== 0 ? [{ rotate: `${rotDeg}deg` }] : undefined,
               },
             ]}
@@ -412,9 +461,9 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
                   fontFamily: ARABIC_FONT_FAMILY,
                   fontWeight: isSFX     ? "900" : "700",
                   fontStyle:  isThought ? "italic" : "normal",
-                  // Arabic: letterSpacing MUST be 0.
+                  // CRITICAL: letterSpacing MUST be 0 for Arabic.
                   // Any positive value breaks contextual glyph joining
-                  // (initial / medial / final / isolated forms).
+                  // (initial / medial / final / isolated forms disconnect).
                   letterSpacing: 0,
                   ...Platform.select({
                     web: {
@@ -441,6 +490,8 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   root: {
     position:        "absolute",
@@ -452,9 +503,10 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     justifyContent:  "center",
     alignItems:      "center",
-    // overflow: "visible" — allow text to extend slightly past container
-    // in edge cases where the font scaler and native measurement diverge.
-    overflow:        "visible",
+    // overflow: "visible" — text is pre-sized to fit layoutW; overflow is a
+    // rare edge case where the heuristic measurement diverges from native.
+    // Visible overflow is always preferable to clipping translated text.
+    overflow: "visible",
   },
   label: {
     includeFontPadding: false,
