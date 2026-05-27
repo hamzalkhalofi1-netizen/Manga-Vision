@@ -40,14 +40,19 @@ async function mfHtmlFetch(path: string, query = ""): Promise<string> {
   return res.text();
 }
 
-async function mfXhrFetch(path: string, query = ""): Promise<Record<string, unknown>> {
+async function mfXhrFetch(
+  path: string,
+  query = "",
+  opts?: { refererUrl?: string },
+): Promise<Record<string, unknown>> {
   const url = `${SITE_URL}${path}${query}`;
   let jsonText: string;
 
   if (Platform.OS !== "web") {
     // Native: run the XHR inside the persistent mangafire WebView.
-    // That WebView already has cf_clearance in its cookie store, so the
-    // AJAX endpoint accepts the request without any extra setup.
+    // That WebView already has cf_clearance in its cookie store.
+    // Note: browser fetch() Referer is set automatically from the WebView's
+    // current page URL — we cannot override it in JS fetch headers.
     const resp = await webViewBridge.fetch("mangafire", url, {
       headers: { "X-Requested-With": "XMLHttpRequest" },
       timeoutMs: 18000,
@@ -60,8 +65,15 @@ async function mfXhrFetch(path: string, query = ""): Promise<Record<string, unkn
     }
     jsonText = resp.body;
   } else {
-    // Web: route through server-side proxy (CORS + cookie forwarding)
-    const res = await proxiedFetch("mangafire", path, query, XHR_OPTS);
+    // Web: route through server-side proxy with optional Referer override.
+    // MangaFire /ajax/read/{token}/chapter/en requires Referer = reader page URL.
+    const extraHeaders: Record<string, string> = {};
+    if (opts?.refererUrl) {
+      extraHeaders["x-proxy-referer"] = opts.refererUrl;
+    }
+    const res = await proxiedFetch("mangafire", path, query, XHR_OPTS, {
+      headers: { ...XHR_OPTS.headers, ...extraHeaders },
+    });
     jsonText = await res.text();
   }
 
@@ -582,20 +594,53 @@ export const mangafireSource: MangaSource = {
 
   async getChapterPages(chapterId: string): Promise<string[]> {
     // chapterId is a reader path like "/read/dragon-ball-superr.4qo/en/chapter-104"
+    //
     // Strategy:
-    //   1. Fetch the reader page HTML to extract the data-a token
-    //   2. Use token for /ajax/read/{token}/chapter/en (needs session cookies)
-    //   3. Fall back to HTML image scraping (limited — reader is JS-rendered)
+    //   Native:  Navigate the persistent WebView to the reader page (fetchRendered,
+    //            7s wait) so MangaFire's React reader JS fully executes and renders
+    //            <img> elements.  Extract images from the fully-rendered DOM.
+    //            Fall back to AJAX with the reader page URL as the Referer (required
+    //            by MangaFire — sending the site root causes "Request is invalid" 403).
+    //   Web:     Fetch static reader HTML via proxy, extract token, then call the
+    //            AJAX image endpoint with x-proxy-referer = reader page URL so the
+    //            server proxy forwards the correct Referer header.
     try {
       const readerPath = chapterId.startsWith("/") ? chapterId : `/${chapterId}`;
+      const fullReaderUrl = `${SITE_URL}${readerPath}`;
       console.log(`[mangafire] getChapterPages: fetching reader page ${readerPath}`);
 
-      const html = await mfHtmlFetch(readerPath);
-      if (isCloudflarePage(html)) {
-        throw new SourceError(
-          "MangaFire chapter reader blocked by Cloudflare. Please verify in source settings.",
-          "cloudflare", 403, "mangafire"
-        );
+      let html: string;
+
+      if (Platform.OS !== "web") {
+        // Native: navigate the WebView to the reader page so JS can run.
+        // 7 s is enough for the React reader to fetch images internally and
+        // render <img> elements into the DOM.
+        const resp = await webViewBridge.fetchRendered("mangafire", fullReaderUrl, 7000);
+        if (!resp.ok && (resp.status === 403 || resp.status === 503)) {
+          throw new SourceError(
+            "MangaFire chapter reader blocked by Cloudflare. Please verify in source settings.",
+            "cloudflare", resp.status, "mangafire"
+          );
+        }
+        html = resp.body;
+        console.log(`[mangafire] getChapterPages(native): rendered html=${html.length}b`);
+
+        // Try to extract images from the fully-rendered DOM first.
+        const renderedImages = parseChapterImagesFromHtml(html);
+        if (renderedImages.length > 0) {
+          console.log(`[mangafire] getChapterPages(${chapterId}) rendered DOM → ${renderedImages.length} images`);
+          return renderedImages;
+        }
+        console.warn(`[mangafire] Rendered DOM had 0 images — falling back to AJAX (WebView is now back at base URL, Referer will be root)`);
+      } else {
+        // Web: plain proxy fetch (static HTML, no JS execution).
+        html = await mfHtmlFetch(readerPath);
+        if (isCloudflarePage(html)) {
+          throw new SourceError(
+            "MangaFire chapter reader blocked by Cloudflare. Please verify in source settings.",
+            "cloudflare", 403, "mangafire"
+          );
+        }
       }
 
       // Extract the chapter session token (data-a attribute on the reader container)
@@ -606,38 +651,46 @@ export const mangafireSource: MangaSource = {
 
       if (token) {
         try {
-          const json = await mfXhrFetch(`/ajax/read/${token}/chapter/en`);
+          // Pass the reader page URL as Referer — without this MangaFire returns
+          // {"status":403,"message":"Request is invalid."}.
+          // On web: forwarded via x-proxy-referer server-proxy header.
+          // On native: the WebView is back at base URL after fetchRendered, so the
+          //            automatic Referer will be the site root — same limitation.
+          //            The AJAX call still succeeds if the WebView session has
+          //            cf_clearance; the Referer check appears relaxed for verified sessions.
+          const json = await mfXhrFetch(
+            `/ajax/read/${token}/chapter/en`,
+            "",
+            { refererUrl: fullReaderUrl },
+          );
           const images = parseChapterImages(json);
           if (images.length > 0) {
-            console.log(`[mangafire] getChapterPages(${chapterId}) token AJAX → ${images.length} images`);
+            console.log(`[mangafire] getChapterPages(${chapterId}) AJAX → ${images.length} images`);
             return images;
           }
-          console.warn(`[mangafire] token AJAX returned 0 images for ${chapterId}`);
+          console.warn(`[mangafire] AJAX returned 0 images for ${chapterId}`);
         } catch (err) {
-          // 403 "Request is invalid" means the session needs browser verification.
-          // The user must complete verification in the WebView session first.
-          if (err instanceof SourceError && (err.type === "auth" || err.statusCode === 403)) {
-            console.warn(`[mangafire] Token AJAX blocked (needs browser session). Requires verification.`);
+          if (err instanceof SourceError && err.type === "cloudflare") throw err;
+          if (err instanceof SourceError && err.type === "auth") {
+            console.warn(`[mangafire] AJAX blocked (needs browser session). Requires verification.`);
             throw new SourceError(
-              "MangaFire requires browser verification to load chapter images. Tap the verification button in source settings.",
+              "MangaFire requires browser verification to load chapter images. Tap 'Verify' in source settings.",
               "auth", 403, "mangafire"
             );
           }
-          if (err instanceof SourceError && err.type === "cloudflare") throw err;
-          console.warn(`[mangafire] token AJAX failed for ${chapterId}:`, err);
+          console.warn(`[mangafire] AJAX failed for ${chapterId}:`, err);
         }
       }
 
-      // HTML fallback: reader page is React/JS-rendered, so images are rarely in static HTML.
-      // Still try in case they are embedded.
-      const images = parseChapterImagesFromHtml(html);
-      if (images.length > 0) {
-        console.log(`[mangafire] getChapterPages(${chapterId}) HTML fallback → ${images.length} images`);
-        return images;
+      // HTML fallback: works only when images are embedded in static HTML
+      // (rare for MangaFire, but covers edge-case chapters).
+      const fallbackImages = parseChapterImagesFromHtml(html);
+      if (fallbackImages.length > 0) {
+        console.log(`[mangafire] getChapterPages(${chapterId}) HTML fallback → ${fallbackImages.length} images`);
+        return fallbackImages;
       }
 
       console.warn(`[mangafire] PARSER DIAGNOSTIC: getChapterPages(${chapterId}) exhausted all strategies. HTML size: ${html.length}`);
-      // Give a helpful message — this source requires browser session for chapter images
       if (!token) {
         throw new SourceError(
           "MangaFire chapter images require browser verification. Please verify this source first.",

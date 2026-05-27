@@ -34,7 +34,9 @@ import {
 
 const BRIDGE_SOURCES = [
   { id: "mangafire", baseUrl: "https://mangafire.to" },
-  { id: "asura", baseUrl: "https://asuracomic.net" },
+  // asuracomic.net 301-redirects to asurascans.com as of 2025/2026.
+  // Use the live domain directly so the WebView doesn't start with a redirect.
+  { id: "asura", baseUrl: "https://asurascans.com" },
 ] as const;
 
 // ── React context ─────────────────────────────────────────────────────────

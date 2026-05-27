@@ -3,9 +3,11 @@ import { Chapter, Manga, MangaSource } from "./types";
 import { proxiedFetch, SourceError } from "./fetchClient";
 import { webViewBridge } from "../webViewBridge";
 
-// Asura has moved domains multiple times. Current domain as of 2025:
-// asuracomic.net (redirects from asurascans.com handled server-side)
-const SITE_URL = "https://asuracomic.net";
+// Asura domain history:
+//   asurascans.com  → asuracomic.net  (2023/2024 move)
+//   asuracomic.net  → asurascans.com  (2025/2026 move — confirmed 301 redirect)
+// Current live domain: asurascans.com (asuracomic.net 301-redirects here)
+const SITE_URL = "https://asurascans.com";
 
 const FETCH_OPTS = {
   sourceId: "asura",
@@ -17,19 +19,26 @@ const FETCH_OPTS = {
   },
 };
 
+// Render wait for Astro SSR/island hydration.
+// asurascans.com uses Astro v5 with client-side islands — the shell HTML
+// arrives quickly but manga data is injected by React islands that need
+// ~5-6 s to hydrate on a mobile network.  7 s gives a comfortable margin.
+const RENDER_WAIT_MS = 7000;
+
 async function asuraFetch(path: string, query = ""): Promise<string> {
   if (Platform.OS !== "web") {
     // Native: navigate the persistent Asura WebView to the URL and extract
     // the fully JS-rendered DOM. This handles both Cloudflare challenges and
-    // the SPA rendering requirement (all asuracomic.net pages need client-side JS).
+    // the Astro island rendering requirement (all content pages need client-side JS).
     const url = `${SITE_URL}${path}${query}`;
-    const resp = await webViewBridge.fetchRendered("asura", url, 3000);
+    const resp = await webViewBridge.fetchRendered("asura", url, RENDER_WAIT_MS);
     if (!resp.ok && (resp.status === 403 || resp.status === 503)) {
       throw new SourceError("Asura blocked by Cloudflare.", "cloudflare", resp.status, "asura");
     }
     return resp.body;
   }
-  // Web: route through server-side proxy
+  // Web: route through server-side proxy (returns Astro shell HTML — JS islands
+  // can't run server-side, so data extraction relies on SSR-embedded props).
   const res = await proxiedFetch("asura", path, query, FETCH_OPTS);
   return res.text();
 }
@@ -41,17 +50,24 @@ function isCloudflarePage(html: string): boolean {
 }
 
 /**
- * Detect whether the response is the Asura SPA shell (not a content page).
+ * Detect whether the response is the Asura site shell without manga content.
  *
- * Asura (asuracomic.net) is a client-side SPA. ALL URLs return the same
- * 594KB HTML shell with a generic h1 title. Individual manga detail and
- * chapter pages are rendered client-side only and cannot be scraped.
+ * asurascans.com (Astro v5) serves an SSR shell + client-side islands.
+ * The shell alone arrives without content when:
+ *  - The server returns the home/listing page (generic title)
+ *  - A 404 is returned for an unknown slug
  *
- * Detection: check for the generic site title in the sr-only h1 element.
+ * On native, fetchRendered waits 7 s for island hydration — after that the
+ * DOM should have real manga data.  On web, we only get the SSR portion.
  */
 function isSpaShell(html: string): boolean {
-  return /<h1[^>]*class="[^"]*sr-only[^"]*"[^>]*>\s*Read Free Manga/i.test(html) ||
-    /Read Manga, Manhwa &amp; Manhua Online - Asura Scans/i.test(html);
+  // Generic home/listing page title (old & new domain)
+  if (/Read Manga, Manhwa &(?:amp;)?\s*Manhua Online.*Asura Scans/i.test(html)) return true;
+  // Old asuracomic.net sr-only h1 shell marker
+  if (/<h1[^>]*class="[^"]*sr-only[^"]*"[^>]*>\s*Read Free Manga/i.test(html)) return true;
+  // 404 page returned for unknown slugs
+  if (/Page Not Found\s*\|\s*Asura Scans/i.test(html)) return true;
+  return false;
 }
 
 // ── HTML entity decode ─────────────────────────────────────────────────────
@@ -408,7 +424,7 @@ export const asuraSource: MangaSource = {
 
   async search(query: string, page = 0): Promise<Manga[]> {
     try {
-      const basePath = "/series"; // asuracomic.net uses /series
+      const basePath = "/series"; // asurascans.com uses /series
       const qs = new URLSearchParams({ name: query, page: String(page + 1) }).toString();
       const html = await asuraFetch(basePath, `?${qs}`);
       console.log(`[asura] search response size: ${html.length}`);
@@ -471,11 +487,11 @@ export const asuraSource: MangaSource = {
 
   async getMangaDetails(id: string): Promise<Manga> {
     try {
-      // Try /comics/{id} first (primary), then /series/{id} (legacy).
-      // NOTE: Asura is a SPA — all URLs return the same listing HTML shell.
-      // We extract the manga's info from the listing page if it's present.
+      // Try /series/{id} first (current asurascans.com path), then /comics/{id} (legacy).
+      // NOTE: After full WebView render (7 s), the Astro islands will have hydrated and
+      // embedded manga data in the DOM.  On web we only get the SSR portion.
       let html = "";
-      for (const base of ["/comics", "/series"]) {
+      for (const base of ["/series", "/comics"]) {
         try {
           html = await asuraFetch(`${base}/${id}`);
           if (html.length > 500 && !isCloudflarePage(html)) break;
@@ -524,13 +540,12 @@ export const asuraSource: MangaSource = {
 
   async getChapters(mangaId: string): Promise<Chapter[]> {
     try {
-      // Try both /comics/{id} (primary) and /series/{id} (legacy) paths.
-      // NOTE: Asura (asuracomic.net) is a client-side SPA. ALL URLs return
-      // the same 594KB HTML shell. Chapter data is loaded client-side only.
-      // We detect the SPA shell and throw a clear error instead of returning 0.
+      // Try /series/{id} first (asurascans.com primary path), then /comics/{id} legacy.
+      // On native the WebView renders for 7 s so Astro islands hydrate and inject
+      // chapter data.  On web we get the SSR-only shell; isSpaShell will detect that.
       let html = "";
-      let usedBase = "/comics";
-      for (const base of ["/comics", "/series"]) {
+      let usedBase = "/series";
+      for (const base of ["/series", "/comics"]) {
         try {
           html = await asuraFetch(`${base}/${mangaId}`);
           if (html.length > 500 && !isCloudflarePage(html)) {

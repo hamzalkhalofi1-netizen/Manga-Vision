@@ -1,5 +1,6 @@
 - [Source proxy architecture](source-proxy-arch.md) — directOnWeb flag bypasses server proxy for CORS APIs; scraping sources always proxy
 - [Express 5 routing](express5-routing.md) — wildcard routes need regex, not string `/:id/*` patterns
-- [MangaFire chapter structure](mangafire-chapters.md) — 2025 HTML uses data-number (not data-id) + /read/slug/en/chapter-N paths; images need browser session token
+- [MangaFire chapter structure](mangafire-chapters.md) — images need fetchRendered(7s) on native; web proxy always 403 (needs cf_clearance); token is session-wide not per-chapter
+- [Asura domain](asura-domain.md) — proxy must stay on asuracomic.net (redirect→home SSR); SITE_URL=asurascans.com for native WebView; web listing works, detail/chapters need native
 - [WebView bridge architecture](webview-bridge-arch.md) — Mihon-grade networking: persistent hidden WebViews for CF sources; no popup loops; verify once per session
 - [Overlay rendering architecture](overlay-rendering-arch.md) — BUBBLE_LAYOUT_SCALE=1.35 separates mask geometry (glyph-tight) from text layout (bubble-estimated); three-layer feather mask; safe zone 91%

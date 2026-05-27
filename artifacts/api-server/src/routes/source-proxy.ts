@@ -11,6 +11,10 @@ const SOURCE_REGISTRY: Record<string, string> = {
   "comick-cdn": "https://meo.comick.pictures",
   "mangaplus": "https://api.mangaplus.shueisha.co.jp",
   "mangafire": "https://mangafire.to",
+  // asuracomic.net 301-redirects to asurascans.com home page. This redirect
+  // is intentionally useful for web listing pages: the home page has SSR manga
+  // cards that our parsers can extract. Direct asurascans.com /series?... paths
+  // are pure client-side Astro (no SSR content). Native uses WebView directly.
   "asura": "https://asuracomic.net",
   "naver": "https://www.webtoons.com",
 };
@@ -20,7 +24,7 @@ const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> =
   "comick-cdn":  { referer: "https://comick.io/",                origin: "https://comick.io" },
   "mangaplus":   { referer: "https://mangaplus.shueisha.co.jp/", origin: "https://mangaplus.shueisha.co.jp" },
   "mangafire":   { referer: "https://mangafire.to/",             origin: "https://mangafire.to" },
-  "asura":       { referer: "https://asuracomic.net/",             origin: "https://asuracomic.net" },
+  "asura":       { referer: "https://asurascans.com/",              origin: "https://asurascans.com" },
   "naver":       { referer: "https://www.webtoons.com/",         origin: "https://www.webtoons.com" },
 };
 
@@ -55,11 +59,16 @@ router.get(/^\/([^/]+)(?:\/(.*))?$/, async (req: Request, res: Response) => {
   const targetUrl = subpath ? `${baseUrl}/${subpath}${qs}` : `${baseUrl}${qs}`;
 
   const siteInfo = SOURCE_SITE_HEADERS[sourceId];
+
+  // Allow callers to override the Referer (needed for MangaFire chapter image AJAX
+  // which requires Referer = the actual reader page URL, not the site root)
+  const refererOverride = req.headers["x-proxy-referer"] as string | undefined;
+
   const headers: Record<string, string> = {
     "User-Agent": BROWSER_UA,
     Accept: (req.headers["accept"] as string) || "application/json, text/html, */*",
     "Accept-Language": "en-US,en;q=0.9",
-    ...(siteInfo ? { Referer: siteInfo.referer, Origin: siteInfo.origin } : {}),
+    ...(siteInfo ? { Referer: refererOverride ?? siteInfo.referer, Origin: siteInfo.origin } : {}),
   };
 
   // Forward XHR header when present (needed for AJAX endpoints like MangaFire /home)
@@ -105,7 +114,11 @@ router.get(/^\/([^/]+)(?:\/(.*))?$/, async (req: Request, res: Response) => {
 
     const contentType = upstream.headers.get("content-type") ?? "application/octet-stream";
     res.setHeader("Content-Type", contentType);
-    res.setHeader("Cache-Control", "public, max-age=120");
+    // Disable caching for AJAX endpoints (e.g. /ajax/read/{token}/chapter/en)
+    // whose response depends on the Referer header.  Caching a 403 response
+    // would permanently block chapter image loading until the browser cache expires.
+    const isAjax = subpath.startsWith("ajax/") || refererOverride;
+    res.setHeader("Cache-Control", isAjax ? "no-store" : "public, max-age=120");
     res.setHeader("Access-Control-Allow-Origin", "*");
     const buffer = await upstream.arrayBuffer();
     res.send(Buffer.from(buffer));

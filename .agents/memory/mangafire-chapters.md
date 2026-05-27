@@ -23,10 +23,16 @@ Chapter ID stored as the full reader path `/read/slug/en/chapter-104`.
 
 ## Chapter image flow
 1. Fetch reader page at `/read/slug/en/chapter-N` — extract `data-a="token"` attribute
-2. Call AJAX `/ajax/read/{token}/chapter/en` — needs browser session cookies (cf_clearance)
-3. Response format when it works: `{"status":200,"result":{"images":[["url",w,h],...]}}`
-4. Without browser session: returns 403 "Request is invalid"
+2. Token is session-wide (same for all chapters, e.g. `af266caa520a`) — NOT chapter-specific
+3. AJAX endpoint `/ajax/read/{token}/chapter/en` requires BOTH correct Referer AND cf_clearance
+4. Without both: returns `{"status":403,"message":"Request is invalid."}`
 
-**Why:** MangaFire uses Cloudflare and a JS-computed session token. Server-side requests lack the cf_clearance cookie needed to authenticate the AJAX image endpoint.
+**Server proxy path (web):** Always returns 403 — proxy has no cf_clearance cookies. This is a fundamental limitation of the web platform for MangaFire.
 
-**How to apply:** Chapter listing works without auth. Image loading requires user to go through browser verification (sets cf_clearance cookie in sessionStore).
+**Native path (correct fix):** `webViewBridge.fetchRendered("mangafire", fullReaderUrl, 7000)` — navigates the persistent WebView to the reader page (has cf_clearance), waits 7s for MangaFire's React reader to execute and render `<img>` elements, then extracts images from the fully-rendered DOM via `parseChapterImagesFromHtml`.
+
+**Referer requirement:** The AJAX endpoint determines which chapter to serve via the `Referer` header. The reader page URL (not site root) must be the Referer. On web this is sent via `x-proxy-referer` header to the server proxy, but the request still fails without cf_clearance.
+
+**Why:** MangaFire uses Cloudflare + a JS-computed session token. Server-side requests lack cf_clearance. The WebView naturally accumulates cf_clearance after first verification.
+
+**How to apply:** Chapter listing (AJAX `data-number` parsing) works without auth. Image loading on native uses fetchRendered(7s). On web, show "requires verification" error.
