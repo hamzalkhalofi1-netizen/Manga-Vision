@@ -113,9 +113,12 @@ export function measureLine(text: string, fontSize: number): number {
   const ctx = getCtx(fontSize);
   if (ctx) return ctx.measureText(text).width;
   // Native heuristic: Arabic connected script is compact.
-  // 0.47 per character is empirically accurate for Noto Naskh Arabic Bold
-  // at manga font sizes (10–24px). Intentionally slightly over-estimates.
-  return text.length * fontSize * 0.47;
+  // 0.52 per character for Noto Naskh Arabic Bold at manga sizes (10–24px).
+  // Raised from 0.47 → 0.52 to account for diacritics (tashkeel) and
+  // wide ligature forms that the previous factor under-estimated.
+  // Intentionally slightly over-estimates — choosing a smaller font step
+  // than strictly needed is safe; under-estimating causes text overflow.
+  return text.length * fontSize * 0.52;
 }
 
 // ─── Line splitting ───────────────────────────────────────────────────────────
