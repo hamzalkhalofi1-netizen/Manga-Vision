@@ -1,18 +1,27 @@
 import { Platform } from "react-native";
 import { Chapter, Manga, MangaSource } from "./types";
+import { InFlightDedup } from "../network/InFlightDedup";
+import { SourceDiagnosticsLogger } from "./SourceDiagnosticsLogger";
 
 const BASE = "https://api.mangadex.org";
 const COVERS = "https://uploads.mangadex.org/covers";
-
 const isWeb = Platform.OS === "web";
-const proxyBase = isWeb
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api/manga-proxy`
-  : BASE;
+
+const dedup = new InFlightDedup<Record<string, unknown>>();
+const log = new SourceDiagnosticsLogger("mangadex");
+
+function getApiProxyBase(): string {
+  return `https://${process.env.EXPO_PUBLIC_DOMAIN}/api/source-proxy/mangadex-api`;
+}
+
+function getCdnProxyBase(): string {
+  return `https://${process.env.EXPO_PUBLIC_DOMAIN}/api/source-proxy/mangadex-cdn`;
+}
 
 function coverUrl(mangaId: string, fileName: string): string {
   if (!mangaId || !fileName) return "";
   if (isWeb) {
-    return `https://${process.env.EXPO_PUBLIC_DOMAIN}/api/manga-proxy/uploads/${mangaId}/${fileName}.512.jpg`;
+    return `${getCdnProxyBase()}/covers/${mangaId}/${fileName}.512.jpg`;
   }
   return `${COVERS}/${mangaId}/${fileName}.512.jpg`;
 }
@@ -97,23 +106,51 @@ function parseMangaData(data: unknown): Manga {
   };
 }
 
-async function apiFetch(path: string): Promise<Record<string, unknown>> {
+/**
+ * Fetch from the MangaDex API, routing through the server-side proxy on web.
+ * Threads an external AbortSignal so the caller can cancel in-flight requests.
+ */
+async function apiFetch(
+  path: string,
+  signal?: AbortSignal,
+): Promise<Record<string, unknown>> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), 20000);
+
+  // Forward external abort → internal controller
+  let onAbort: (() => void) | undefined;
+  if (signal) {
+    if (signal.aborted) {
+      clearTimeout(timeout);
+      throw new DOMException("Aborted", "AbortError");
+    }
+    onAbort = () => controller.abort();
+    signal.addEventListener("abort", onAbort, { once: true });
+  }
+
+  const t = log.start();
+  const url = isWeb ? `${getApiProxyBase()}${path}` : `${BASE}${path}`;
+
   try {
-    const url = isWeb ? `${proxyBase}${path}` : `${BASE}${path}`;
     const res = await fetch(url, {
       headers: { Accept: "application/json" },
       signal: controller.signal,
     });
+    log.logRequest(url, res.status, undefined, t);
     if (!res.ok) throw new Error(`MangaDex API error: ${res.status} for ${path}`);
     const json = await res.json();
     if (json.result === "error") {
       throw new Error(`MangaDex error: ${json.errors?.[0]?.detail ?? "Unknown error"}`);
     }
     return json;
+  } catch (err) {
+    if (err instanceof Error && err.name !== "AbortError") {
+      log.logError(url, "network", err, t);
+    }
+    throw err;
   } finally {
     clearTimeout(timeout);
+    if (signal && onAbort) signal.removeEventListener("abort", onAbort);
   }
 }
 
@@ -136,8 +173,12 @@ export const mangadexSource: MangaSource = {
       { title: query, limit: "20", offset: String(page * 20) },
       { "includes[]": ["cover_art", "author"], "contentRating[]": ["safe", "suggestive"] }
     );
-    const data = await apiFetch(`/manga?${qs}`);
-    return ((data.data as unknown[]) || []).map(parseMangaData).filter((m) => m.id);
+    const key = `search:${query}:${page}`;
+    const t = log.start();
+    const data = await dedup.get(key, () => apiFetch(`/manga?${qs}`));
+    const results = ((data.data as unknown[]) || []).map(parseMangaData).filter((m) => m.id);
+    log.logParsed("search", results.length, t);
+    return results;
   },
 
   async getTrending(page = 0): Promise<Manga[]> {
@@ -145,8 +186,12 @@ export const mangadexSource: MangaSource = {
       { limit: "20", offset: String(page * 20), "order[followedCount]": "desc" },
       { "includes[]": ["cover_art", "author"], "contentRating[]": ["safe", "suggestive"] }
     );
-    const data = await apiFetch(`/manga?${qs}`);
-    return ((data.data as unknown[]) || []).map(parseMangaData).filter((m) => m.id);
+    const key = `trending:${page}`;
+    const t = log.start();
+    const data = await dedup.get(key, () => apiFetch(`/manga?${qs}`));
+    const results = ((data.data as unknown[]) || []).map(parseMangaData).filter((m) => m.id);
+    log.logParsed("trending", results.length, t);
+    return results;
   },
 
   async getLatestUpdates(page = 0): Promise<Manga[]> {
@@ -154,8 +199,12 @@ export const mangadexSource: MangaSource = {
       { limit: "20", offset: String(page * 20), "order[latestUploadedChapter]": "desc" },
       { "includes[]": ["cover_art", "author"], "contentRating[]": ["safe", "suggestive"] }
     );
-    const data = await apiFetch(`/manga?${qs}`);
-    return ((data.data as unknown[]) || []).map(parseMangaData).filter((m) => m.id);
+    const key = `latest:${page}`;
+    const t = log.start();
+    const data = await dedup.get(key, () => apiFetch(`/manga?${qs}`));
+    const results = ((data.data as unknown[]) || []).map(parseMangaData).filter((m) => m.id);
+    log.logParsed("latest", results.length, t);
+    return results;
   },
 
   async getMangaDetails(id: string): Promise<Manga> {
@@ -164,63 +213,99 @@ export const mangadexSource: MangaSource = {
       {},
       { "includes[]": ["cover_art", "author", "artist"] }
     );
-    const data = await apiFetch(`/manga/${id}?${qs}`);
+    const key = `details:${id}`;
+    const t = log.start();
+    const data = await dedup.get(key, () => apiFetch(`/manga/${id}?${qs}`));
     const manga = parseMangaData(data.data);
+    log.logParsed("manga-detail", 1, t);
     if (!manga.id) throw new Error("Failed to parse manga details");
     return manga;
   },
 
-  async getChapters(mangaId: string): Promise<Chapter[]> {
+  /**
+   * Fetches ALL English chapters with pagination (500 per page).
+   * Loops until data.total is exhausted. Deduplicates by chapter number.
+   * Respects the caller's AbortSignal — abandons remaining pages if aborted.
+   */
+  async getChapters(mangaId: string, signal?: AbortSignal): Promise<Chapter[]> {
     if (!mangaId) return [];
-    const qs = buildParams(
-      { limit: "100", "order[chapter]": "desc" },
-      { "translatedLanguage[]": ["en"], "includes[]": ["scanlation_group"] }
-    );
-    const data = await apiFetch(`/manga/${mangaId}/feed?${qs}`);
-    const chapters: Chapter[] = [];
+
+    const t = log.start();
+    const allChapters: Chapter[] = [];
     const seen = new Set<string>();
+    const PAGE_SIZE = 500;
+    let offset = 0;
+    let total = Infinity;
 
-    for (const c of (data.data as Array<unknown>) || []) {
-      if (!c || typeof c !== "object") continue;
-      const item = c as Record<string, unknown>;
-      const attrs = (item.attributes && typeof item.attributes === "object"
-        ? item.attributes : {}) as Record<string, unknown>;
-      const num = safeStr(attrs.chapter as string) || "?";
-      if (seen.has(num)) continue;
-      seen.add(num);
+    while (offset < total) {
+      if (signal?.aborted) break;
 
-      const rels = Array.isArray(item.relationships) ? item.relationships : [];
-      const groupRel = rels.find(
-        (r): r is Record<string, unknown> =>
-          r !== null && typeof r === "object" && (r as Record<string, unknown>).type === "scanlation_group"
+      const qs = buildParams(
+        { limit: String(PAGE_SIZE), offset: String(offset), "order[chapter]": "desc" },
+        { "translatedLanguage[]": ["en"], "includes[]": ["scanlation_group"] }
       );
-      const groupAttrs = (groupRel?.attributes && typeof groupRel.attributes === "object"
-        ? groupRel.attributes : {}) as Record<string, string>;
 
-      chapters.push({
-        id: safeStr(item.id as string),
-        number: num,
-        title: safeStr(attrs.title as string) || undefined,
-        publishedAt: safeStr(attrs.publishAt as string),
-        pages: typeof attrs.pages === "number" ? attrs.pages : undefined,
-        translatedLanguage: safeStr(attrs.translatedLanguage as string) || undefined,
-        scanlator: safeStr(groupAttrs.name) || undefined,
-      });
+      const pageKey = `chapters:${mangaId}:${offset}`;
+      const data = await dedup.get(pageKey, () =>
+        apiFetch(`/manga/${mangaId}/feed?${qs}`, signal)
+      );
+
+      if (typeof data.total === "number") total = data.total;
+      const items = Array.isArray(data.data) ? data.data : [];
+
+      log.log(`chapters page offset=${offset} got ${items.length} / total=${total}`);
+
+      for (const c of items) {
+        if (!c || typeof c !== "object") continue;
+        const item = c as Record<string, unknown>;
+        const attrs = (item.attributes && typeof item.attributes === "object"
+          ? item.attributes : {}) as Record<string, unknown>;
+        const num = safeStr(attrs.chapter as string) || "?";
+        if (seen.has(num)) continue;
+        seen.add(num);
+
+        const rels = Array.isArray(item.relationships) ? item.relationships : [];
+        const groupRel = rels.find(
+          (r): r is Record<string, unknown> =>
+            r !== null && typeof r === "object" && (r as Record<string, unknown>).type === "scanlation_group"
+        );
+        const groupAttrs = (groupRel?.attributes && typeof groupRel.attributes === "object"
+          ? groupRel.attributes : {}) as Record<string, string>;
+
+        allChapters.push({
+          id: safeStr(item.id as string),
+          number: num,
+          title: safeStr(attrs.title as string) || undefined,
+          publishedAt: safeStr(attrs.publishAt as string),
+          pages: typeof attrs.pages === "number" ? attrs.pages : undefined,
+          translatedLanguage: safeStr(attrs.translatedLanguage as string) || undefined,
+          scanlator: safeStr(groupAttrs.name) || undefined,
+        });
+      }
+
+      offset += PAGE_SIZE;
+      if (items.length < PAGE_SIZE) break;
     }
-    return chapters;
+
+    log.logParsed("chapters", allChapters.length, t);
+    return allChapters;
   },
 
-  async getChapterPages(chapterId: string): Promise<string[]> {
+  async getChapterPages(chapterId: string, signal?: AbortSignal): Promise<string[]> {
     if (!chapterId) return [];
-    const data = await apiFetch(`/at-home/server/${chapterId}`);
+    const key = `pages:${chapterId}`;
+    const t = log.start();
+    const data = await dedup.get(key, () => apiFetch(`/at-home/server/${chapterId}`, signal));
     const baseUrl = safeStr(data.baseUrl as string);
     const chapter = (data.chapter && typeof data.chapter === "object"
       ? data.chapter : {}) as Record<string, unknown>;
     const hash = safeStr(chapter.hash as string);
     const files = Array.isArray(chapter.data) ? chapter.data : [];
     if (!baseUrl || !hash) return [];
-    return files
+    const pages = files
       .filter((f): f is string => typeof f === "string" && f.length > 0)
       .map((file) => `${baseUrl}/data/${hash}/${file}`);
+    log.logParsed("pages", pages.length, t);
+    return pages;
   },
 };

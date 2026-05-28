@@ -162,10 +162,13 @@ export default function ReaderScreen() {
   // ─── Load pages ────────────────────────────────────────────────────────────
   // Depends on activeChapterId (state), not params.chapterId, so next/prev
   // chapter navigation triggers a fresh load without remounting the screen.
+  // An AbortController is created per load; cleanup aborts any in-flight request
+  // when the chapter changes or the component unmounts.
   useEffect(() => {
     if (!activeChapterId) return;
     const sid = params.sourceId || "mangadex";
     const source = getSource(sid);
+    const controller = new AbortController();
 
     setLoading(true);
     setLoadError(null);
@@ -181,6 +184,7 @@ export default function ReaderScreen() {
         // ── Offline first: use locally saved pages if available ──────────────
         const local = await DM.getDownloadedPages(sid, params.mangaId, activeChapterId);
         if (local && local.length > 0) {
+          if (controller.signal.aborted) return;
           setPages(local);
           setTimeout(() => {
             flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
@@ -189,7 +193,8 @@ export default function ReaderScreen() {
         }
 
         // ── Network fetch ────────────────────────────────────────────────────
-        const p = await source.getChapterPages(activeChapterId);
+        const p = await source.getChapterPages(activeChapterId, controller.signal);
+        if (controller.signal.aborted) return;
         const valid = (p || []).filter(
           (u) => typeof u === "string" && (u.startsWith("http") || u.startsWith("file://"))
         );
@@ -202,15 +207,19 @@ export default function ReaderScreen() {
           }, 50);
         }
       } catch (err) {
+        // Ignore aborts — they are intentional (chapter changed / unmounted)
+        if (err instanceof Error && err.name === "AbortError") return;
         console.error("[reader] getChapterPages failed:", err);
         const msg = err instanceof SourceError
           ? err.message
           : err instanceof Error ? err.message : "Failed to load chapter.";
         setLoadError(msg);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     })();
+
+    return () => controller.abort();
   }, [activeChapterId, params.sourceId, params.mangaId, retryKey]);
 
   // ─── Save reading progress ─────────────────────────────────────────────────

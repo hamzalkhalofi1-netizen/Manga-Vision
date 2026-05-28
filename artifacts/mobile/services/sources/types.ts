@@ -37,8 +37,8 @@ export interface MangaSource {
   getTrending(page?: number): Promise<Manga[]>;
   getLatestUpdates(page?: number): Promise<Manga[]>;
   getMangaDetails(id: string): Promise<Manga>;
-  getChapters(mangaId: string): Promise<Chapter[]>;
-  getChapterPages(chapterId: string): Promise<string[]>;
+  getChapters(mangaId: string, signal?: AbortSignal): Promise<Chapter[]>;
+  getChapterPages(chapterId: string, signal?: AbortSignal): Promise<string[]>;
 }
 
 export type LibraryStatus = "reading" | "completed" | "planned" | "favorites";

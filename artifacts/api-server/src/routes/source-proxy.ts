@@ -7,6 +7,8 @@ const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 const SOURCE_REGISTRY: Record<string, string> = {
+  "mangadex-api": "https://api.mangadex.org",
+  "mangadex-cdn": "https://uploads.mangadex.org",
   "comick-api": "https://api.comick.io",
   "comick-cdn": "https://meo.comick.pictures",
   "mangaplus": "https://api.mangaplus.shueisha.co.jp",
@@ -20,12 +22,14 @@ const SOURCE_REGISTRY: Record<string, string> = {
 };
 
 const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> = {
-  "comick-api":  { referer: "https://comick.io/",                origin: "https://comick.io" },
-  "comick-cdn":  { referer: "https://comick.io/",                origin: "https://comick.io" },
-  "mangaplus":   { referer: "https://mangaplus.shueisha.co.jp/", origin: "https://mangaplus.shueisha.co.jp" },
-  "mangafire":   { referer: "https://mangafire.to/",             origin: "https://mangafire.to" },
-  "asura":       { referer: "https://asurascans.com/",              origin: "https://asurascans.com" },
-  "naver":       { referer: "https://www.webtoons.com/",         origin: "https://www.webtoons.com" },
+  "mangadex-api": { referer: "https://mangadex.org/",                origin: "https://mangadex.org" },
+  "mangadex-cdn": { referer: "https://mangadex.org/",                origin: "https://mangadex.org" },
+  "comick-api":   { referer: "https://comick.io/",                   origin: "https://comick.io" },
+  "comick-cdn":   { referer: "https://comick.io/",                   origin: "https://comick.io" },
+  "mangaplus":    { referer: "https://mangaplus.shueisha.co.jp/",    origin: "https://mangaplus.shueisha.co.jp" },
+  "mangafire":    { referer: "https://mangafire.to/",                origin: "https://mangafire.to" },
+  "asura":        { referer: "https://asurascans.com/",              origin: "https://asurascans.com" },
+  "naver":        { referer: "https://www.webtoons.com/",            origin: "https://www.webtoons.com" },
 };
 
 function buildQueryString(query: Record<string, string | string[]>): string {
@@ -55,8 +59,11 @@ router.get(/^\/([^/]+)(?:\/(.*))?$/, async (req: Request, res: Response) => {
     return;
   }
 
-  const qs = buildQueryString(req.query as Record<string, string | string[]>);
-  const targetUrl = subpath ? `${baseUrl}/${subpath}${qs}` : `${baseUrl}${qs}`;
+  // Forward the raw query string directly to avoid Express's qs parser mangling
+  // bracket-notation keys like `includes[]=cover_art` → `includes=cover_art`.
+  // MangaDex and many other APIs require literal `[` `]` in query params.
+  const rawSearch = req.url.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
+  const targetUrl = subpath ? `${baseUrl}/${subpath}${rawSearch}` : `${baseUrl}${rawSearch}`;
 
   const siteInfo = SOURCE_SITE_HEADERS[sourceId];
 
