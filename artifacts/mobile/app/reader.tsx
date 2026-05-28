@@ -152,6 +152,7 @@ export default function ReaderScreen() {
   const flatListRef = useRef<FlatList>(null);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentPageRef = useRef(0);
+  const saveProgressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
   const bottomPadding = Platform.OS === "web" ? 34 : insets.bottom;
@@ -223,17 +224,25 @@ export default function ReaderScreen() {
     return () => controller.abort();
   }, [activeChapterId, params.sourceId, params.mangaId, retryKey]);
 
-  // ─── Save reading progress ─────────────────────────────────────────────────
+  // ─── Save reading progress (debounced 500ms) ──────────────────────────────
+  // Debounce prevents an AsyncStorage write on every scroll tick; instead we
+  // only persist once the reader has settled on a page for half a second.
   useEffect(() => {
     if (params.mangaId && activeChapterId && activeChapterNum) {
-      saveProgress({
-        mangaId: params.mangaId,
-        chapterId: activeChapterId,
-        chapterNum: activeChapterNum,
-        pageIndex: currentPage,
-        timestamp: Date.now(),
-      });
+      if (saveProgressTimer.current) clearTimeout(saveProgressTimer.current);
+      saveProgressTimer.current = setTimeout(() => {
+        saveProgress({
+          mangaId: params.mangaId,
+          chapterId: activeChapterId,
+          chapterNum: activeChapterNum,
+          pageIndex: currentPage,
+          timestamp: Date.now(),
+        });
+      }, 500);
     }
+    return () => {
+      if (saveProgressTimer.current) clearTimeout(saveProgressTimer.current);
+    };
   }, [
     currentPage,
     params.mangaId,

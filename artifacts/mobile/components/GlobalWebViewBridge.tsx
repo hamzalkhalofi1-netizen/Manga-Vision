@@ -125,8 +125,15 @@ export default function GlobalWebViewBridge({
   children: React.ReactNode;
 }) {
   // React state for things that drive rendering (status, visibility, URI)
+  // On web, WebViews are unavailable so we start every bridge source in "idle"
+  // immediately (avoids SourceStatusBanner showing "initializing" forever).
   const [statuses, setStatuses] = useState<Partial<Record<string, BridgeSourceStatus>>>(
-    () => Object.fromEntries(BRIDGE_SOURCES.map((s) => [s.id, "initializing" as BridgeSourceStatus]))
+    () => Object.fromEntries(
+      BRIDGE_SOURCES.map((s) => [
+        s.id,
+        (Platform.OS === "web" ? "idle" : "initializing") as BridgeSourceStatus,
+      ])
+    )
   );
   const [visibleSource, setVisibleSource] = useState<string | null>(null);
   const [uris, setUris] = useState<Record<string, string>>(
@@ -333,13 +340,16 @@ export default function GlobalWebViewBridge({
   }, []);
 
   // ── Web platform fallback (WebView unavailable) ───────────────────────────
+  // Sync the service-level statuses to "idle" once on mount (side effect must
+  // live in useEffect, not the render body, to satisfy React's rules).
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    for (const s of BRIDGE_SOURCES) {
+      webViewBridge.setStatus(s.id, "idle");
+    }
+  }, []);
 
   if (Platform.OS === "web") {
-    for (const s of BRIDGE_SOURCES) {
-      if (webViewBridge.getStatus(s.id) === "initializing") {
-        webViewBridge.setStatus(s.id, "idle");
-      }
-    }
     return (
       <BridgeContext.Provider value={{ statuses, showVerification, hideVerification }}>
         {children}

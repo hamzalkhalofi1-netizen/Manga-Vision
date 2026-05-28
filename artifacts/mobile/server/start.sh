@@ -22,7 +22,8 @@ trap cleanup SIGTERM SIGINT EXIT
 node server/proxy.js &
 PROXY_PID=$!
 
-pnpm exec expo start --localhost --port "$EXPO_DEV_PORT" \
+DANGEROUSLY_DISABLE_HOST_CHECK=true \
+  pnpm exec expo start --localhost --port "$EXPO_DEV_PORT" \
   --go \
   --web &
 EXPO_PID=$!
