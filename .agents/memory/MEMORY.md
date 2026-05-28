@@ -4,3 +4,4 @@
 - [Asura domain](asura-domain.md) — proxy must stay on asuracomic.net (redirect→home SSR); SITE_URL=asurascans.com for native WebView; web listing works, detail/chapters need native
 - [WebView bridge architecture](webview-bridge-arch.md) — Mihon-grade networking: persistent hidden WebViews for CF sources; no popup loops; verify once per session
 - [Overlay rendering architecture](overlay-rendering-arch.md) — BUBBLE_LAYOUT_SCALE=1.35 separates mask geometry (glyph-tight) from text layout (bubble-estimated); three-layer feather mask; safe zone 91%
+- [Expo startup env vars](expo-startup-env.md) — CI=1 kills hot reload; EXPO_UNSTABLE_HEADLESS=1 hides QR/URL; only safe suppression is EXPO_NO_DEVTOOLS=1 + no --go/--web flags
