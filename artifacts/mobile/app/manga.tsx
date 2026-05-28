@@ -55,21 +55,34 @@ export default function MangaScreen() {
   useEffect(() => {
     if (!mangaId) return;
     const source = getSource(sourceId);
+    const controller = new AbortController();
+
     setLoading(true);
     setLoadError(null);
-    Promise.all([source.getMangaDetails(mangaId), source.getChapters(mangaId)])
+
+    Promise.all([
+      source.getMangaDetails(mangaId),
+      source.getChapters(mangaId, controller.signal),
+    ])
       .then(([m, c]) => {
+        if (controller.signal.aborted) return;
         setManga(m);
         setChapters(c);
       })
       .catch((err) => {
+        if (controller.signal.aborted) return;
+        if (err instanceof Error && err.name === "AbortError") return;
         console.error("[manga] load failed:", err);
         const msg = err instanceof SourceError
           ? err.message
           : err instanceof Error ? err.message : "Failed to load manga.";
         setLoadError(msg);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
   }, [mangaId, sourceId, retryKey]);
 
   const entry = mangaId ? getEntry(mangaId) : undefined;
@@ -103,12 +116,11 @@ export default function MangaScreen() {
     if (!manga?.description) return;
     setTranslating(true);
     try {
-      const domain = process.env.EXPO_PUBLIC_DOMAIN;
       const userKey = getActiveKey();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (userKey) headers["X-Gemini-Key"] = userKey;
 
-      const res = await fetch(`https://${domain}/api/translate`, {
+      const res = await fetch("/api/translate", {
         method: "POST",
         headers,
         body: JSON.stringify({

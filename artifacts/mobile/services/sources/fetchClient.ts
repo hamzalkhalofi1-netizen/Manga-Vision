@@ -32,7 +32,8 @@ export interface SourceFetchOptions {
 }
 
 function getProxyBase(): string {
-  return `https://${process.env.EXPO_PUBLIC_DOMAIN}/api/source-proxy`;
+  // Relative URL — routes through the artifact router regardless of access origin.
+  return "/api/source-proxy";
 }
 
 function classifyStatus(status: number, bodySnippet = ""): SourceErrorType {

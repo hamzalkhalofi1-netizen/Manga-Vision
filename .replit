@@ -33,7 +33,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "DANGEROUSLY_DISABLE_HOST_CHECK=true EXPO_PUBLIC_DOMAIN=$REPLIT_DEV_DOMAIN:3000 PORT=5000 pnpm --filter @workspace/mobile run dev"
+args = "DANGEROUSLY_DISABLE_HOST_CHECK=true PORT=5000 EXPO_DEV_PORT=5001 EXPO_API_PORT=3000 EXPO_PUBLIC_REPL_ID=$REPL_ID REACT_NATIVE_PACKAGER_HOSTNAME=$REPLIT_DEV_DOMAIN EXPO_PACKAGER_PROXY_URL=https://$REPLIT_EXPO_DEV_DOMAIN bash artifacts/mobile/server/start.sh"
 waitForPort = 5000
 
 [[workflows.workflow]]
@@ -62,12 +62,8 @@ localPort = 3000
 externalPort = 5173
 
 [[ports]]
-localPort = 8080
-externalPort = 8080
-
-[[ports]]
-localPort = 8081
-externalPort = 8081
+localPort = 5000
+externalPort = 80
 
 [[ports]]
 localPort = 8082
@@ -92,10 +88,6 @@ externalPort = 3001
 [[ports]]
 localPort = 18116
 externalPort = 3000
-
-[[ports]]
-localPort = 5000
-externalPort = 80
 
 [nix]
 channel = "stable-25_05"

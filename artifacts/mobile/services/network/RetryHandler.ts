@@ -35,8 +35,21 @@ export interface RetryPolicy {
 
 const DEFAULT_NO_RETRY: RetryableErrorType[] = ["cloudflare", "auth", "not_found"];
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("signal is aborted without reason", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    if (signal) {
+      const onAbort = () => {
+        clearTimeout(timer);
+        reject(new DOMException("signal is aborted without reason", "AbortError"));
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
 }
 
 function computeDelay(
@@ -68,6 +81,9 @@ export class RetryableError extends Error {
  * Executes `fn` with automatic retry according to `policy`.
  * Throws the last error if all attempts fail.
  *
+ * IMPORTANT: AbortErrors are NEVER retried — they are immediately re-thrown.
+ * This preserves intentional cancellation semantics all the way up the stack.
+ *
  * @param fn        - Async function to retry. Should throw RetryableError for typed errors.
  * @param policy    - Retry configuration.
  * @param signal    - AbortSignal to cancel retries early.
@@ -90,13 +106,23 @@ export async function withRetry<T>(
   let lastError: Error = new Error("Unknown error");
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Check signal before each attempt — throw a proper AbortError so every
+    // upstream catch that checks `err.name === "AbortError"` can identify it.
     if (signal?.aborted) {
-      throw new Error("Aborted");
+      throw new DOMException("signal is aborted without reason", "AbortError");
     }
 
     try {
       return await fn(attempt);
     } catch (err) {
+      // CRITICAL: AbortErrors must NEVER be retried.
+      // They are intentional cancellations (chapter switch, unmount, timeout).
+      // Re-throwing immediately preserves the name "AbortError" so callers
+      // can silence them with `if (err.name === "AbortError") return`.
+      if (err instanceof Error && err.name === "AbortError") {
+        throw err;
+      }
+
       lastError = err instanceof Error ? err : new Error(String(err));
 
       // Never retry certain error types
@@ -110,7 +136,8 @@ export async function withRetry<T>(
       const delayMs = computeDelay(attempt, baseDelayMs, maxDelayMs, backoffFactor, jitter);
       onRetry?.(attempt, delayMs, lastError);
 
-      await sleep(delayMs);
+      // Abort-aware sleep — rejects immediately if signal fires during the wait
+      await sleep(delayMs, signal);
     }
   }
 

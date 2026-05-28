@@ -157,7 +157,8 @@ export default function ReaderScreen() {
   const bottomPadding = Platform.OS === "web" ? 34 : insets.bottom;
   const isVertical = readerSettings.readingMode === "vertical";
   const isRTL = readerSettings.targetLanguage === "ar";
-  const apiBase = `https://${process.env.EXPO_PUBLIC_DOMAIN}`;
+  // Empty string = relative URL base; works with the artifact router on any access origin.
+  const apiBase = "";
 
   // ─── Load pages ────────────────────────────────────────────────────────────
   // Depends on activeChapterId (state), not params.chapterId, so next/prev

@@ -26,9 +26,9 @@ SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
-if (process.env.EXPO_PUBLIC_DOMAIN) {
-  setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
-}
+// Use an empty base URL (relative paths) so API calls route through the
+// artifact router regardless of access origin (localhost, Replit proxy, custom domain).
+setBaseUrl("");
 
 SystemUI.setBackgroundColorAsync("#080808");
 

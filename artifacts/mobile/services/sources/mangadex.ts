@@ -11,11 +11,14 @@ const dedup = new InFlightDedup<Record<string, unknown>>();
 const log = new SourceDiagnosticsLogger("mangadex");
 
 function getApiProxyBase(): string {
-  return `https://${process.env.EXPO_PUBLIC_DOMAIN}/api/source-proxy/mangadex-api`;
+  // Use a relative URL on web so requests always route through the artifact
+  // router at port 5000 → API server at port 3000, regardless of whether
+  // the browser accesses via localhost, the Replit dev domain, or a custom domain.
+  return "/api/source-proxy/mangadex-api";
 }
 
 function getCdnProxyBase(): string {
-  return `https://${process.env.EXPO_PUBLIC_DOMAIN}/api/source-proxy/mangadex-cdn`;
+  return "/api/source-proxy/mangadex-cdn";
 }
 
 function coverUrl(mangaId: string, fileName: string): string {
@@ -122,7 +125,7 @@ async function apiFetch(
   if (signal) {
     if (signal.aborted) {
       clearTimeout(timeout);
-      throw new DOMException("Aborted", "AbortError");
+      throw new DOMException("signal is aborted without reason", "AbortError");
     }
     onAbort = () => controller.abort();
     signal.addEventListener("abort", onAbort, { once: true });
@@ -246,8 +249,12 @@ export const mangadexSource: MangaSource = {
       );
 
       const pageKey = `chapters:${mangaId}:${offset}`;
-      const data = await dedup.get(pageKey, () =>
-        apiFetch(`/manga/${mangaId}/feed?${qs}`, signal)
+      // Pass signal as 3rd arg (per-caller abort), NOT into the factory.
+      // This lets the shared in-flight request survive if only one caller aborts.
+      const data = await dedup.get(
+        pageKey,
+        () => apiFetch(`/manga/${mangaId}/feed?${qs}`),
+        signal,
       );
 
       if (typeof data.total === "number") total = data.total;
@@ -295,7 +302,12 @@ export const mangadexSource: MangaSource = {
     if (!chapterId) return [];
     const key = `pages:${chapterId}`;
     const t = log.start();
-    const data = await dedup.get(key, () => apiFetch(`/at-home/server/${chapterId}`, signal));
+    // Pass signal as 3rd arg (per-caller abort), NOT into the factory.
+    const data = await dedup.get(
+      key,
+      () => apiFetch(`/at-home/server/${chapterId}`),
+      signal,
+    );
     const baseUrl = safeStr(data.baseUrl as string);
     const chapter = (data.chapter && typeof data.chapter === "object"
       ? data.chapter : {}) as Record<string, unknown>;

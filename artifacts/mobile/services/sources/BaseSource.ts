@@ -113,14 +113,32 @@ export abstract class BaseSource implements MangaSource {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+        // Always use the internal timeout controller for the actual fetch.
+        // If an external signal is provided, forward its abort to the internal
+        // controller so EITHER the timeout OR the external cancel terminates the
+        // request — without passing the external signal directly (which would
+        // skip the timeout when an external signal is present).
+        let forwardAbort: (() => void) | undefined;
+        if (signal) {
+          if (signal.aborted) {
+            clearTimeout(timer);
+            throw new DOMException("signal is aborted without reason", "AbortError");
+          }
+          forwardAbort = () => controller.abort();
+          signal.addEventListener("abort", forwardAbort, { once: true });
+        }
+
         let res: Response;
         try {
           res = await fetch(url, {
             headers: builtHeaders,
-            signal: signal ?? controller.signal,
+            signal: controller.signal,
           });
         } finally {
           clearTimeout(timer);
+          if (signal && forwardAbort) {
+            signal.removeEventListener("abort", forwardAbort);
+          }
         }
 
         // Store any new cookies from the response
