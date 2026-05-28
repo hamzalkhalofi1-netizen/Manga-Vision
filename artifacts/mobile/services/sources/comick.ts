@@ -202,9 +202,10 @@ async function fetchAllChapters(mangaId: string, signal?: AbortSignal): Promise<
   const limit = 300;
 
   while (true) {
+    // Abort: throw so callers see rejection and dedup does not cache partial data
     if (signal?.aborted) {
       log.log(`getChapters(${mangaId}) aborted at page=${page}`);
-      break;
+      throw new DOMException("Aborted", "AbortError");
     }
 
     // Safety cap: prevent infinite loops on malformed API responses
@@ -229,12 +230,20 @@ async function fetchAllChapters(mangaId: string, signal?: AbortSignal): Promise<
       break;
     }
 
-    log.log(`chapters page offset=${page} got ${chapters.length}${typeof data.total === "number" ? ` / total=${data.total}` : ""}`);
+    log.log(`chapters page=${page} got ${chapters.length}${typeof data.total === "number" ? ` / total=${data.total}` : ""}`);
     all.push(...chapters);
 
     const total = typeof data.total === "number" ? data.total : null;
-    if (total !== null && all.length >= total) break;
-    if (chapters.length < limit) break;
+    if (total !== null) {
+      // When the API declares a total, trust it as the source of truth.
+      // A short page alone does NOT stop the loop — intermittent filtering
+      // (e.g., server deduplication) can produce short pages mid-series.
+      // The max-page cap protects against infinite loops if the total is wrong.
+      if (all.length >= total) break;
+    } else {
+      // No total declared — a short page is the only signal we have.
+      if (chapters.length < limit) break;
+    }
 
     page++;
   }
