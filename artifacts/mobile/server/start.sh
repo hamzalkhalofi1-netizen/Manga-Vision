@@ -23,7 +23,7 @@ node server/proxy.js &
 PROXY_PID=$!
 
 DANGEROUSLY_DISABLE_HOST_CHECK=true \
-  pnpm exec expo start --localhost --port "$EXPO_DEV_PORT" \
+  ./node_modules/.bin/expo start --localhost --port "$EXPO_DEV_PORT" \
   --go \
   --web &
 EXPO_PID=$!
