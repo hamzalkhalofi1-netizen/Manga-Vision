@@ -37,6 +37,8 @@ const BRIDGE_SOURCES = [
   // asuracomic.net 301-redirects to asurascans.com as of 2025/2026.
   // Use the live domain directly so the WebView doesn't start with a redirect.
   { id: "asura", baseUrl: "https://asurascans.com" },
+  // Bato.to: Next.js SSR + Cloudflare. Chapter images need an active CF session.
+  { id: "bato", baseUrl: "https://bato.to" },
 ] as const;
 
 // ── React context ─────────────────────────────────────────────────────────

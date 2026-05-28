@@ -18,6 +18,7 @@ const SOURCE_REGISTRY: Record<string, string> = {
   // cards that our parsers can extract. Direct asurascans.com /series?... paths
   // are pure client-side Astro (no SSR content). Native uses WebView directly.
   "asura": "https://asuracomic.net",
+  "bato": "https://bato.to",
   "naver": "https://www.webtoons.com",
 };
 
@@ -29,6 +30,7 @@ const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> =
   "mangaplus":    { referer: "https://mangaplus.shueisha.co.jp/",    origin: "https://mangaplus.shueisha.co.jp" },
   "mangafire":    { referer: "https://mangafire.to/",                origin: "https://mangafire.to" },
   "asura":        { referer: "https://asurascans.com/",              origin: "https://asurascans.com" },
+  "bato":         { referer: "https://bato.to/",                    origin: "https://bato.to" },
   "naver":        { referer: "https://www.webtoons.com/",            origin: "https://www.webtoons.com" },
 };
 

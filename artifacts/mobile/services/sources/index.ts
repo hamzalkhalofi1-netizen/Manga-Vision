@@ -5,6 +5,7 @@ import { mangaplusSource } from "./mangaplus";
 import { naverSource } from "./naver";
 import { mangafireSource } from "./mangafire";
 import { asuraSource } from "./asura";
+import { batoSource } from "./bato";
 import { SourceRegistry } from "./SourceRegistry";
 
 export { SourceError, SourceErrorType } from "./fetchClient";
@@ -72,6 +73,17 @@ SourceRegistry.registerAll([
       isEnabled: true,
       tags: ["scraper", "cloudflare", "manhwa"],
       websiteUrl: "https://asuracomic.net",
+    },
+  },
+  {
+    source: batoSource,
+    meta: {
+      language: ["en", "multi"],
+      nsfw: false,
+      requiresVerification: true,
+      isEnabled: true,
+      tags: ["scraper", "cloudflare", "community"],
+      websiteUrl: "https://bato.to",
     },
   },
   {
@@ -175,5 +187,6 @@ export {
   naverSource,
   mangafireSource,
   asuraSource,
+  batoSource,
 };
 export * from "./types";
