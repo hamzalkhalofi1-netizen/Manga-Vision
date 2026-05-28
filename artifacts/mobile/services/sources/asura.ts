@@ -22,25 +22,63 @@ const FETCH_OPTS = {
 // Render wait for Astro SSR/island hydration.
 // asurascans.com uses Astro v5 with client-side islands — the shell HTML
 // arrives quickly but manga data is injected by React islands that need
-// ~5-6 s to hydrate on a mobile network.  7 s gives a comfortable margin.
-const RENDER_WAIT_MS = 7000;
+// ~5-6 s to hydrate on a mobile network.
+const RENDER_WAIT_MS = 6000;
 
-async function asuraFetch(path: string, query = ""): Promise<string> {
+// Simple TTL cache for listing pages to avoid repeated WebView renders.
+// Key: URL → { html, expiresAt }
+const _listingCache = new Map<string, { html: string; expiresAt: number }>();
+const LISTING_CACHE_TTL_MS = 60_000; // 1 minute
+
+function getCachedListing(key: string): string | null {
+  const entry = _listingCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { _listingCache.delete(key); return null; }
+  return entry.html;
+}
+function setCachedListing(key: string, html: string): void {
+  _listingCache.set(key, { html, expiresAt: Date.now() + LISTING_CACHE_TTL_MS });
+}
+
+async function asuraFetch(path: string, query = "", useCache = false): Promise<string> {
+  const cacheKey = `${path}${query}`;
+
+  if (useCache) {
+    const cached = getCachedListing(cacheKey);
+    if (cached) {
+      console.log(`[asura] cache hit: ${cacheKey}`);
+      return cached;
+    }
+  }
+
   if (Platform.OS !== "web") {
     // Native: navigate the persistent Asura WebView to the URL and extract
     // the fully JS-rendered DOM. This handles both Cloudflare challenges and
-    // the Astro island rendering requirement (all content pages need client-side JS).
+    // the Astro island rendering requirement.
     const url = `${SITE_URL}${path}${query}`;
-    const resp = await webViewBridge.fetchRendered("asura", url, RENDER_WAIT_MS);
-    if (!resp.ok && (resp.status === 403 || resp.status === 503)) {
-      throw new SourceError("Asura blocked by Cloudflare.", "cloudflare", resp.status, "asura");
+    try {
+      const resp = await webViewBridge.fetchRendered("asura", url, RENDER_WAIT_MS);
+      if (!resp.ok && (resp.status === 403 || resp.status === 503)) {
+        throw new SourceError("Asura blocked by Cloudflare.", "cloudflare", resp.status, "asura");
+      }
+      if (useCache && resp.body.length > 500) setCachedListing(cacheKey, resp.body);
+      return resp.body;
+    } catch (err) {
+      if (err instanceof SourceError) throw err;
+      // Bridge timeout or render error — throw a clean network error
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new SourceError(
+        `Asura bridge error: ${msg}. Try again or use MangaDex.`,
+        "network", undefined, "asura"
+      );
     }
-    return resp.body;
   }
   // Web: route through server-side proxy (returns Astro shell HTML — JS islands
   // can't run server-side, so data extraction relies on SSR-embedded props).
   const res = await proxiedFetch("asura", path, query, FETCH_OPTS);
-  return res.text();
+  const html = await res.text();
+  if (useCache && html.length > 500) setCachedListing(cacheKey, html);
+  return html;
 }
 
 // ── Protection detection ───────────────────────────────────────────────────
@@ -448,7 +486,7 @@ export const asuraSource: MangaSource = {
   async getTrending(page = 0): Promise<Manga[]> {
     try {
       const qs = new URLSearchParams({ page: String(page + 1), order: "rating" }).toString();
-      const html = await asuraFetch("/series", `?${qs}`);
+      const html = await asuraFetch("/series", `?${qs}`, true);
       console.log(`[asura] getTrending response size: ${html.length}`);
       if (isCloudflarePage(html)) {
         throw new SourceError("Asura Scans blocked by Cloudflare.", "cloudflare", 403, "asura");
@@ -468,7 +506,7 @@ export const asuraSource: MangaSource = {
   async getLatestUpdates(page = 0): Promise<Manga[]> {
     try {
       const qs = new URLSearchParams({ page: String(page + 1), order: "update" }).toString();
-      const html = await asuraFetch("/series", `?${qs}`);
+      const html = await asuraFetch("/series", `?${qs}`, true);
       console.log(`[asura] getLatestUpdates response size: ${html.length}`);
       if (isCloudflarePage(html)) {
         throw new SourceError("Asura Scans blocked by Cloudflare.", "cloudflare", 403, "asura");

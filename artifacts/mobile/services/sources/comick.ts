@@ -4,7 +4,10 @@ import { InFlightDedup } from "../network/InFlightDedup";
 import { SourceDiagnosticsLogger } from "./SourceDiagnosticsLogger";
 
 const SITE_URL = "https://comick.io";
-const API_URL = "https://api.comick.io";
+// ComicK migrated API domain from comick.io → comick.fun in 2024/2025.
+// comick.fun is the live API; comick.io 404s on all endpoints.
+const API_URL = "https://api.comick.fun";
+const API_URL_FALLBACK = "https://api.comick.io";
 const CDN = "https://meo.comick.pictures";
 
 const FETCH_OPTS = {
@@ -79,12 +82,39 @@ async function comickFetch(path: string, query = "", signal?: AbortSignal): Prom
   const t = log.start();
   const displayUrl = `${API_URL}${path}${query}`;
 
-  const res = await proxiedFetch("comick-api", path, query, {
-    ...FETCH_OPTS,
-    siteUrl: API_URL,
-    directOnWeb: true,
-    headers: { Accept: "application/json" },
-  });
+  // Try primary API URL, fall back to legacy domain on 404
+  let res: Response;
+  try {
+    res = await proxiedFetch("comick-api", path, query, {
+      ...FETCH_OPTS,
+      siteUrl: API_URL,
+      directOnWeb: true,
+      headers: { Accept: "application/json" },
+    });
+    // If primary returned 404, try fallback
+    if (res.status === 404) {
+      log.log(`Primary API 404 for ${path}, trying fallback domain`);
+      res = await proxiedFetch("comick-api-fallback", path, query, {
+        ...FETCH_OPTS,
+        siteUrl: API_URL_FALLBACK,
+        directOnWeb: true,
+        headers: { Accept: "application/json" },
+      });
+    }
+  } catch (err) {
+    if (err instanceof SourceError && err.type === "not_found") {
+      // Try fallback domain
+      log.log(`Primary fetch failed with not_found, trying fallback`);
+      res = await proxiedFetch("comick-api-fallback", path, query, {
+        ...FETCH_OPTS,
+        siteUrl: API_URL_FALLBACK,
+        directOnWeb: true,
+        headers: { Accept: "application/json" },
+      });
+    } else {
+      throw err;
+    }
+  }
 
   const ct = res.headers.get("content-type") ?? "";
   log.logRequest(displayUrl, res.status, undefined, t);

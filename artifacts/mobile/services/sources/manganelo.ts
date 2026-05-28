@@ -9,10 +9,9 @@ import {
   parseChapterImages,
 } from "./kakalotParser";
 
-// readmanganelo.com is an active mirror of the Manganelo family.
-// It shares the same HTML structure as chapmanganato.to.
-// If the primary domain returns no results (e.g. 404 or empty), we fall
-// back to chapmanganato.to for trending/latest listings.
+// readmanganelo.com may be down/blocked. Primary attempts it, then
+// immediately falls back to chapmanganato.to (kakalot proxy) on any error
+// or empty response. The two sites share the same HTML structure.
 const SITE_URL = "https://readmanganelo.com";
 const FALLBACK_URL = "https://chapmanganato.to";
 const SOURCE_ID = "manganelo";
@@ -20,17 +19,22 @@ const SOURCE_ID = "manganelo";
 const FETCH_OPTS = {
   sourceId: SOURCE_ID,
   siteUrl: SITE_URL,
-  timeoutMs: 20000,
+  timeoutMs: 15000,
+  maxRetries: 2,
   headers: {
-    Accept: "text/html,application/xhtml+xml,*/*",
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
     Referer: SITE_URL + "/",
+    "Upgrade-Insecure-Requests": "1",
   },
 };
 
 const FALLBACK_OPTS = {
   ...FETCH_OPTS,
+  sourceId: "kakalot",
   siteUrl: FALLBACK_URL,
+  headers: { ...FETCH_OPTS.headers, Referer: FALLBACK_URL + "/" },
 };
 
 const diag = new SourceDiagnosticsLogger(SOURCE_ID);
@@ -47,8 +51,8 @@ const dedup = {
 async function neleloFetch(path: string, query = "", useFallback = false, signal?: AbortSignal): Promise<string> {
   if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
   const opts = useFallback ? FALLBACK_OPTS : FETCH_OPTS;
-  // On fallback, use "kakalot" proxy ID — already registered and points to chapmanganato.to.
-  // On native the proxy ID is ignored; opts.siteUrl (FALLBACK_URL) is used directly.
+  // On fallback, use "kakalot" proxy ID — registered and points to chapmanganato.to.
+  // On native the proxy ID is ignored; opts.siteUrl is used directly.
   const proxyId = useFallback ? "kakalot" : SOURCE_ID;
   const res = await proxiedFetch(proxyId, path, query, opts, signal ? { signal } : undefined);
   return res.text();
@@ -61,12 +65,25 @@ function encodeSearchQuery(q: string): string {
 async function fetchListWithFallback(path: string, query: string, signal?: AbortSignal): Promise<string> {
   try {
     const html = await neleloFetch(path, query, false, signal);
-    // If page returned no real content try fallback
-    if (html.length < 500) throw new Error("empty response");
+    // Fall back if response is empty or clearly not a manga listing page
+    if (html.length < 500 || (!html.includes("manga-") && !html.includes("story"))) {
+      diag.log(`Primary returned unusable response (${html.length}), using fallback`);
+      return neleloFetch(path, query, true, signal);
+    }
     return html;
-  } catch {
-    diag.log(`Primary fetch failed for ${path}${query}, trying fallback`);
+  } catch (err) {
+    diag.log(`Primary domain error: ${err instanceof Error ? err.message : String(err)}, using chapmanganato.to fallback`);
     return neleloFetch(path, query, true, signal);
+  }
+}
+
+async function fetchDetailWithFallback(mangaId: string, signal?: AbortSignal): Promise<string> {
+  try {
+    const html = await neleloFetch(`/${mangaId}`, "", false, signal);
+    if (html.length > 500) return html;
+    return neleloFetch(`/${mangaId}`, "", true, signal);
+  } catch {
+    return neleloFetch(`/${mangaId}`, "", true, signal);
   }
 }
 
@@ -142,7 +159,7 @@ export const manganeloSource: MangaSource = {
   async getMangaDetails(id: string): Promise<Manga> {
     return dedup.detail.get(`detail:${id}`, async () => {
       try {
-        const html = await neleloFetch(`/${id}`);
+        const html = await fetchDetailWithFallback(id);
         const detail = parseMangaDetail(html);
         return {
           id,
@@ -167,7 +184,7 @@ export const manganeloSource: MangaSource = {
   async getChapters(mangaId: string, signal?: AbortSignal): Promise<Chapter[]> {
     return dedup.chapters.get(`chapters:${mangaId}`, async () => {
       try {
-        const html = await neleloFetch(`/${mangaId}`, "", false, signal);
+        const html = await fetchDetailWithFallback(mangaId, signal);
         const chapters = parseChapterList(html);
         diag.log(`getChapters(${mangaId}) → ${chapters.length}`);
         if (chapters.length === 0) {
@@ -187,7 +204,7 @@ export const manganeloSource: MangaSource = {
   async getChapterPages(chapterId: string, signal?: AbortSignal): Promise<string[]> {
     return dedup.pages.get(`pages:${chapterId}`, async () => {
       try {
-        const html = await neleloFetch(`/${chapterId}`, "", false, signal);
+        const html = await fetchDetailWithFallback(chapterId, signal);
         const images = parseChapterImages(html);
         diag.log(`getChapterPages(${chapterId}) → ${images.length}`);
         if (images.length === 0) {

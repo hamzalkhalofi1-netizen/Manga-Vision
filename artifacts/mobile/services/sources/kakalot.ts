@@ -10,17 +10,29 @@ import {
 } from "./kakalotParser";
 
 const SITE_URL = "https://chapmanganato.to";
+const SITE_URL_ALT = "https://manganato.com";
 const SOURCE_ID = "kakalot";
 
 const FETCH_OPTS = {
   sourceId: SOURCE_ID,
   siteUrl: SITE_URL,
   timeoutMs: 20000,
+  maxRetries: 3,
   headers: {
-    Accept: "text/html,application/xhtml+xml,*/*",
+    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
     Referer: SITE_URL + "/",
+    "Cache-Control": "no-cache",
+    "Upgrade-Insecure-Requests": "1",
   },
+};
+
+const FETCH_OPTS_ALT = {
+  ...FETCH_OPTS,
+  sourceId: "manganato",
+  siteUrl: SITE_URL_ALT,
+  headers: { ...FETCH_OPTS.headers, Referer: SITE_URL_ALT + "/" },
 };
 
 const diag = new SourceDiagnosticsLogger(SOURCE_ID);
@@ -36,8 +48,25 @@ const dedup = {
 
 async function kakalotFetch(path: string, query = "", signal?: AbortSignal): Promise<string> {
   if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-  const res = await proxiedFetch(SOURCE_ID, path, query, FETCH_OPTS, signal ? { signal } : undefined);
-  return res.text();
+  try {
+    const res = await proxiedFetch(SOURCE_ID, path, query, FETCH_OPTS, signal ? { signal } : undefined);
+    const html = await res.text();
+    // If we got an essentially empty response, try the alt domain
+    if (html.length < 500) {
+      diag.log(`WARN: primary returned short response (${html.length}), trying alt domain`);
+      const res2 = await proxiedFetch("manganato", path, query, FETCH_OPTS_ALT, signal ? { signal } : undefined);
+      return res2.text();
+    }
+    return html;
+  } catch (err) {
+    if (err instanceof SourceError && (err.type === "network" || err.type === "upstream")) {
+      diag.log(`Primary domain error: ${err.message}, trying alt domain`);
+      // Try alternative domain on network/upstream errors
+      const res2 = await proxiedFetch("manganato", path, query, FETCH_OPTS_ALT, signal ? { signal } : undefined);
+      return res2.text();
+    }
+    throw err;
+  }
 }
 
 /**

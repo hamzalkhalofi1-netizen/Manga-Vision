@@ -32,6 +32,20 @@ const FETCH_OPTS = {
 // Chapter images need Referer: https://bato.to/ to load from the CDN.
 const RENDER_WAIT_MS = 5000;
 
+// TTL cache for listing pages — avoids repeated WebView bridge renders.
+const _listingCache = new Map<string, { html: string; expiresAt: number }>();
+const LISTING_TTL_MS = 60_000;
+
+function getCached(key: string): string | null {
+  const e = _listingCache.get(key);
+  if (!e) return null;
+  if (Date.now() > e.expiresAt) { _listingCache.delete(key); return null; }
+  return e.html;
+}
+function setCached(key: string, html: string): void {
+  _listingCache.set(key, { html, expiresAt: Date.now() + LISTING_TTL_MS });
+}
+
 const diag = new SourceDiagnosticsLogger(SOURCE_ID);
 
 const dedup = {
@@ -45,24 +59,52 @@ const dedup = {
 
 // ── Core fetch ────────────────────────────────────────────────────────────
 
-async function batoFetch(path: string, query = ""): Promise<string> {
+async function batoFetch(path: string, query = "", useCache = false): Promise<string> {
+  const cacheKey = `${path}${query}`;
+
+  if (useCache) {
+    const cached = getCached(cacheKey);
+    if (cached) {
+      diag.log(`cache hit: ${cacheKey}`);
+      return cached;
+    }
+  }
+
   const url = `${SITE_URL}${path}${query}`;
 
   if (Platform.OS !== "web") {
-    const resp = await webViewBridge.fetchRendered(SOURCE_ID, url, RENDER_WAIT_MS);
-    if (!resp.ok && (resp.status === 403 || resp.status === 503)) {
+    try {
+      const resp = await webViewBridge.fetchRendered(SOURCE_ID, url, RENDER_WAIT_MS);
+      if (!resp.ok && (resp.status === 403 || resp.status === 503)) {
+        throw new SourceError(
+          "Bato.to requires browser verification.",
+          "cloudflare",
+          resp.status,
+          SOURCE_ID,
+        );
+      }
+      if (useCache && resp.body.length > 500) setCached(cacheKey, resp.body);
+      return resp.body;
+    } catch (err) {
+      if (err instanceof SourceError) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
       throw new SourceError(
-        "Bato.to requires browser verification.",
-        "cloudflare",
-        resp.status,
-        SOURCE_ID,
+        `Bato.to bridge error: ${msg}. Try again or use MangaDex.`,
+        "network", undefined, SOURCE_ID,
       );
     }
-    return resp.body;
   }
 
-  const res = await proxiedFetch(SOURCE_ID, path, query, FETCH_OPTS);
-  return res.text();
+  const res = await proxiedFetch(SOURCE_ID, path, query, {
+    ...FETCH_OPTS,
+    headers: {
+      ...FETCH_OPTS.headers,
+      "User-Agent": "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+    },
+  });
+  const html = await res.text();
+  if (useCache && html.length > 500) setCached(cacheKey, html);
+  return html;
 }
 
 // ── Protection detection ───────────────────────────────────────────────────
@@ -522,7 +564,7 @@ export const batoSource: MangaSource = {
     return dedup.trending.get(`trending:${page}`, async () => {
       try {
         const qs = `?sort=views&lang=en&page=${page + 1}`;
-        const html = await batoFetch("/browse", qs);
+        const html = await batoFetch("/browse", qs, true);
         if (isCloudflarePage(html)) {
           throw new SourceError("Bato.to is protected by Cloudflare verification.", "cloudflare", 403, SOURCE_ID);
         }
@@ -542,7 +584,7 @@ export const batoSource: MangaSource = {
     return dedup.latest.get(`latest:${page}`, async () => {
       try {
         const qs = `?sort=update&lang=en&page=${page + 1}`;
-        const html = await batoFetch("/browse", qs);
+        const html = await batoFetch("/browse", qs, true);
         if (isCloudflarePage(html)) {
           throw new SourceError("Bato.to is protected by Cloudflare verification.", "cloudflare", 403, SOURCE_ID);
         }

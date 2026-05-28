@@ -9,28 +9,32 @@ const BROWSER_UA =
 const SOURCE_REGISTRY: Record<string, string> = {
   "mangadex-api": "https://api.mangadex.org",
   "mangadex-cdn": "https://uploads.mangadex.org",
-  "comick-api": "https://api.comick.io",
+  // ComicK migrated API from comick.io → comick.fun in 2024/2025
+  "comick-api": "https://api.comick.fun",
+  "comick-api-fallback": "https://api.comick.io",
   "comick-cdn": "https://meo.comick.pictures",
   "mangaplus": "https://api.mangaplus.shueisha.co.jp",
   "mangafire": "https://mangafire.to",
-  // asuracomic.net 301-redirects to asurascans.com home page. This redirect
-  // is intentionally useful for web listing pages: the home page has SSR manga
-  // cards that our parsers can extract. Direct asurascans.com /series?... paths
-  // are pure client-side Astro (no SSR content). Native uses WebView directly.
-  "asura": "https://asuracomic.net",
+  // asurascans.com is the live domain (asuracomic.net 301-redirects here)
+  "asura": "https://asurascans.com",
   "bato": "https://bato.to",
   // MangaKakalot family — chapmanganato.to (kakalot + manganato) and readmanganelo.com
   "kakalot": "https://chapmanganato.to",
   "manganato": "https://chapmanganato.to",
+  // readmanganelo.com may be down; manganelo falls back to chapmanganato.to via kakalot
   "manganelo": "https://readmanganelo.com",
+  "manganelo-fallback": "https://chapmanganato.to",
+  // Naver Webtoon / WEBTOON
   "naver": "https://www.webtoons.com",
+  "webtoon": "https://www.webtoons.com",
 };
 
 const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> = {
   "mangadex-api": { referer: "https://mangadex.org/",                origin: "https://mangadex.org" },
   "mangadex-cdn": { referer: "https://mangadex.org/",                origin: "https://mangadex.org" },
-  "comick-api":   { referer: "https://comick.io/",                   origin: "https://comick.io" },
-  "comick-cdn":   { referer: "https://comick.io/",                   origin: "https://comick.io" },
+  "comick-api":         { referer: "https://comick.io/",             origin: "https://comick.io" },
+  "comick-api-fallback":{ referer: "https://comick.io/",             origin: "https://comick.io" },
+  "comick-cdn":         { referer: "https://comick.io/",             origin: "https://comick.io" },
   "mangaplus":    { referer: "https://mangaplus.shueisha.co.jp/",    origin: "https://mangaplus.shueisha.co.jp" },
   "mangafire":    { referer: "https://mangafire.to/",                origin: "https://mangafire.to" },
   "asura":        { referer: "https://asurascans.com/",              origin: "https://asurascans.com" },
@@ -39,8 +43,10 @@ const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> =
   "manganato":    { referer: "https://chapmanganato.to/",           origin: "https://chapmanganato.to" },
   // manganelo pages are on readmanganelo.com but CDN images are served from chapmanganato.to CDN;
   // using chapmanganato.to as referer satisfies the CDN anti-hotlink check on web proxy paths.
-  "manganelo":    { referer: "https://chapmanganato.to/",           origin: "https://chapmanganato.to" },
-  "naver":        { referer: "https://www.webtoons.com/",            origin: "https://www.webtoons.com" },
+  "manganelo":          { referer: "https://chapmanganato.to/",      origin: "https://chapmanganato.to" },
+  "manganelo-fallback": { referer: "https://chapmanganato.to/",      origin: "https://chapmanganato.to" },
+  "naver":              { referer: "https://www.webtoons.com/",      origin: "https://www.webtoons.com" },
+  "webtoon":            { referer: "https://www.webtoons.com/",      origin: "https://www.webtoons.com" },
 };
 
 function buildQueryString(query: Record<string, string | string[]>): string {
