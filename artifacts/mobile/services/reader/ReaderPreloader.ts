@@ -72,6 +72,10 @@ export class ReaderPreloader {
   private activeSlots = 0;
   private disposed = false;
 
+  // Track AbortControllers for all active (in-flight) prefetch requests.
+  // resetQueue() aborts these so chapter switches cancel ongoing fetches immediately.
+  private activeControllers = new Set<AbortController>();
+
   private readonly lifecycle = new PageLifecycleManager();
   private readyCallbacks: PageReadyCallback[] = [];
   private errorCallbacks: PageErrorCallback[] = [];
@@ -209,6 +213,12 @@ export class ReaderPreloader {
     this.queue = [];
     this.pending.clear();
     this.activeSlots = 0;
+    // Abort all in-flight prefetch requests so they don't ghost-complete
+    // and call back into a now-stale chapter's lifecycle / callbacks.
+    for (const controller of this.activeControllers) {
+      controller.abort();
+    }
+    this.activeControllers.clear();
   }
 
   private drain(): void {
@@ -241,6 +251,11 @@ export class ReaderPreloader {
 
     this.lifecycle.transitionTo(index, "loading");
 
+    // Create a per-fetch AbortController so resetQueue() (chapter switch / dispose)
+    // can cancel this specific in-flight request immediately.
+    const controller = new AbortController();
+    this.activeControllers.add(controller);
+
     try {
       // On React Native, expo-image handles caching internally.
       // We pre-warm it by issuing a prefetch request, which loads
@@ -251,13 +266,24 @@ export class ReaderPreloader {
       // "this page is ready" marker so we don't re-prefetch.
 
       const headers = getBasicImageHeaders(this.sourceId);
-      await this.prefetchImage(url, headers);
+      await this.prefetchImage(url, headers, controller.signal);
+
+      // Guard: if aborted while awaiting, treat as cancelled (not ready, not error)
+      if (controller.signal.aborted) return;
 
       // Mark as ready in both our lifecycle and the in-memory URL cache
       ReaderCache.set(url, url); // value = URI (passthrough; expo-image owns actual bytes)
       this.lifecycle.transitionTo(index, "ready");
       this.readyCallbacks.forEach((cb) => cb(index, url));
     } catch (err) {
+      // Abort is intentional (chapter switch / dispose) — exit silently, no retry
+      if (
+        controller.signal.aborted ||
+        (err instanceof Error && err.name === "AbortError")
+      ) {
+        return;
+      }
+
       const msg = err instanceof Error ? err.message : String(err);
 
       if (page.attempt < this.maxRetries) {
@@ -275,28 +301,43 @@ export class ReaderPreloader {
         this.lifecycle.transitionTo(index, "error", msg);
         this.errorCallbacks.forEach((cb) => cb(index, msg));
       }
+    } finally {
+      this.activeControllers.delete(controller);
     }
   }
 
   /**
    * Prefetch an image URL into expo-image's cache.
    * Falls back to a HEAD request on platforms where Image.prefetch isn't available.
+   * The provided signal is checked before/after the prefetch and is forwarded to
+   * the HEAD fallback so the network request is cancelled promptly on chapter switch.
    */
-  private async prefetchImage(url: string, headers: Record<string, string>): Promise<void> {
+  private async prefetchImage(
+    url: string,
+    headers: Record<string, string>,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (signal.aborted) return;
+
     // Use expo-image's prefetch API
     try {
       const { Image } = await import("expo-image");
       if (typeof Image.prefetch === "function") {
+        // expo-image prefetch has no cancellation API; we check signal before
+        // and after so at least we don't fire callbacks on a dead chapter.
         await Image.prefetch(url, { headers });
         return;
       }
     } catch {}
 
-    // Fallback: HEAD request to warm CDN + connection pool
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    // Fallback: HEAD request to warm CDN + connection pool.
+    // Combine external abort signal with our internal timeout signal.
+    const timeoutController = new AbortController();
+    const timer = setTimeout(() => timeoutController.abort(), this.timeoutMs);
+    // Forward external abort to the timeout controller so either cancels the fetch
+    signal.addEventListener("abort", () => timeoutController.abort(), { once: true });
     try {
-      await fetch(url, { method: "HEAD", headers, signal: controller.signal });
+      await fetch(url, { method: "HEAD", headers, signal: timeoutController.signal });
     } finally {
       clearTimeout(timer);
     }
