@@ -35,6 +35,11 @@ export interface SourceMetadata {
   requiresLogin?: boolean;
   /** Tags describing the source (e.g. "webtoon", "manhwa", "official") */
   tags?: string[];
+  /**
+   * When true the reader should default to vertical-scroll mode for this source.
+   * Used for webtoon / manhwa / tapas platforms where content is long-strip format.
+   */
+  vertical?: boolean;
 }
 
 export interface RegisteredSource {
