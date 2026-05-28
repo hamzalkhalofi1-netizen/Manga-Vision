@@ -38,8 +38,9 @@ const dedup = {
   pages: new InFlightDedup<string[]>(),
 };
 
-async function manganatoFetch(path: string, query = ""): Promise<string> {
-  const res = await proxiedFetch(SOURCE_ID, path, query, FETCH_OPTS);
+async function manganatoFetch(path: string, query = "", signal?: AbortSignal): Promise<string> {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  const res = await proxiedFetch(SOURCE_ID, path, query, FETCH_OPTS, signal ? { signal } : undefined);
   return res.text();
 }
 
@@ -141,10 +142,10 @@ export const manganatoSource: MangaSource = {
     });
   },
 
-  async getChapters(mangaId: string): Promise<Chapter[]> {
+  async getChapters(mangaId: string, signal?: AbortSignal): Promise<Chapter[]> {
     return dedup.chapters.get(`chapters:${mangaId}`, async () => {
       try {
-        const html = await manganatoFetch(`/${mangaId}`);
+        const html = await manganatoFetch(`/${mangaId}`, "", signal);
         const chapters = parseChapterList(html);
         diag.log(`getChapters(${mangaId}) → ${chapters.length}`);
         if (chapters.length === 0) {
@@ -161,10 +162,10 @@ export const manganatoSource: MangaSource = {
     });
   },
 
-  async getChapterPages(chapterId: string): Promise<string[]> {
+  async getChapterPages(chapterId: string, signal?: AbortSignal): Promise<string[]> {
     return dedup.pages.get(`pages:${chapterId}`, async () => {
       try {
-        const html = await manganatoFetch(`/${chapterId}`);
+        const html = await manganatoFetch(`/${chapterId}`, "", signal);
         const images = parseChapterImages(html);
         diag.log(`getChapterPages(${chapterId}) → ${images.length}`);
         if (images.length === 0) {

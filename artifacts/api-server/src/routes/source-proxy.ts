@@ -37,7 +37,9 @@ const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> =
   "bato":         { referer: "https://bato.to/",                    origin: "https://bato.to" },
   "kakalot":      { referer: "https://chapmanganato.to/",           origin: "https://chapmanganato.to" },
   "manganato":    { referer: "https://chapmanganato.to/",           origin: "https://chapmanganato.to" },
-  "manganelo":    { referer: "https://readmanganelo.com/",          origin: "https://readmanganelo.com" },
+  // manganelo pages are on readmanganelo.com but CDN images are served from chapmanganato.to CDN;
+  // using chapmanganato.to as referer satisfies the CDN anti-hotlink check on web proxy paths.
+  "manganelo":    { referer: "https://chapmanganato.to/",           origin: "https://chapmanganato.to" },
   "naver":        { referer: "https://www.webtoons.com/",            origin: "https://www.webtoons.com" },
 };
 

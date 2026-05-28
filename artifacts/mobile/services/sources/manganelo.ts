@@ -44,12 +44,13 @@ const dedup = {
   pages: new InFlightDedup<string[]>(),
 };
 
-async function neleloFetch(path: string, query = "", useFallback = false): Promise<string> {
+async function neleloFetch(path: string, query = "", useFallback = false, signal?: AbortSignal): Promise<string> {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
   const opts = useFallback ? FALLBACK_OPTS : FETCH_OPTS;
   // On fallback, use "kakalot" proxy ID — already registered and points to chapmanganato.to.
   // On native the proxy ID is ignored; opts.siteUrl (FALLBACK_URL) is used directly.
   const proxyId = useFallback ? "kakalot" : SOURCE_ID;
-  const res = await proxiedFetch(proxyId, path, query, opts);
+  const res = await proxiedFetch(proxyId, path, query, opts, signal ? { signal } : undefined);
   return res.text();
 }
 
@@ -57,15 +58,15 @@ function encodeSearchQuery(q: string): string {
   return q.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
 }
 
-async function fetchListWithFallback(path: string, query: string): Promise<string> {
+async function fetchListWithFallback(path: string, query: string, signal?: AbortSignal): Promise<string> {
   try {
-    const html = await neleloFetch(path, query, false);
+    const html = await neleloFetch(path, query, false, signal);
     // If page returned no real content try fallback
     if (html.length < 500) throw new Error("empty response");
     return html;
   } catch {
     diag.log(`Primary fetch failed for ${path}${query}, trying fallback`);
-    return neleloFetch(path, query, true);
+    return neleloFetch(path, query, true, signal);
   }
 }
 
@@ -163,10 +164,10 @@ export const manganeloSource: MangaSource = {
     });
   },
 
-  async getChapters(mangaId: string): Promise<Chapter[]> {
+  async getChapters(mangaId: string, signal?: AbortSignal): Promise<Chapter[]> {
     return dedup.chapters.get(`chapters:${mangaId}`, async () => {
       try {
-        const html = await neleloFetch(`/${mangaId}`);
+        const html = await neleloFetch(`/${mangaId}`, "", false, signal);
         const chapters = parseChapterList(html);
         diag.log(`getChapters(${mangaId}) → ${chapters.length}`);
         if (chapters.length === 0) {
@@ -183,10 +184,10 @@ export const manganeloSource: MangaSource = {
     });
   },
 
-  async getChapterPages(chapterId: string): Promise<string[]> {
+  async getChapterPages(chapterId: string, signal?: AbortSignal): Promise<string[]> {
     return dedup.pages.get(`pages:${chapterId}`, async () => {
       try {
-        const html = await neleloFetch(`/${chapterId}`);
+        const html = await neleloFetch(`/${chapterId}`, "", false, signal);
         const images = parseChapterImages(html);
         diag.log(`getChapterPages(${chapterId}) → ${images.length}`);
         if (images.length === 0) {
