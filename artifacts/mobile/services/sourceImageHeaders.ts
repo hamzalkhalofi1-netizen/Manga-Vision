@@ -21,6 +21,7 @@ const SOURCE_REFERERS: Record<string, string> = {
   mangadex: "https://mangadex.org/",
   mangaplus: "https://mangaplus.shueisha.co.jp/",
   naver: "https://www.webtoons.com/",
+  bato: "https://bato.to/",
 };
 
 export interface ImageHeaders {

@@ -129,32 +129,42 @@ function parseMangaList(html: string): Manga[] {
   diag.log(`parseMangaList size=${html.length} CF=${isCloudflarePage(html)}`);
 
   // Strategy 1: rendered anchor → img pattern (works after WebView hydration)
-  // Bato card: <a href="/title/12345-one-piece"> … <img src="…" alt="One Piece"> …
+  // Bato card: <a href="/title/12345-one-piece"> … <img src/data-src="…" alt="One Piece"> …
+  // Matches both src and data-src attributes in either order relative to alt.
   const cardRe =
-    /<a[^>]+href="\/title\/([\d]+(?:-[\w-]+)?)"[^>]*>[\s\S]{0,800}?<img[^>]+src="([^"]+)"[^>]+alt="([^"]{1,150})"/g;
+    /<a[^>]+href="\/title\/([\d]+(?:-[\w-]+)?)"[^>]*>[\s\S]{0,800}?<img[^>]+(?:(?:data-src|src)="([^"]+)"[^>]+alt|alt="([^"]{1,150})"[^>]+(?:data-src|src)="([^"]+)")[^>]*>/g;
   while ((m = cardRe.exec(html)) !== null) {
-    const [, id, cover, title] = m;
-    if (id && !seen.has(id)) {
-      seen.add(id);
-      results.push({ id, title: title.trim(), coverUrl: cover, sourceId: SOURCE_ID });
-    }
+    const [, id, srcFirst, altSecond, srcSecond] = m;
+    if (!id || seen.has(id)) continue;
+    // m[2] & m[3]: src-then-alt order; m[3] & m[4]: alt-then-src order
+    const cover = srcFirst ?? srcSecond ?? "";
+    const title = (altSecond ?? "").trim();
+    if (!title) continue;
+    seen.add(id);
+    results.push({ id, title, coverUrl: cover, sourceId: SOURCE_ID });
   }
   if (results.length > 0) {
-    diag.log(`parseMangaList s1 (card HTML) → ${results.length}`);
+    diag.log(`parseMangaList s1 (card HTML src/data-src) → ${results.length}`);
     return results;
   }
 
-  // Strategy 1b: img before anchor text — sometimes alt is on the img inside anchor
-  const re1b = /<a[^>]+href="\/title\/([\d]+(?:-[\w-]+)?)"[^>]*>[\s\S]{0,300}?<img[^>]+alt="([^"]{1,150})"[^>]+src="([^"]+)"/g;
+  // Strategy 1b: simpler fallback — anchor href + nearby img (any attribute order)
+  const re1b =
+    /<a[^>]+href="\/title\/([\d]+(?:-[\w-]+)?)"[^>]*>[\s\S]{0,600}?<img[^>]+(?:data-src|src)="([^"]+)"[^>]*(?:alt="([^"]{1,150})")?/g;
   while ((m = re1b.exec(html)) !== null) {
-    const [, id, title, cover] = m;
+    const [, id, cover, title] = m;
     if (id && !seen.has(id)) {
       seen.add(id);
-      results.push({ id, title: title.trim(), coverUrl: cover, sourceId: SOURCE_ID });
+      results.push({
+        id,
+        title: (title ?? id.replace(/^\d+-/, "").replace(/-/g, " ")).trim(),
+        coverUrl: cover,
+        sourceId: SOURCE_ID,
+      });
     }
   }
   if (results.length > 0) {
-    diag.log(`parseMangaList s1b (alt-first) → ${results.length}`);
+    diag.log(`parseMangaList s1b (anchor+img fallback) → ${results.length}`);
     return results;
   }
 
@@ -229,7 +239,7 @@ interface BatoMangaDetail {
   description: string;
   coverUrl: string;
   status?: string;
-  authors?: string[];
+  author?: string;
   genres?: string[];
 }
 
@@ -245,18 +255,23 @@ function parseMangaDetail(html: string, id: string): BatoMangaDetail {
       const status = String(data.status ?? data.origStatus ?? "");
 
       const authorsRaw = data.authors ?? data.author ?? [];
-      const authors = Array.isArray(authorsRaw)
-        ? (authorsRaw as Array<Record<string, unknown>>).map((a) => String(a.name ?? a))
+      const authorList = Array.isArray(authorsRaw)
+        ? (authorsRaw as Array<Record<string, unknown>>).map((a) =>
+            typeof a === "string" ? a : String(a.name ?? a)
+          )
         : [String(authorsRaw)];
+      const author = authorList.filter(Boolean).join(", ") || undefined;
 
       const genresRaw = data.genres ?? data.genre ?? data.cats ?? [];
       const genres = Array.isArray(genresRaw)
-        ? (genresRaw as Array<Record<string, unknown>>).map((g) => String(g.name ?? g))
+        ? (genresRaw as Array<Record<string, unknown>>).map((g) =>
+            typeof g === "string" ? g : String(g.name ?? g)
+          )
         : [];
 
       if (title) {
-        diag.log(`parseMangaDetail(${id}) __NEXT_DATA__ → "${title}"`);
-        return { title, description, coverUrl, status, authors, genres };
+        diag.log(`parseMangaDetail(${id}) __NEXT_DATA__ → "${title}" author="${author ?? ""}"`);
+        return { title, description, coverUrl, status, author, genres };
       }
     }
   }
@@ -579,7 +594,7 @@ export const batoSource: MangaSource = {
           coverUrl: detail.coverUrl,
           description: detail.description,
           status: toMangaStatus(detail.status),
-          authors: detail.authors,
+          author: detail.author,
           genres: detail.genres,
           sourceId: SOURCE_ID,
         };
