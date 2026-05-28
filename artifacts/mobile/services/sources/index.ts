@@ -6,6 +6,9 @@ import { naverSource } from "./naver";
 import { mangafireSource } from "./mangafire";
 import { asuraSource } from "./asura";
 import { batoSource } from "./bato";
+import { kakalotSource } from "./kakalot";
+import { manganeloSource } from "./manganelo";
+import { manganatoSource } from "./manganato";
 import { SourceRegistry } from "./SourceRegistry";
 
 export { SourceError, SourceErrorType } from "./fetchClient";
@@ -84,6 +87,39 @@ SourceRegistry.registerAll([
       isEnabled: true,
       tags: ["scraper", "cloudflare", "community"],
       websiteUrl: "https://bato.to",
+    },
+  },
+  {
+    source: kakalotSource,
+    meta: {
+      language: "en",
+      nsfw: false,
+      requiresVerification: false,
+      isEnabled: true,
+      tags: ["scraper", "kakalot-family"],
+      websiteUrl: "https://chapmanganato.to",
+    },
+  },
+  {
+    source: manganeloSource,
+    meta: {
+      language: "en",
+      nsfw: false,
+      requiresVerification: false,
+      isEnabled: true,
+      tags: ["scraper", "kakalot-family"],
+      websiteUrl: "https://readmanganelo.com",
+    },
+  },
+  {
+    source: manganatoSource,
+    meta: {
+      language: "en",
+      nsfw: false,
+      requiresVerification: false,
+      isEnabled: true,
+      tags: ["scraper", "kakalot-family"],
+      websiteUrl: "https://chapmanganato.to",
     },
   },
   {
@@ -188,5 +224,8 @@ export {
   mangafireSource,
   asuraSource,
   batoSource,
+  kakalotSource,
+  manganeloSource,
+  manganatoSource,
 };
 export * from "./types";

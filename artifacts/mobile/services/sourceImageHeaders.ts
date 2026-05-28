@@ -22,6 +22,10 @@ const SOURCE_REFERERS: Record<string, string> = {
   mangaplus: "https://mangaplus.shueisha.co.jp/",
   naver: "https://www.webtoons.com/",
   bato: "https://bato.to/",
+  // MangaKakalot family — all three adapters serve images from chapmanganato.to CDN
+  kakalot: "https://chapmanganato.to/",
+  manganato: "https://chapmanganato.to/",
+  manganelo: "https://chapmanganato.to/",
 };
 
 export interface ImageHeaders {
