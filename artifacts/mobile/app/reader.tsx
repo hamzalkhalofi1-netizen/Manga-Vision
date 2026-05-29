@@ -40,6 +40,7 @@ import { useTokens } from "@/context/TokenContext";
 import { useInpaintServer } from "@/hooks/useInpaintServer";
 import { callInpaintServer } from "@/services/inpaintClient";
 import { useReaderPreloader } from "@/hooks/useReaderPreloader";
+import { getApiBase } from "@/services/api";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -158,8 +159,9 @@ export default function ReaderScreen() {
   const bottomPadding = Platform.OS === "web" ? 34 : insets.bottom;
   const isVertical = readerSettings.readingMode === "vertical";
   const isRTL = readerSettings.targetLanguage === "ar";
-  // Empty string = relative URL base; works with the artifact router on any access origin.
-  const apiBase = "";
+  // getApiBase() returns "" on web (proxy handles routing) and the full
+  // EXPO_PUBLIC_API_URL on native so Expo Go / APK can reach the API server.
+  const apiBase = getApiBase();
 
   // ─── Load pages ────────────────────────────────────────────────────────────
   // Depends on activeChapterId (state), not params.chapterId, so next/prev

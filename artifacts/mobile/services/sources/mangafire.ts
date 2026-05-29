@@ -382,61 +382,137 @@ function parseChapters(raw: unknown, slugContext: string): Chapter[] {
 function parseChapterImages(raw: unknown): string[] {
   if (!raw || typeof raw !== "object") return [];
   const json = raw as Record<string, unknown>;
-  const result = json.result as Record<string, unknown> | undefined;
-
-  // Images can be at result.images or root level
-  const images = result?.images ?? json.images ?? result?.pages ?? [];
-  if (!Array.isArray(images)) return [];
-
+  const result = json.result;
   const MF_CDN = "https://cdn.mangafire.to";
 
-  return images
-    .map((img: unknown): string => {
-      // Tuple format: [url, width, height] or [url]
-      if (Array.isArray(img)) {
-        const url = img[0];
-        if (typeof url === "string") {
-          return url.startsWith("http") ? url : `${MF_CDN}/${url}`;
+  // Collect candidate image items from all known response shapes.
+  // MangaFire has changed its AJAX format several times:
+  //   v1: { result: { images: [[url, w, h], ...] } }
+  //   v2: { result: { sources: [{url, width, height}, ...] } }
+  //   v3: { result: [[url, w, h], ...] }   ← result is a direct array
+  //   v4: { result: { pages: [...] } }
+  //   v5: { images: [...] }                ← images at root
+  let candidates: unknown[] = [];
+
+  if (Array.isArray(result)) {
+    // v3: result is a direct array of tuples
+    candidates = result;
+    console.log(`[mangafire] parseChapterImages: result is direct array (${candidates.length} items)`);
+  } else if (result && typeof result === "object") {
+    const r = result as Record<string, unknown>;
+    // Try all known keys in preference order
+    for (const key of ["images", "sources", "pages", "data", "imgs"]) {
+      if (Array.isArray(r[key]) && (r[key] as unknown[]).length > 0) {
+        candidates = r[key] as unknown[];
+        console.log(`[mangafire] parseChapterImages: result.${key} (${candidates.length} items)`);
+        break;
+      }
+    }
+    // If still empty, try to find any array value in result
+    if (candidates.length === 0) {
+      for (const val of Object.values(r)) {
+        if (Array.isArray(val) && val.length > 0) {
+          candidates = val;
+          console.log(`[mangafire] parseChapterImages: result (fallback array key, ${candidates.length} items)`);
+          break;
         }
-        return "";
       }
-      if (typeof img === "string") {
-        return img.startsWith("http") ? img : `${MF_CDN}/${img}`;
+    }
+  }
+
+  // Root-level fallback
+  if (candidates.length === 0) {
+    for (const key of ["images", "sources", "pages", "imgs"]) {
+      if (Array.isArray(json[key]) && (json[key] as unknown[]).length > 0) {
+        candidates = json[key] as unknown[];
+        console.log(`[mangafire] parseChapterImages: root.${key} (${candidates.length} items)`);
+        break;
       }
-      if (img && typeof img === "object") {
-        const o = img as Record<string, unknown>;
-        const url = String(o.url ?? o.src ?? o.imageUrl ?? "");
-        return url.startsWith("http") ? url : url ? `${MF_CDN}/${url}` : "";
+    }
+  }
+
+  if (candidates.length === 0) {
+    console.warn(`[mangafire] parseChapterImages: no image array found. Top-level keys:`, Object.keys(json).join(", "),
+      result && typeof result === "object" ? `result keys: ${Object.keys(result as object).join(", ")}` : `result type: ${typeof result}`);
+    return [];
+  }
+
+  const seen = new Set<string>();
+
+  const toUrl = (img: unknown): string => {
+    if (Array.isArray(img)) {
+      // Tuple: [url, width, height] or [url]
+      const url = img[0];
+      if (typeof url === "string" && url) {
+        return url.startsWith("http") ? url : `${MF_CDN}/${url.replace(/^\/+/, "")}`;
       }
       return "";
-    })
-    .filter((u) => u.startsWith("http"));
+    }
+    if (typeof img === "string" && img) {
+      return img.startsWith("http") ? img : `${MF_CDN}/${img.replace(/^\/+/, "")}`;
+    }
+    if (img && typeof img === "object") {
+      const o = img as Record<string, unknown>;
+      // Handles {url, src, imageUrl, image, link, path}
+      const raw = String(o.url ?? o.src ?? o.imageUrl ?? o.image ?? o.link ?? o.path ?? "");
+      return raw.startsWith("http") ? raw : raw ? `${MF_CDN}/${raw.replace(/^\/+/, "")}` : "";
+    }
+    return "";
+  };
+
+  const urls = candidates
+    .map(toUrl)
+    .filter((u): u is string => {
+      if (!u || !u.startsWith("http")) return false;
+      if (seen.has(u)) return false;
+      seen.add(u);
+      return true;
+    });
+
+  console.log(`[mangafire] parseChapterImages: ${candidates.length} candidates → ${urls.length} unique URLs`);
+  return urls;
 }
 
 function parseChapterImagesFromHtml(html: string): string[] {
-  // MangaFire reader loads images via JS, but embeds them in a data attribute
-  // or inline script. Try multiple patterns.
   const urls = new Set<string>();
-
-  // Pattern 1: img elements with data-src or src
-  const re1 = /<img[^>]+(?:data-src|src)="(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"/gi;
   let m: RegExpExecArray | null;
-  while ((m = re1.exec(html)) !== null) {
-    if (!m[1].includes("logo") && !m[1].includes("icon")) urls.add(m[1]);
+
+  // Pattern 1: any img src variant targeting the CDN
+  // Covers: src, data-src, data-lazy-src, data-original, data-lazyload, data-url
+  const flatImgRe = /(?:data-(?:lazy-)?src|data-original|data-lazyload|data-url|src)="(https?:\/\/[^"]*cdn\.mangafire\.to[^"]*\.(?:jpg|jpeg|png|webp)(?:\?[^"]*)?)"/gi;
+  while ((m = flatImgRe.exec(html)) !== null) {
+    const u = m[1];
+    if (!u.includes("logo") && !u.includes("icon") && !u.includes("avatar")) urls.add(u);
   }
 
-  // Pattern 2: JSON-embedded image arrays in scripts (tuples or strings)
-  const scriptRe = /"(?:pages|images|imageUrls?)":\s*\[([^\]]{20,})\]/g;
+  // Pattern 2: any CDN URL in script blocks or data attributes
+  const cdnRe = /(https?:\/\/cdn\.mangafire\.to\/(?:media|assets|uploads|images|i)[^"'\s<>]{4,300}\.(?:jpg|jpeg|png|webp)(?:\?[^"'\s<>]*)?)/gi;
+  while ((m = cdnRe.exec(html)) !== null) {
+    const u = m[1];
+    if (!u.includes("logo") && !u.includes("icon")) urls.add(u);
+  }
+
+  // Pattern 3: JSON arrays in scripts (images/pages/sources as property)
+  const scriptRe = /"(?:pages|images|sources|imgs|imageUrls?|urls?)":\s*\[([^\]]{10,})\]/g;
   while ((m = scriptRe.exec(html)) !== null) {
     const inner = m[1];
-    const imgRe2 = /"(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp)[^"]*)"/gi;
-    let im: RegExpExecArray | null;
-    while ((im = imgRe2.exec(inner)) !== null) urls.add(im[1]);
+    const urlRe = /"(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp)(?:\?[^"]*)?)"/gi;
+    let um: RegExpExecArray | null;
+    while ((um = urlRe.exec(inner)) !== null) urls.add(um[1]);
   }
 
-  // Pattern 3: bare CDN URL in scripts
-  const cdnRe = /(https?:\/\/cdn\.mangafire\.to\/[^"'\s]{4,200}\.(?:jpg|jpeg|png|webp))/gi;
-  while ((m = cdnRe.exec(html)) !== null) urls.add(m[1]);
+  // Pattern 4: tuple arrays like [["https://...", 800, 1200], ...]
+  const tupleRe = /\["(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp)(?:\?[^"]*)?)",\s*\d/gi;
+  while ((m = tupleRe.exec(html)) !== null) urls.add(m[1]);
+
+  // Pattern 5: window.__NUXT__ or window.__data__ style JSON blobs
+  const windowRe = /window\.__[A-Z_]+__\s*=\s*(\{[\s\S]{1,50000}?\})\s*;/g;
+  while ((m = windowRe.exec(html)) !== null) {
+    const blob = m[1];
+    const urlRe = /"(https?:\/\/cdn\.mangafire\.to\/[^"]+\.(?:jpg|jpeg|png|webp)(?:\?[^"]*)?)"/gi;
+    let um: RegExpExecArray | null;
+    while ((um = urlRe.exec(blob)) !== null) urls.add(um[1]);
+  }
 
   console.log(`[mangafire] parseChapterImagesFromHtml → ${urls.size} images`);
   return [...urls];
@@ -615,7 +691,7 @@ export const mangafireSource: MangaSource = {
         // Native: navigate the WebView to the reader page so JS can run.
         // 7 s is enough for the React reader to fetch images internally and
         // render <img> elements into the DOM.
-        const resp = await webViewBridge.fetchRendered("mangafire", fullReaderUrl, 7000);
+        const resp = await webViewBridge.fetchRendered("mangafire", fullReaderUrl, 12000);
         if (!resp.ok && (resp.status === 403 || resp.status === 503)) {
           throw new SourceError(
             "MangaFire chapter reader blocked by Cloudflare. Please verify in source settings.",

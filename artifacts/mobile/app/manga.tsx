@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { getApiBase } from "@/services/api";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -120,27 +121,42 @@ export default function MangaScreen() {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (userKey) headers["X-Gemini-Key"] = userKey;
 
-      const res = await fetch("/api/translate", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          text: manga.description,
-          targetLanguage: readerSettings.targetLanguage,
-          context: `Manga/manhwa description for: ${manga.title}. Genre: ${manga.genres?.join(", ")}`,
-        }),
-      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 30_000);
+      let res: Response;
+      try {
+        res = await fetch(`${getApiBase()}/api/translate`, {
+          method: "POST",
+          headers,
+          signal: controller.signal,
+          body: JSON.stringify({
+            text: manga.description,
+            targetLanguage: readerSettings.targetLanguage,
+            context: `Manga/manhwa description for: ${manga.title}. Genre: ${manga.genres?.join(", ")}`,
+          }),
+        });
+      } finally {
+        clearTimeout(timer);
+      }
       if (res.status === 429) {
         if (activeTokenId) markRateLimited(activeTokenId, 70_000);
         Alert.alert("Rate Limited", "This API key hit its limit. Add another key in Settings.");
         return;
       }
-      if (!res.ok) throw new Error("Translation failed");
+      if (!res.ok) throw new Error(`Translation server error (${res.status})`);
       const data = await res.json();
       setTranslatedDesc(data.translatedText);
       incrementTranslationCount();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
-      Alert.alert("Translation Error", "Could not translate. Check your connection.");
+    } catch (err) {
+      const msg = err instanceof Error
+        ? err.name === "AbortError"
+          ? "Network timeout — translation server took too long."
+          : err.message.includes("Failed to fetch") || err.message.includes("Network")
+            ? "Translation server unavailable. Check your connection."
+            : err.message
+        : "Could not translate. Check your connection.";
+      Alert.alert("Translation Error", msg);
     } finally {
       setTranslating(false);
     }

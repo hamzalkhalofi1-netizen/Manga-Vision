@@ -44,6 +44,14 @@ if [[ -n "${REPLIT_DEV_DOMAIN:-}" && -z "${EXPO_PACKAGER_PROXY_URL:-}" ]]; then
   export REACT_NATIVE_PACKAGER_HOSTNAME="${REPLIT_DEV_DOMAIN}"
 fi
 
+# EXPO_PUBLIC_API_URL: absolute URL used by native builds (APK / Expo Go) to reach
+# the API server. On web the proxy handles /api/* so this is only needed on native.
+# Expo inlines EXPO_PUBLIC_* vars at bundle time — must be set before `expo start`.
+if [[ -n "${REPLIT_DEV_DOMAIN:-}" && -z "${EXPO_PUBLIC_API_URL:-}" ]]; then
+  export EXPO_PUBLIC_API_URL="https://${REPLIT_DEV_DOMAIN}"
+fi
+echo "[start.sh] EXPO_PUBLIC_API_URL=${EXPO_PUBLIC_API_URL:-<not set>}"
+
 # ── Suppress known-unfixable Replit container issues ──────────────────────
 # EXPO_NO_DEVTOOLS=1: skip DevTools auto-install (requires libglib absent on Replit).
 # DO NOT use CI=1 (disables hot reload) or EXPO_UNSTABLE_HEADLESS=1.

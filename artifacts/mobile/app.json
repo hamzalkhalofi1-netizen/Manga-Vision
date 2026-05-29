@@ -17,7 +17,8 @@
       "supportsTablet": false
     },
     "android": {
-      "backgroundColor": "#080808"
+      "backgroundColor": "#080808",
+      "package": "com.hamzalkhalofi.mangaverse"
     },
     "web": {
       "favicon": "./assets/images/icon.png",
@@ -31,6 +32,11 @@
     ],
     "experiments": {
       "typedRoutes": false
+    },
+    "extra": {
+      "eas": {
+        "projectId": "3caf7463-a86a-4dcb-b001-caddd4848f4e"
+      }
     }
   }
 }
