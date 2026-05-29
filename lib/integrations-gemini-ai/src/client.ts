@@ -6,7 +6,7 @@ const apiKey = process.env.AI_INTEGRATIONS_GEMINI_API_KEY ?? "placeholder";
 export const ai = new GoogleGenAI({
   apiKey,
   httpOptions: {
-    apiVersion: "v1beta",
+    apiVersion: "",
     baseUrl,
   },
 });
