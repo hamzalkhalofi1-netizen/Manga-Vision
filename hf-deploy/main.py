@@ -159,3 +159,5 @@ def inpaint_and_translate(req: InpaintRequest):
     canvas_b64 = encode_image(inpainted)
 
     return InpaintResponse(canvas_b64=canvas_b64, translated_blocks=translated_blocks)
+
+#hamza
