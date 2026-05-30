@@ -35,7 +35,19 @@ interface QueueParams {
   onPageError?: (pageIndex: number, errorMessage: string) => void;
 }
 
-const DELAY_BETWEEN_MS = 1500;
+/**
+ * How many pages to translate simultaneously.
+ * Gemini 2.5 Flash has generous rate limits; 4 parallel requests is safe
+ * while providing ~4× speed improvement over sequential processing.
+ */
+const PARALLEL_BATCH_SIZE = 4;
+
+/**
+ * Delay between batches (ms). Prevents bursting too many requests at once
+ * and gives the API breathing room between batches.
+ */
+const BATCH_DELAY_MS = 500;
+
 const MAX_RETRIES = 2;
 const PAGE_TIMEOUT_MS = 60_000;
 
@@ -104,7 +116,7 @@ export function getTranslationCacheSize(): number {
   return pageCache.size;
 }
 
-// ── Queue ──────────────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -119,6 +131,8 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
     );
   });
 }
+
+// ── Queue ──────────────────────────────────────────────────────────────────────
 
 class TranslationQueueManager {
   private abortController: AbortController | null = null;
@@ -166,89 +180,139 @@ class TranslationQueueManager {
 
     emit(null);
 
+    // ── Phase 1: Instant cache hits ─────────────────────────────────────────
+    // Resolve all cached pages immediately before starting any network work.
+    // This makes revisited chapters / pages appear instantly.
+
+    const pendingIndices: number[] = [];
+
     for (let i = 0; i < pages.length; i++) {
       if (this.abortController.signal.aborted) break;
 
-      emit(i);
-
-      const pageUrl = pages[i];
-      let success = false;
-
-      const key = cacheKey(pageUrl, targetLanguage);
+      const key    = cacheKey(pages[i], targetLanguage);
       const cached = pageCache.get(key);
+
       if (cached) {
         console.log(`[TranslationQueue] Page ${i} — cache hit`);
         onPageTranslated(i, cached.regions, cached.summary);
-        success = true;
         completed++;
-        continue;
+      } else {
+        pendingIndices.push(i);
       }
+    }
 
-      for (let attempt = 0; attempt < MAX_RETRIES && !success; attempt++) {
-        if (this.abortController.signal.aborted) break;
+    emit(null);
 
-        try {
-          // ── Decentralized HF inpaint server path ──────────────────────────
-          if (inpaintServerUrl) {
-            const result = await callInpaintServer(inpaintServerUrl, pageUrl, [], PAGE_TIMEOUT_MS);
-            pageCache.set(key, { regions: result.regions, summary: result.summary });
-            scheduleSave();
-            onPageTranslated(i, result.regions, result.summary);
-            success = true;
-            completed++;
-            continue;
+    // ── Phase 2: Parallel batch processing ─────────────────────────────────
+    // Process uncached pages PARALLEL_BATCH_SIZE at a time.
+    // Each page retries independently; rate-limit on any page aborts all.
+
+    for (
+      let batchStart = 0;
+      batchStart < pendingIndices.length;
+      batchStart += PARALLEL_BATCH_SIZE
+    ) {
+      if (this.abortController.signal.aborted) break;
+
+      const batch = pendingIndices.slice(batchStart, batchStart + PARALLEL_BATCH_SIZE);
+
+      console.log(
+        `[TranslationQueue] Batch ${Math.floor(batchStart / PARALLEL_BATCH_SIZE) + 1}` +
+        ` — pages [${batch.join(", ")}]`
+      );
+
+      await Promise.allSettled(
+        batch.map(async (pageIdx) => {
+          if (this.abortController!.signal.aborted) return;
+
+          emit(pageIdx);
+
+          const pageUrl = pages[pageIdx];
+          const key     = cacheKey(pageUrl, targetLanguage);
+
+          for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+            if (this.abortController!.signal.aborted) return;
+
+            try {
+              // ── Inpaint server path ─────────────────────────────────────
+              if (inpaintServerUrl) {
+                const result = await callInpaintServer(
+                  inpaintServerUrl, pageUrl, [], PAGE_TIMEOUT_MS
+                );
+                pageCache.set(key, { regions: result.regions, summary: result.summary });
+                scheduleSave();
+                onPageTranslated(pageIdx, result.regions, result.summary);
+                completed++;
+                console.log(`[TranslationQueue] Page ${pageIdx} — inpaint success`);
+                return;
+              }
+
+              // ── Direct Gemini path ──────────────────────────────────────
+              if (!userApiKey) {
+                const msg =
+                  "No Gemini API key. Open Settings → Gemini API Keys and add your key.";
+                console.error(`[TranslationQueue] Page ${pageIdx} — ${msg}`);
+                this.abortController?.abort();
+                onPageError?.(pageIdx, msg);
+                return;
+              }
+
+              console.log(
+                `[TranslationQueue] Page ${pageIdx} — Gemini direct (attempt ${attempt + 1})`
+              );
+
+              const result = await withTimeout(
+                translateImage(pageUrl, targetLanguage, userApiKey, sourceId),
+                PAGE_TIMEOUT_MS
+              );
+
+              pageCache.set(key, { regions: result.regions, summary: result.summary });
+              scheduleSave();
+              onPageTranslated(pageIdx, result.regions, result.summary);
+              completed++;
+
+              console.log(
+                `[TranslationQueue] Page ${pageIdx} — success regions=${result.regions.length}`
+              );
+              return;
+            } catch (err) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              console.warn(
+                `[TranslationQueue] Page ${pageIdx} attempt ${attempt + 1} failed: ${errMsg}`
+              );
+
+              if (errMsg === "RATE_LIMITED") {
+                onRateLimited?.();
+                this.abortController?.abort();
+                return;
+              }
+
+              if (errMsg.includes("API_KEY_INVALID")) {
+                this.abortController?.abort();
+                onPageError?.(
+                  pageIdx,
+                  "Your Gemini API key is not valid. Open Settings → Gemini API Keys and add a working key."
+                );
+                return;
+              }
+
+              if (attempt < MAX_RETRIES - 1) {
+                await sleep(1500 * (attempt + 1));
+              } else {
+                failed++;
+                onPageError?.(pageIdx, errMsg);
+              }
+            }
           }
+        })
+      );
 
-          // ── Direct Gemini path ─────────────────────────────────────────────
-          if (!userApiKey) {
-            const msg = "No Gemini API key. Open Settings → Gemini API Keys and add your key.";
-            console.error(`[TranslationQueue] Page ${i} — ${msg}`);
-            this.abortController?.abort();
-            onPageError?.(i, msg);
-            break;
-          }
-
-          console.log(`[TranslationQueue] Page ${i} — calling Gemini directly (attempt ${attempt + 1})`);
-
-          const result = await withTimeout(
-            translateImage(pageUrl, targetLanguage, userApiKey, sourceId),
-            PAGE_TIMEOUT_MS
-          );
-
-          pageCache.set(key, { regions: result.regions, summary: result.summary });
-          scheduleSave();
-          onPageTranslated(i, result.regions, result.summary);
-          success = true;
-          completed++;
-
-          console.log(`[TranslationQueue] Page ${i} — success, regions=${result.regions.length}`);
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          console.warn(`[TranslationQueue] Page ${i} attempt ${attempt + 1} failed: ${errMsg}`);
-
-          if (errMsg === "RATE_LIMITED") {
-            onRateLimited?.();
-            this.abortController?.abort();
-            break;
-          }
-
-          if (errMsg.includes("API_KEY_INVALID")) {
-            this.abortController?.abort();
-            onPageError?.(i, "Your Gemini API key is not valid. Open Settings → Gemini API Keys and add a working key.");
-            break;
-          }
-
-          if (attempt < MAX_RETRIES - 1) {
-            await sleep(1500 * (attempt + 1));
-          } else {
-            failed++;
-            onPageError?.(i, errMsg);
-          }
-        }
-      }
-
-      if (!this.abortController.signal.aborted && i < pages.length - 1) {
-        await sleep(DELAY_BETWEEN_MS);
+      // Small delay between batches — courteous to API rate limits
+      if (
+        batchStart + PARALLEL_BATCH_SIZE < pendingIndices.length &&
+        !this.abortController.signal.aborted
+      ) {
+        await sleep(BATCH_DELAY_MS);
       }
     }
 

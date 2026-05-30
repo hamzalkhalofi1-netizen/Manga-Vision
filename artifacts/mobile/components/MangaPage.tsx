@@ -49,6 +49,13 @@ export interface TextRegion {
    * Falls back to a rectangle derived from x/y/w/h if absent.
    */
   polygon?: BubblePolygon;
+  /**
+   * 4–8 point clockwise polygon tracing the FULL speech bubble outline.
+   * Larger than polygon — includes the bubble border, tail, and pointer.
+   * Used as the mask/erase boundary and text container reference.
+   * Falls back to an expanded OCR polygon when absent.
+   */
+  bubblePolygon?: [number, number][];
   /** "speech" | "thought" | "sfx" | "sign" | "narration" | "title" */
   type: string;
   /** Hex color of the bubble interior background */

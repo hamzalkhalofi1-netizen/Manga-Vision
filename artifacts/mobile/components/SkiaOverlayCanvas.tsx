@@ -1,95 +1,90 @@
 /**
  * SkiaOverlayCanvas — Professional manga scanlation renderer.
  *
- * ── Architecture (Koharu-inspired) ──────────────────────────────────────────
+ * ── Rendering architecture ───────────────────────────────────────────────────
  *
- * Two independent geometry layers:
- *   MASK layer   → original glyph polygon  (covers ink exactly)
- *   LAYOUT layer → bubble-estimated area   (BUBBLE_LAYOUT_SCALE × polygon)
+ * Three SVG layers + one React Native text layer per region:
  *
- * ── Mask shape ──────────────────────────────────────────────────────────────
+ *   LAYER 1 — ERASE (SVG):
+ *     Solid fill using the bubble's bgColor at full opacity.
+ *     Covers the original manga text completely.
+ *     Uses bubblePolygon (if provided by Gemini) or OCR polygon expanded 35%.
+ *     Smooth bezier path — rounds corners to follow bubble silhouette.
  *
- * Each mask layer uses a SMOOTH BEZIER PATH (quadratic midpoint-bezier) rather
- * than a strict polygon.  The midpoint-bezier technique rounds every corner so
- * the mask silhouette matches the natural balloon shape of a manga speech
- * bubble rather than a hard-edged quadrilateral.
+ *   LAYER 2 — DARK BACKGROUND (SVG):
+ *     rgba(0,0,0,0.78) fill inside the bubble polygon.
+ *     Provides a consistent, readable surface for translated text.
+ *     Skipped for SFX regions (sound effects sit on the artwork directly).
  *
- * ── Color system ────────────────────────────────────────────────────────────
+ *   LAYER 3 — BORDER (SVG):
+ *     Thin white stroke at 18% opacity around the bubble boundary.
+ *     Polished edge that separates the overlay from artwork.
+ *     Skipped for SFX.
  *
- * Per-region mask color priority (highest first):
- *   1. Real pixel sample — BubbleColorSampler reads actual image pixels at the
- *      polygon centroid + 4 inner offsets (web + CORS only).
- *   2. Gemini bgColor — AI-sampled bubble fill color from the OCR model.
- *      Primary source on native / CORS-blocked web.
+ *   LAYER 4 — TEXT (React Native View + Text):
+ *     White text centered in TEXT_SAFE (85%) of the bubble AABB.
+ *     overflow: hidden prevents any bleed outside the container.
+ *     Font auto-sized from 24 → 8 px until all text fits.
+ *     Arabic RTL, balanced line distribution.
  *
- * ── Adaptive opacity ─────────────────────────────────────────────────────────
+ * ── Bubble polygon source (priority order) ──────────────────────────────────
  *
- * Halo and mid-ring opacities are scaled by the effective mask color luminance:
- *   Light bubbles (lum > 0.85) → fainter halos
- *   Dark bubbles  (lum < 0.25) → stronger halos
- *   Mid-tone                   → standard values
+ *   1. region.bubblePolygon — Gemini-provided full bubble outline (best)
+ *   2. OCR polygon (region.polygon) expanded by 35% — approximate fallback
+ *   3. Bounding-box rectangle expanded by 35% — last resort
  *
- * ── Region filtering ─────────────────────────────────────────────────────────
+ * ── Debug mode ───────────────────────────────────────────────────────────────
  *
- * Client-side heuristics suppress non-bubble content that Gemini occasionally
- * includes: UI overlays, subtitle banners, credits, watermarks, tiny decorations.
- * These are detected by geometry: abnormal aspect ratios, page-edge position,
- * excessive width, or sub-threshold area.
+ *   Set DEBUG_OVERLAY = true to see:
+ *   • Red outline: bubble polygon boundary
+ *   • Blue dashed outline: OCR glyph polygon
+ *   • Green dashed outline: text container (safe zone)
+ *   • Font size + container dimensions label
  */
 
 import React, { memo, useMemo } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
-import Svg, { Path } from "react-native-svg";
+import Svg, { Path, Rect } from "react-native-svg";
 import type { TextRegion } from "./MangaPage";
 import { scaleFontToFit, scaleSFXFont } from "./DynamicFontScaler";
 import { ARABIC_FONT_FAMILY } from "./ArabicTypesettingEngine";
-import { resolveFromCss, resolveFromGeminiTextColor } from "./AdaptiveTextColorEngine";
-import { useRegionColors } from "./useRegionColors";
 
-interface Props {
-  regions:   TextRegion[];
-  displayW:  number;
-  displayH:  number;
-  isRTL?:    boolean;
-  /** Full URL of the manga page image — used for per-region pixel color sampling. */
-  imageUri?: string;
-}
+// ── Debug ─────────────────────────────────────────────────────────────────────
+
+/**
+ * DEBUG_OVERLAY — set true to draw polygon boundaries, font size labels,
+ * and container outlines. NEVER commit with true.
+ */
+const DEBUG_OVERLAY = false;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-/**
- * BUBBLE_LAYOUT_SCALE — text container expansion factor beyond the glyph polygon.
- *
- * Gemini's OCR polygon is glyph-tight.  Speech bubbles are ~1.3–1.5× larger
- * than their text column.  1.35 is the midpoint.  Applies to TEXT CONTAINER
- * and font sizing only — SVG mask polygons always use original coordinates.
- */
-const BUBBLE_LAYOUT_SCALE = 1.35;
+/** Fraction of the bubble AABB used for the text container and font fitting. */
+const TEXT_SAFE = 0.85;
 
 /**
- * CORE_EXPAND — core mask expansion in pixels.
- *
- * 8 px covers anti-aliased glyph fringe + any slight OCR polygon registration
- * error.  Larger than the previous 4 px to ensure ink is fully hidden even
- * when the Gemini polygon clips the descenders or stroke tails.
+ * BUBBLE_EXPAND_RATIO — when no bubblePolygon is available, expand the OCR
+ * polygon by this fraction of its longest span to approximate the speech bubble.
+ * 0.35 → bubble ≈ 1.35× the OCR glyph bounds on each side from centroid.
  */
-const CORE_EXPAND = 8;
+const BUBBLE_EXPAND_RATIO = 0.35;
+
+/** Minimum expansion in pixels (prevents tiny bubbles from under-expanding). */
+const BUBBLE_EXPAND_MIN_PX = 20;
+
+/** Dark background fill opacity (70–85% per spec). */
+const BUBBLE_BG_OPACITY = 0.78;
 
 // ── Region filtering ──────────────────────────────────────────────────────────
 
 /**
  * shouldRenderRegion — client-side heuristic filter.
  *
- * Suppresses non-bubble content that Gemini occasionally returns:
- *   • UI/HUD overlays       — very wide relative to displayW
- *   • Subtitle banners      — wide + short (subtitle aspect ratio)
- *   • Watermarks/credits    — positioned at extreme page edges
- *   • Tiny decorations      — below minimum readable area
- *   • Partial cropped text  — clipped at page borders
+ * Suppresses non-bubble content: UI overlays, subtitle banners, credits,
+ * watermarks, tiny decorations, page-edge strips.
  *
- * These heuristics are CONSERVATIVE — a real bubble will never fail all
- * thresholds simultaneously.  When in doubt, we render (false negative is
- * invisible original text; false positive from filtering is lost translation).
+ * Conservative — a real bubble will never fail all thresholds simultaneously.
+ * When in doubt we render (missing a real bubble is worse than showing noise).
  */
 function shouldRenderRegion(
   region: TextRegion,
@@ -104,27 +99,24 @@ function shouldRenderRegion(
   const regionTop = region.y * displayH;
   const regionBot = (region.y + region.h) * displayH;
 
-  // ── Minimum area — anything below this is noise, not a readable bubble
-  if (regionW < 22 || regionH < 16)        return false;
-  if (regionW * regionH < 600)             return false;   // < ~25×24 px
+  // Minimum area — below this is noise, not a readable bubble
+  if (regionW < 20 || regionH < 14)        return false;
+  if (regionW * regionH < 500)             return false;
 
-  // ── Width cap — real speech bubbles do not span more than 62% of the page.
-  //    Wider regions are UI overlays, chapter banners, or subtitle strips.
-  if (regionW > displayW * 0.62)           return false;
+  // Width cap — real speech bubbles do not span more than 70% of the page.
+  // Wider regions are UI overlays, chapter banners, or subtitle strips.
+  if (regionW > displayW * 0.70)           return false;
 
-  // ── Subtitle / banner detection — very wide AND very short.
-  //    Aspect ratio > 4.5 with height < 55 px is a subtitle-like geometry.
+  // Subtitle / banner — very wide AND very short.
   const aspectRatio = regionW / Math.max(regionH, 1);
-  if (aspectRatio > 4.5 && regionH < 55)  return false;
+  if (aspectRatio > 5.5 && regionH < 45)  return false;
 
-  // ── Page-edge suppression.
-  //    Thin strips at the very top or bottom are chapter/page numbers or credits.
+  // Page-edge strips — chapter/page numbers or credits.
   const isTopStrip    = regionTop < displayH * 0.025 && regionH < displayH * 0.04;
   const isBottomStrip = regionBot > displayH * 0.975 && regionH < displayH * 0.04;
   if (isTopStrip || isBottomStrip)         return false;
 
-  // ── Sign / title regions at extreme page edges are usually decorative labels
-  //    or UI elements, not translatable dialogue.
+  // Sign / title at extreme edges — decorative labels, not translatable dialogue.
   if (
     (region.type === "sign" || region.type === "title") &&
     (regionTop < displayH * 0.04 || regionBot > displayH * 0.96) &&
@@ -173,17 +165,10 @@ function expandPolygon(
 }
 
 /**
- * polygonToSmoothPath — converts polygon points to a smooth SVG path.
+ * polygonToSmoothPath — midpoint-bezier technique.
  *
- * Uses the midpoint-bezier technique:
- *   1. Compute the midpoint M[i] between each consecutive pair of vertices.
- *   2. Move to M[0].
- *   3. For each vertex V[i], draw a quadratic bezier:
- *      control point = V[i], end point = M[(i+1) % n].
- *
- * This rounds every corner of the polygon, transforming a quadrilateral into
- * a smooth balloon shape that visually matches manga speech bubble silhouettes.
- * No additional expand needed — the rounding itself naturally softens edges.
+ * Rounds every corner of the polygon so the mask silhouette naturally
+ * matches manga speech bubble shapes (ovals, rounded rectangles).
  */
 function polygonToSmoothPath(pts: [number, number][]): string {
   const n = pts.length;
@@ -196,9 +181,9 @@ function polygonToSmoothPath(pts: [number, number][]): string {
 
   let d = `M ${mids[0][0].toFixed(2)} ${mids[0][1].toFixed(2)}`;
   for (let i = 0; i < n; i++) {
-    const [cx, cy]   = pts[i];
-    const [ex, ey]   = mids[(i + 1) % n];
-    d += ` Q ${cx.toFixed(2)} ${cy.toFixed(2)} ${ex.toFixed(2)} ${ey.toFixed(2)}`;
+    const [qx, qy] = pts[i];
+    const [ex, ey] = mids[(i + 1) % n];
+    d += ` Q ${qx.toFixed(2)} ${qy.toFixed(2)} ${ex.toFixed(2)} ${ey.toFixed(2)}`;
   }
   d += " Z";
   return d;
@@ -214,81 +199,22 @@ function polygonRotationDeg(pts: [number, number][]): number {
   return Math.abs(deg) < 2 ? 0 : Math.round(deg * 10) / 10;
 }
 
-function polygonDimensions(
-  pts: [number, number][],
-  cx: number, cy: number, rotDeg: number,
-): { w: number; h: number } {
-  const angle   = rotDeg * (Math.PI / 180);
-  const cosA    = Math.cos(-angle), sinA = Math.sin(-angle);
-  const us: number[] = [], vs: number[] = [];
-  for (const [x, y] of pts) {
-    const rx = x - cx, ry = y - cy;
-    us.push(rx * cosA - ry * sinA);
-    vs.push(rx * sinA + ry * cosA);
-  }
-  return {
-    w: Math.max(Math.max(...us) - Math.min(...us), 8),
-    h: Math.max(Math.max(...vs) - Math.min(...vs), 6),
-  };
-}
-
-// ── Color helpers ─────────────────────────────────────────────────────────────
-
-interface Rgb { r: number; g: number; b: number }
-
-function hexToRgb(hex: string): Rgb | null {
-  const h    = hex.replace("#", "");
-  const full = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
-  if (full.length !== 6) return null;
-  const n    = parseInt(full, 16);
-  if (isNaN(n)) return null;
-  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
-}
-
-function rgbStringToRgb(s: string): Rgb | null {
-  const m = s.match(/\d+/g);
-  if (!m || m.length < 3) return null;
-  return { r: +m[0], g: +m[1], b: +m[2] };
-}
-
-function parseColor(color: string): Rgb {
-  if (!color) return { r: 245, g: 242, b: 235 };
-  const t = color.trim();
-  if (t.startsWith("#"))   return hexToRgb(t)       ?? { r: 245, g: 242, b: 235 };
-  if (t.startsWith("rgb")) return rgbStringToRgb(t)  ?? { r: 245, g: 242, b: 235 };
-  return { r: 245, g: 242, b: 235 };
-}
-
-function rgbLuminance(r: number, g: number, b: number): number {
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-}
-
-// ── Adaptive opacity ──────────────────────────────────────────────────────────
-
-interface MaskOpacity {
-  haloFill:   number;
-  haloStroke: number;
-  midFill:    number;
-  midStroke:  number;
-}
-
-function adaptiveMaskOpacity(lum: number): MaskOpacity {
-  if (lum > 0.85) {
-    return { haloFill: 0.06, haloStroke: 0.03, midFill: 0.30, midStroke: 0.12 };
-  }
-  if (lum < 0.25) {
-    return { haloFill: 0.16, haloStroke: 0.09, midFill: 0.52, midStroke: 0.22 };
-  }
-  return { haloFill: 0.10, haloStroke: 0.06, midFill: 0.42, midStroke: 0.18 };
-}
-
 // ── Placement ─────────────────────────────────────────────────────────────────
 
 interface Placement {
+  /** Centroid of the bubble polygon (display pixels). */
   cx: number; cy: number;
-  ocrW: number; ocrH: number;
-  layoutW: number; layoutH: number;
-  absolutePts: [number, number][];
+  /** OCR glyph polygon in absolute display pixels. */
+  ocrPts: [number, number][];
+  /** Bubble polygon in absolute display pixels (for erase + bg layers). */
+  bubblePts: [number, number][];
+  /** Axis-aligned bounding box of the bubble polygon. */
+  aabbX: number; aabbY: number;
+  aabbW: number; aabbH: number;
+  /** Text container = AABB × TEXT_SAFE, centered within AABB. */
+  containerX: number; containerY: number;
+  containerW: number; containerH: number;
+  /** Rotation derived from OCR polygon dominant axis. */
   rotDeg: number;
 }
 
@@ -297,54 +223,95 @@ function getPlacement(
   displayW: number,
   displayH: number,
 ): Placement | null {
+  // ── OCR polygon ─────────────────────────────────────────────────────────────
+  let ocrPts: [number, number][];
   if (region.polygon && region.polygon.length >= 3) {
-    const absolutePts = region.polygon.map(
+    ocrPts = region.polygon.map(
       ([nx, ny]) => [nx * displayW, ny * displayH] as [number, number],
     );
-    const centroid = region.centroid
-      ? { x: region.centroid.x * displayW, y: region.centroid.y * displayH }
-      : polygonCentroid(absolutePts);
-    const { x: cx, y: cy } = centroid;
-    const rotDeg            = region.rotation ?? polygonRotationDeg(absolutePts);
-    const { w: ocrW, h: ocrH } = polygonDimensions(absolutePts, cx, cy, rotDeg);
-    if (ocrW < 8 || ocrH < 6) return null;
-    return {
-      cx, cy, ocrW, ocrH,
-      layoutW: ocrW * BUBBLE_LAYOUT_SCALE,
-      layoutH: ocrH * BUBBLE_LAYOUT_SCALE,
-      absolutePts, rotDeg,
-    };
+  } else {
+    const ocrW = region.w * displayW;
+    const ocrH = region.h * displayH;
+    const ocx  = (region.x + region.w / 2) * displayW;
+    const ocy  = (region.y + region.h / 2) * displayH;
+    ocrPts = [
+      [ocx - ocrW / 2, ocy - ocrH / 2],
+      [ocx + ocrW / 2, ocy - ocrH / 2],
+      [ocx + ocrW / 2, ocy + ocrH / 2],
+      [ocx - ocrW / 2, ocy + ocrH / 2],
+    ];
   }
 
-  const ocrW    = region.w * displayW;
-  const ocrH    = region.h * displayH;
-  const cx      = (region.centroid?.x ?? region.x + region.w / 2) * displayW;
-  const cy      = (region.centroid?.y ?? region.y + region.h / 2) * displayH;
-  const rotDeg  = region.rotation ?? 0;
-  const hw = ocrW / 2, hh = ocrH / 2;
-  const absolutePts: [number, number][] = [
-    [cx - hw, cy - hh], [cx + hw, cy - hh],
-    [cx + hw, cy + hh], [cx - hw, cy + hh],
-  ];
-  if (ocrW < 8 || ocrH < 6) return null;
+  // OCR centroid (initial reference)
+  const ocrCentroid = region.centroid
+    ? { x: region.centroid.x * displayW, y: region.centroid.y * displayH }
+    : polygonCentroid(ocrPts);
+  let cx = ocrCentroid.x;
+  let cy = ocrCentroid.y;
+
+  // ── Bubble polygon ──────────────────────────────────────────────────────────
+  let bubblePts: [number, number][];
+
+  if (region.bubblePolygon && region.bubblePolygon.length >= 3) {
+    // Use Gemini-provided full bubble outline
+    bubblePts = region.bubblePolygon.map(
+      ([nx, ny]) => [nx * displayW, ny * displayH] as [number, number],
+    );
+    // Recompute centroid from bubble polygon for accurate text centering
+    const bc = polygonCentroid(bubblePts);
+    cx = bc.x; cy = bc.y;
+  } else {
+    // Fallback: expand OCR polygon to approximate the speech bubble
+    const ocrXs  = ocrPts.map((p) => p[0]);
+    const ocrYs  = ocrPts.map((p) => p[1]);
+    const ocrSpanX = Math.max(...ocrXs) - Math.min(...ocrXs);
+    const ocrSpanY = Math.max(...ocrYs) - Math.min(...ocrYs);
+    const ocrSpan  = Math.max(ocrSpanX, ocrSpanY);
+    const expandPx = Math.max(ocrSpan * BUBBLE_EXPAND_RATIO, BUBBLE_EXPAND_MIN_PX);
+    bubblePts = expandPolygon(ocrPts, cx, cy, expandPx);
+  }
+
+  // ── Bubble AABB ─────────────────────────────────────────────────────────────
+  const bxs  = bubblePts.map((p) => p[0]);
+  const bys  = bubblePts.map((p) => p[1]);
+  const aabbX = Math.max(0, Math.min(...bxs));
+  const aabbY = Math.max(0, Math.min(...bys));
+  const aabbW = Math.min(displayW - aabbX, Math.max(...bxs) - Math.min(...bxs));
+  const aabbH = Math.min(displayH - aabbY, Math.max(...bys) - Math.min(...bys));
+
+  if (aabbW < 16 || aabbH < 12) return null;
+
+  // ── Text container = AABB × TEXT_SAFE, centered ──────────────────────────────
+  const containerW = aabbW * TEXT_SAFE;
+  const containerH = aabbH * TEXT_SAFE;
+  const containerX = aabbX + (aabbW - containerW) / 2;
+  const containerY = aabbY + (aabbH - containerH) / 2;
+
+  const rotDeg = region.rotation ?? polygonRotationDeg(ocrPts);
+
   return {
-    cx, cy, ocrW, ocrH,
-    layoutW: ocrW * BUBBLE_LAYOUT_SCALE,
-    layoutH: ocrH * BUBBLE_LAYOUT_SCALE,
-    absolutePts, rotDeg,
+    cx, cy,
+    ocrPts, bubblePts,
+    aabbX, aabbY, aabbW, aabbH,
+    containerX, containerY, containerW, containerH,
+    rotDeg,
   };
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-function SkiaOverlayCanvas({ regions, displayW, displayH, imageUri }: Props) {
-  // Per-region pixel sampling (web + CORS only, async, falls back to Gemini bgColor)
-  const colorMap = useRegionColors(imageUri, regions);
+interface Props {
+  regions:   TextRegion[];
+  displayW:  number;
+  displayH:  number;
+  isRTL?:    boolean;
+  imageUri?: string;
+}
 
+function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
   const items = useMemo(() => {
     return regions
       .map((region, idx) => {
-        // ── Filter non-bubble content ─────────────────────────────────────
         if (!shouldRenderRegion(region, displayW, displayH)) return null;
 
         const text = region.translated?.trim();
@@ -352,68 +319,50 @@ function SkiaOverlayCanvas({ regions, displayW, displayH, imageUri }: Props) {
 
         const placement = getPlacement(region, displayW, displayH);
         if (!placement) return null;
-        const { cx, cy, ocrW, ocrH, layoutW, layoutH, absolutePts, rotDeg } = placement;
+
+        const {
+          cx, cy,
+          ocrPts, bubblePts,
+          aabbX, aabbY, aabbW, aabbH,
+          containerX, containerY, containerW, containerH,
+          rotDeg,
+        } = placement;
 
         const isSFX       = region.type === "sfx";
         const isThought   = region.type === "thought";
-        const isNarration = region.type === "narration" || region.type === "sign";
 
-        // ── Font scaling against estimated bubble area ────────────────────
+        // ── Font sizing against actual bubble AABB ─────────────────────────
         const typeset = isSFX
-          ? scaleSFXFont(text, layoutW, layoutH)
-          : scaleFontToFit(text, layoutW, layoutH);
+          ? scaleSFXFont(text, aabbW, aabbH)
+          : scaleFontToFit(text, aabbW, aabbH);
         if (typeset.lines.length === 0) return null;
 
-        // ── Effective mask color ──────────────────────────────────────────
-        const sampledColor  = colorMap.get(idx);
-        const effectiveRgb: Rgb = sampledColor
-          ? { r: sampledColor.r, g: sampledColor.g, b: sampledColor.b }
-          : parseColor(region.bgColor ?? "#f5f2eb");
+        // ── SVG paths ──────────────────────────────────────────────────────
+        // Erase path: tiny extra expansion (3px) for clean edge coverage
+        const erasePts  = expandPolygon(bubblePts, cx, cy, 3);
+        const erasePath = polygonToSmoothPath(erasePts);
+        const bgPath    = polygonToSmoothPath(bubblePts);
 
-        const { r, g, b } = effectiveRgb;
-        const lum           = rgbLuminance(r, g, b);
-        const colorStr      = `rgb(${r},${g},${b})`;
-        const strokeStr     = `rgba(${r},${g},${b},0.28)`;
+        // Debug paths
+        const ocrPath    = DEBUG_OVERLAY ? polygonToSmoothPath(ocrPts) : "";
+        const bubblePath = DEBUG_OVERLAY ? polygonToSmoothPath(bubblePts) : "";
 
-        // ── Adaptive mask opacity ─────────────────────────────────────────
-        const opacity = adaptiveMaskOpacity(lum);
-
-        // ── Three-layer mask geometry (glyph-tight coordinates) ───────────
-        //
-        // Expansion amounts stay in pixels (same as before) but each layer
-        // is now rendered as a smooth bezier path instead of a sharp polygon.
-        // This rounds the corners to naturally match speech bubble silhouettes.
-        const haloExpand = Math.max(6, Math.min(14, ocrW * 0.09));
-        const midExpand  = haloExpand * 0.55;
-
-        const haloPath = polygonToSmoothPath(expandPolygon(absolutePts, cx, cy, haloExpand));
-        const midPath  = polygonToSmoothPath(expandPolygon(absolutePts, cx, cy, midExpand));
-        const corePath = polygonToSmoothPath(expandPolygon(absolutePts, cx, cy, CORE_EXPAND));
-
-        // ── Text color ────────────────────────────────────────────────────
-        const colorProfile = region.textColor
-          ? resolveFromGeminiTextColor(region.textColor)
-          : resolveFromCss(region.bgColor ?? "#ffffff");
-
-        const shadowRadius = isNarration
-          ? Math.max(colorProfile.shadowRadius, 2.0)
-          : colorProfile.shadowRadius;
+        const bgColor = region.bgColor || "#ffffff";
 
         return {
           key: idx,
-          cx, cy, layoutW, layoutH,
-          haloPath, midPath, corePath,
-          maskColor:   colorStr,
-          strokeColor: strokeStr,
-          opacity,
+          erasePath, bgPath,
+          ocrPath, bubblePath,
+          bgColor,
+          aabbX, aabbY, aabbW, aabbH,
+          containerX, containerY, containerW, containerH,
           typeset,
           renderedText: typeset.lines.join("\n"),
-          colorProfile: { ...colorProfile, shadowRadius },
           rotDeg, isSFX, isThought,
         };
       })
       .filter(Boolean);
-  }, [regions, displayW, displayH, colorMap]);
+  }, [regions, displayW, displayH]);
 
   if (!items.length) return null;
 
@@ -421,76 +370,110 @@ function SkiaOverlayCanvas({ regions, displayW, displayH, imageUri }: Props) {
     <View style={[styles.root, { pointerEvents: "none" }]}>
 
       {/*
-       * ── Layer 1: Three-layer smooth mask ─────────────────────────────────
+       * ── SVG Layers ────────────────────────────────────────────────────────
        *
-       * All halos rendered first, then all mids, then all cores — prevents
-       * halo-of-A overlapping core-of-B across adjacent regions.
-       *
-       * Each layer uses a smooth bezier path (polygonToSmoothPath) so corners
-       * are rounded naturally.  This eliminates the white-rectangle appearance.
+       * All erase fills rendered first (removes original text from every
+       * bubble before any dark backgrounds are drawn), then all dark
+       * backgrounds, then all borders. This prevents any visual z-order
+       * artifacts between adjacent or overlapping bubbles.
        */}
       <Svg width={displayW} height={displayH} style={StyleSheet.absoluteFillObject}>
 
-        {/* 1a — Halo: widest, most transparent, smoothly rounded */}
+        {/* 1a — Erase: solid fill with bubble background color */}
         {items.map((item) => item && (
           <Path
-            key={`halo-${item.key}`}
-            d={item.haloPath}
-            fill={item.maskColor}
-            fillOpacity={item.opacity.haloFill}
-            stroke={item.maskColor}
-            strokeWidth={16}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            strokeOpacity={item.opacity.haloStroke}
-          />
-        ))}
-
-        {/* 1b — Mid: intermediate feather ring */}
-        {items.map((item) => item && (
-          <Path
-            key={`mid-${item.key}`}
-            d={item.midPath}
-            fill={item.maskColor}
-            fillOpacity={item.opacity.midFill}
-            stroke={item.maskColor}
-            strokeWidth={7}
-            strokeLinejoin="round"
-            strokeLinecap="round"
-            strokeOpacity={item.opacity.midStroke}
-          />
-        ))}
-
-        {/* 1c — Core: fully hides original ink */}
-        {items.map((item) => item && (
-          <Path
-            key={`core-${item.key}`}
-            d={item.corePath}
-            fill={item.maskColor}
+            key={`erase-${item.key}`}
+            d={item.erasePath}
+            fill={item.bgColor}
             fillOpacity={1}
-            stroke={item.strokeColor}
+          />
+        ))}
+
+        {/* 1b — Dark background: semi-transparent black for text readability */}
+        {items.map((item) => item && !item.isSFX && (
+          <Path
+            key={`bg-${item.key}`}
+            d={item.bgPath}
+            fill="#000000"
+            fillOpacity={BUBBLE_BG_OPACITY}
+          />
+        ))}
+
+        {/* 1c — Polished border: subtle white edge */}
+        {items.map((item) => item && !item.isSFX && (
+          <Path
+            key={`border-${item.key}`}
+            d={item.bgPath}
+            fill="none"
+            stroke="rgba(255,255,255,0.18)"
+            strokeWidth={1.5}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        ))}
+
+        {/* DEBUG: Bubble polygon outline (red) */}
+        {DEBUG_OVERLAY && items.map((item) => item && (
+          <Path
+            key={`dbg-bubble-${item.key}`}
+            d={item.bubblePath}
+            fill="none"
+            stroke="#FF0000"
             strokeWidth={2}
             strokeLinejoin="round"
-            strokeLinecap="round"
+          />
+        ))}
+
+        {/* DEBUG: OCR polygon outline (blue dashed) */}
+        {DEBUG_OVERLAY && items.map((item) => item && (
+          <Path
+            key={`dbg-ocr-${item.key}`}
+            d={item.ocrPath}
+            fill="none"
+            stroke="#0088FF"
+            strokeWidth={1}
+            strokeDasharray="4 2"
+          />
+        ))}
+
+        {/* DEBUG: Text container outline (green dashed) */}
+        {DEBUG_OVERLAY && items.map((item) => item && (
+          <Rect
+            key={`dbg-container-${item.key}`}
+            x={item.containerX}
+            y={item.containerY}
+            width={item.containerW}
+            height={item.containerH}
+            fill="none"
+            stroke="#00FF88"
+            strokeWidth={1}
+            strokeDasharray="3 2"
           />
         ))}
 
       </Svg>
 
       {/*
-       * ── Layer 2: Arabic text ─────────────────────────────────────────────
+       * ── Text Layer ────────────────────────────────────────────────────────
        *
-       * Container = layoutW × layoutH (estimated bubble, NOT glyph bounds).
-       * Centered on the polygon centroid (cx, cy).
-       * overflow: "hidden" — text clips at the container boundary rather than
-       * bleeding into adjacent panels if the hard floor is hit.
+       * Each text container is:
+       *   • Positioned at the safe zone (85%) of the bubble AABB
+       *   • overflow: hidden — text clips at container boundary (no bleed)
+       *   • Always white text on the dark background (reliable contrast)
+       *   • Auto font size: 24 → 8 px cascade until text fits
+       *   • Arabic RTL, centered, balanced line distribution
+       *
+       * SFX: bright yellow text, no dark bg, heavy shadow for visibility.
        */}
       {items.map((item) => {
         if (!item) return null;
         const {
-          key, cx, cy, layoutW, layoutH,
-          typeset, renderedText, colorProfile, rotDeg, isSFX, isThought,
+          key, containerX, containerY, containerW, containerH,
+          typeset, renderedText, rotDeg, isSFX, isThought,
         } = item;
+
+        const textColor  = isSFX ? "#FFE566" : "#FFFFFF";
+        const fontWeight = isSFX ? "900" : "700";
 
         return (
           <View
@@ -498,10 +481,10 @@ function SkiaOverlayCanvas({ regions, displayW, displayH, imageUri }: Props) {
             style={[
               styles.textBox,
               {
-                left:     cx - layoutW / 2,
-                top:      cy - layoutH / 2,
-                width:    layoutW,
-                height:   layoutH,
+                left:      containerX,
+                top:       containerY,
+                width:     containerW,
+                height:    containerH,
                 transform: rotDeg !== 0 ? [{ rotate: `${rotDeg}deg` }] : undefined,
               },
             ]}
@@ -510,23 +493,24 @@ function SkiaOverlayCanvas({ regions, displayW, displayH, imageUri }: Props) {
               style={[
                 styles.label,
                 {
-                  fontSize:      typeset.fontSize,
-                  lineHeight:    typeset.lineHeight,
-                  color:         colorProfile.color,
-                  fontFamily:    ARABIC_FONT_FAMILY,
-                  fontWeight:    isSFX    ? "900" : "700",
-                  fontStyle:     isThought ? "italic" : "normal",
-                  letterSpacing: 0,
+                  fontSize:   typeset.fontSize,
+                  lineHeight: typeset.lineHeight,
+                  color:      textColor,
+                  fontFamily: ARABIC_FONT_FAMILY,
+                  fontWeight,
+                  fontStyle:  isThought ? "italic" : "normal",
                   ...Platform.select({
                     web: {
-                      textShadow:          `0px 0px ${colorProfile.shadowRadius}px ${colorProfile.shadowColor}`,
+                      textShadow: isSFX
+                        ? "0px 0px 4px rgba(0,0,0,0.95), 0px 0px 10px rgba(0,0,0,0.8)"
+                        : "0px 0px 3px rgba(0,0,0,0.6)",
                       WebkitFontSmoothing: "antialiased",
                       textRendering:       "optimizeLegibility",
                     } as object,
                     default: {
-                      textShadowColor:  colorProfile.shadowColor,
+                      textShadowColor:  "rgba(0,0,0,0.75)",
                       textShadowOffset: { width: 0, height: 0 },
-                      textShadowRadius: colorProfile.shadowRadius,
+                      textShadowRadius: isSFX ? 8 : 3,
                     },
                   }),
                 },
@@ -534,6 +518,13 @@ function SkiaOverlayCanvas({ regions, displayW, displayH, imageUri }: Props) {
             >
               {renderedText}
             </Text>
+
+            {/* DEBUG: Font size + container dimensions */}
+            {DEBUG_OVERLAY && (
+              <Text style={styles.debugLabel}>
+                {typeset.fontSize}px {containerW.toFixed(0)}×{containerH.toFixed(0)}
+              </Text>
+            )}
           </View>
         );
       })}
@@ -555,13 +546,23 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
     justifyContent:  "center",
     alignItems:      "center",
-    overflow:        "hidden",   // Clip at container boundary — prevents panel bleed
+    overflow:        "hidden",
   },
   label: {
-    includeFontPadding: false,
-    textAlignVertical:  "center",
-    textAlign:          "center",
-    writingDirection:   "rtl",
+    includeFontPadding:  false,
+    textAlignVertical:   "center",
+    textAlign:           "center",
+    writingDirection:    "rtl",
+    letterSpacing:       0,
+  },
+  debugLabel: {
+    position:        "absolute",
+    top:             0,
+    left:            0,
+    fontSize:        8,
+    color:           "#00FF00",
+    backgroundColor: "rgba(0,0,0,0.8)",
+    paddingHorizontal: 2,
   },
 });
 

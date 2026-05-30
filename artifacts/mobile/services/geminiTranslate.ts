@@ -18,7 +18,15 @@ import { getBasicImageHeaders } from "./sourceImageHeaders";
 export interface TranslatedRegion {
   original: string;
   translated: string;
+  /** Tight 4-point polygon wrapping the text glyphs (normalized 0–1). */
   polygon?: [[number, number], [number, number], [number, number], [number, number]];
+  /**
+   * 4–8 point polygon tracing the FULL speech bubble outline.
+   * Larger than polygon — covers the bubble border, tail, and pointer.
+   * Used as the mask/erase boundary and text container boundary.
+   * Falls back to an expanded OCR polygon when absent.
+   */
+  bubblePolygon?: [number, number][];
   x: number;
   y: number;
   w: number;
@@ -56,11 +64,6 @@ const LANGUAGE_NAMES: Record<string, string> = {
 
 // ── Image fetch ────────────────────────────────────────────────────────────────
 
-/**
- * Fetch a CDN image and return it as a base64 string.
- * Uses per-source Referer headers to bypass hotlink protection.
- * Works in React Native (uses fetch + FileReader polyfill).
- */
 async function fetchImageAsBase64(
   imageUrl: string,
   sourceId: string
@@ -164,6 +167,23 @@ function validatePolygon(
   return [valid[0], valid[1], valid[2], valid[3]];
 }
 
+/**
+ * validateBubblePolygon — accepts 3–12 point polygon for the full bubble outline.
+ * Returns null if invalid; all coordinates clamped to [0,1].
+ */
+function validateBubblePolygon(raw: unknown): [number, number][] | null {
+  if (!Array.isArray(raw) || raw.length < 3 || raw.length > 16) return null;
+  const pts: [number, number][] = [];
+  for (const p of raw) {
+    if (!Array.isArray(p) || p.length < 2) return null;
+    const x = Number(p[0]);
+    const y = Number(p[1]);
+    if (isNaN(x) || isNaN(y)) return null;
+    pts.push([Math.max(0, Math.min(1, x)), Math.max(0, Math.min(1, y))]);
+  }
+  return pts;
+}
+
 // ── Gemini prompt ──────────────────────────────────────────────────────────────
 
 function buildPrompt(targetLanguage: string): string {
@@ -175,10 +195,10 @@ function buildPrompt(targetLanguage: string): string {
 TASK: Analyze this manga/manhwa page. For EVERY visible piece of text — dialogue, sound effects, signs, narration — do ALL of the following:
 
 1. LOCATE the text precisely:
-   - polygon: tight quadrilateral around the actual text characters (4 [x,y] normalized points, clockwise from top-left)
+   - polygon: tight quadrilateral around the actual text characters ONLY (4 [x,y] normalized points, clockwise from top-left). Wraps the INK GLYPHS, not the bubble.
+   - bubblePolygon: 4-8 clockwise points tracing the FULL SPEECH BUBBLE OUTLINE (larger than polygon — includes the bubble border, tail, and pointer area). For SFX/signs/floating text with no bubble container, set bubblePolygon identical to polygon.
    - x, y: top-left corner of the text area (normalized 0.0–1.0)
    - w, h: width and height of the text area as fractions of the image size
-   Coordinates MUST wrap the TEXT GLYPHS ONLY — not the speech bubble outline.
 
 2. DETECT the color immediately behind the text:
    - bgColor: hex of the pixel area directly behind the text characters (e.g. "#ffffff" white, "#1a1a1a" dark)
@@ -204,8 +224,9 @@ Return ONLY valid JSON — no markdown, no backticks, no commentary:
     {
       "original": "source text",
       "translated": "${langName} translation",
-      "polygon": [[0.05,0.03],[0.47,0.03],[0.47,0.14],[0.05,0.14]],
-      "x": 0.05, "y": 0.03, "w": 0.42, "h": 0.11,
+      "polygon": [[0.10,0.05],[0.42,0.05],[0.42,0.18],[0.10,0.18]],
+      "bubblePolygon": [[0.04,0.01],[0.47,0.01],[0.49,0.21],[0.03,0.21]],
+      "x": 0.10, "y": 0.05, "w": 0.32, "h": 0.13,
       "type": "speech",
       "bgColor": "#ffffff",
       "textColor": "#000000",
@@ -217,9 +238,11 @@ Return ONLY valid JSON — no markdown, no backticks, no commentary:
 }
 
 RULES:
-- polygon: exactly 4 [x,y] points wrapping the TEXT ONLY — never the bubble outline
+- polygon: exactly 4 [x,y] points wrapping the TEXT GLYPHS ONLY — never the bubble outline
+- bubblePolygon: 4-8 [x,y] points around the FULL bubble border (significantly larger than polygon in most cases)
 - All coordinates in range 0.0–1.0
-- Every separate text block is its own region — never merge distinct text areas
+- Every SEPARATE text block is its own region — NEVER merge text from different speech bubbles or different locations
+- Each speech bubble = one region, even if close together or from the same character
 - If no text found: { "found": false, "regions": [], "summary": "No text on this page" }`;
 }
 
@@ -231,11 +254,6 @@ const MAX_ATTEMPTS = 4;
 /**
  * Translate a plain text string directly using the Gemini API.
  * Used for manga descriptions on the manga detail screen.
- *
- * @param text           Text to translate
- * @param targetLanguage BCP-47 language code
- * @param userApiKey     User's Gemini API key
- * @param context        Optional context hint (e.g. "Manga description for: One Piece")
  */
 export async function translateText(
   text: string,
@@ -290,10 +308,10 @@ Return ONLY the translated text with no preamble, no explanations, no quotes aro
 /**
  * Translate a single manga page directly using the Gemini API.
  *
- * @param imageUrl      CDN URL of the page image
- * @param targetLanguage  BCP-47 language code (en, ar, es, etc.)
- * @param userApiKey    User's Gemini API key (from Settings → AI Keys)
- * @param sourceId      Manga source ID for CDN header selection (default: "mangadex")
+ * @param imageUrl       CDN URL of the page image
+ * @param targetLanguage BCP-47 language code (en, ar, es, etc.)
+ * @param userApiKey     User's Gemini API key (from Settings → AI Keys)
+ * @param sourceId       Manga source ID for CDN header selection
  */
 export async function translateImage(
   imageUrl: string,
@@ -306,7 +324,6 @@ export async function translateImage(
   }
 
   console.log(`[geminiTranslate] Starting OCR+translate — lang=${targetLanguage} source=${sourceId}`);
-  console.log(`[geminiTranslate] URL: ${imageUrl.substring(0, 100)}`);
 
   const { data: imageData, mimeType } = await fetchImageAsBase64(imageUrl, sourceId);
   const prompt = buildPrompt(targetLanguage);
@@ -316,7 +333,7 @@ export async function translateImage(
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      console.log(`[geminiTranslate] Gemini request start — attempt ${attempt}/${MAX_ATTEMPTS}`);
+      console.log(`[geminiTranslate] Gemini request — attempt ${attempt}/${MAX_ATTEMPTS}`);
 
       const response = await client.models.generateContent({
         model: MODEL,
@@ -333,7 +350,7 @@ export async function translateImage(
       });
 
       const raw = response.text?.trim() ?? "";
-      console.log(`[geminiTranslate] Gemini response received — raw length=${raw.length}`);
+      console.log(`[geminiTranslate] Response received — raw length=${raw.length}`);
 
       let parsed: {
         found: boolean;
@@ -341,6 +358,7 @@ export async function translateImage(
           original: string;
           translated: string;
           polygon?: unknown;
+          bubblePolygon?: unknown;
           x: number;
           y: number;
           w: number;
@@ -378,6 +396,7 @@ export async function translateImage(
           const ch = Math.max(0.02, Math.min(1 - cy, r.h));
 
           const polygon = validatePolygon(r.polygon) ?? bboxToPolygon(cx, cy, cw, ch);
+          const bubblePolygon = validateBubblePolygon(r.bubblePolygon) ?? undefined;
           const centroid = computeCentroid(polygon);
           const rotation = computeRotation(polygon);
 
@@ -389,6 +408,7 @@ export async function translateImage(
             w: cw,
             h: ch,
             polygon,
+            bubblePolygon,
             centroid,
             rotation,
             centerX: centroid.x,
@@ -402,7 +422,7 @@ export async function translateImage(
         });
 
       console.log(
-        `[geminiTranslate] Translation success — regions=${processedRegions.length} attempt=${attempt}`
+        `[geminiTranslate] Success — regions=${processedRegions.length} attempt=${attempt}`
       );
 
       return {
