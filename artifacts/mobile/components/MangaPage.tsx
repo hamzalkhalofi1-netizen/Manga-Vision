@@ -65,8 +65,6 @@ interface MangaPageProps {
   showOverlay: boolean;
   isRTL?: boolean;
   onHeightKnown?: (height: number) => void;
-  apiBase?: string;
-  userApiKey?: string | null;
   sourceId?: string;
 }
 

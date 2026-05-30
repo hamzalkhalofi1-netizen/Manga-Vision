@@ -51,12 +51,32 @@ const LANGUAGE_NAMES: Record<string, string> = {
   ar: "Arabic",
 };
 
-const CDN_HEADERS: Record<string, string> = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  Referer: "https://mangadex.org/",
-  Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
-};
+const CDN_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+/**
+ * Detect the correct Referer header for a CDN image URL.
+ * Sending the wrong Referer to a hotlink-protected CDN returns 403.
+ */
+function getCdnReferer(imageUrl: string): string {
+  const u = imageUrl.toLowerCase();
+  if (u.includes("mangafire") || u.includes("azfast") || u.includes("b-cdn.net/reader")) return "https://mangafire.to/";
+  if (u.includes("asura") || u.includes("asuracomic")) return "https://asurascans.com/";
+  if (u.includes("bato.to") || u.includes("batocdn") || u.includes("batoto")) return "https://bato.to/";
+  if (u.includes("comick") || u.includes("meo.comick")) return "https://comick.io/";
+  if (u.includes("mangaplus") || u.includes("shueisha")) return "https://mangaplus.shueisha.co.jp/";
+  if (u.includes("webtoon") || u.includes("naver")) return "https://www.webtoons.com/";
+  if (u.includes("chapmanganato") || u.includes("manganato") || u.includes("manganelo")) return "https://chapmanganato.to/";
+  return "https://mangadex.org/";
+}
+
+function getCdnHeaders(imageUrl: string): Record<string, string> {
+  return {
+    "User-Agent": CDN_UA,
+    Referer: getCdnReferer(imageUrl),
+    Accept: "image/avif,image/webp,image/apng,image/*,*/*;q=0.8",
+  };
+}
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -65,7 +85,7 @@ function sleep(ms: number) {
 async function fetchImageAsBase64(
   imageUrl: string
 ): Promise<{ data: string; mimeType: string }> {
-  const res = await fetch(imageUrl, { headers: CDN_HEADERS });
+  const res = await fetch(imageUrl, { headers: getCdnHeaders(imageUrl) });
   if (!res.ok)
     throw new Error(`CDN fetch failed with status ${res.status}: ${imageUrl}`);
   const buf = await res.arrayBuffer();

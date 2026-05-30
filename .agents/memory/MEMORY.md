@@ -1,6 +1,9 @@
 - [Source proxy architecture](source-proxy-arch.md) — directOnWeb flag bypasses server proxy for CORS APIs; scraping sources always proxy
 - [Express 5 routing](express5-routing.md) — wildcard routes need regex, not string `/:id/*` patterns
-- [MangaFire chapter structure](mangafire-chapters.md) — images need fetchRendered(7s) on native; web proxy always 403 (needs cf_clearance); token is session-wide not per-chapter
+- [MangaFire chapter structure](mangafire-chapters.md) — images need fetchRendered(12s) on native; web proxy always 403 (needs cf_clearance); token is session-wide not per-chapter
+- [APK production config](apk-production-config.md) — EAS builds need EXPO_PUBLIC_API_URL in eas.json env section; runtime override via Settings → API Server backed by AsyncStorage; loadApiBaseOverride() called at app startup.
+- [WebView render waits](webview-render-waits.md) — MangaFire 12s, Asura 12s, Bato.to 10s; lower values cause incomplete page lists on real devices vs dev machine.
+- [CDN Referer detection](cdn-referer.md) — translate-image.ts getCdnReferer(url) sends per-source Referer; hardcoded mangadex.org causes 403 on MangaFire/Asura CDNs when translating those sources.
 - [Asura domain](asura-domain.md) — proxy must stay on asuracomic.net (redirect→home SSR); SITE_URL=asurascans.com for native WebView; web listing works, detail/chapters need native
 - [WebView bridge architecture](webview-bridge-arch.md) — Mihon-grade networking: persistent hidden WebViews for CF sources; no popup loops; verify once per session
 - [Overlay rendering architecture](overlay-rendering-arch.md) — BUBBLE_LAYOUT_SCALE=1.35 separates mask geometry (glyph-tight) from text layout (bubble-estimated); three-layer feather mask; safe zone 91%

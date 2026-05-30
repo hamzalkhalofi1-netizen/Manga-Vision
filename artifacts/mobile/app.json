@@ -18,7 +18,18 @@
     },
     "android": {
       "backgroundColor": "#080808",
-      "package": "com.hamzalkhalofi.mangaverse"
+      "package": "com.hamzalkhalofi.mangaverse",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#080808"
+      },
+      "usesCleartextTraffic": true,
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon.png",

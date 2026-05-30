@@ -11,6 +11,7 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import * as SystemUI from "expo-system-ui";
 import React, { useEffect } from "react";
+import { loadApiBaseOverride, getApiBase } from "@/services/api";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -26,8 +27,10 @@ SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
 
-// Use an empty base URL (relative paths) so API calls route through the
-// artifact router regardless of access origin (localhost, Replit proxy, custom domain).
+// On web: use relative URLs (routed through dev proxy).
+// On native: use the absolute API URL once the async override loads.
+// setBaseUrl is called again inside RootLayout once the AsyncStorage
+// override is hydrated so the auto-generated API client also picks it up.
 setBaseUrl("");
 
 SystemUI.setBackgroundColorAsync("#080808");
@@ -71,6 +74,17 @@ export default function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+
+  // Load the user-configured API server URL from AsyncStorage at startup.
+  // This allows APK/Expo Go users to set their server URL in Settings without
+  // needing to rebuild the app. Must run before any API calls are made.
+  useEffect(() => {
+    loadApiBaseOverride().then(() => {
+      // Re-apply base URL for the auto-generated API client now that the
+      // AsyncStorage override (if any) has been applied.
+      setBaseUrl(getApiBase());
+    });
+  }, []);
 
   useEffect(() => {
     if (fontsLoaded || fontError) {

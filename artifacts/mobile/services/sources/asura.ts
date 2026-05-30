@@ -23,7 +23,7 @@ const FETCH_OPTS = {
 // asurascans.com uses Astro v5 with client-side islands — the shell HTML
 // arrives quickly but manga data is injected by React islands that need
 // ~5-6 s to hydrate on a mobile network.
-const RENDER_WAIT_MS = 6000;
+const RENDER_WAIT_MS = 12000;
 
 // Simple TTL cache for listing pages to avoid repeated WebView renders.
 // Key: URL → { html, expiresAt }

@@ -538,13 +538,11 @@ export default function ReaderScreen() {
           regions={pageTranslations[index]}
           showOverlay={overlayVisible}
           isRTL={isRTL}
-          apiBase={apiBase}
-          userApiKey={getLiveKey()}
           sourceId={params.sourceId || "mangadex"}
         />
       </Pressable>
     ),
-    [handleTap, pageTranslations, overlayVisible, isRTL, apiBase, tokens, activeTokenId]
+    [handleTap, pageTranslations, overlayVisible, isRTL]
   );
 
   const keyExtractor = useCallback(

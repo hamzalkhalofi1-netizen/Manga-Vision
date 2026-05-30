@@ -30,7 +30,7 @@ const FETCH_OPTS = {
 // On native: persistent WebView handles CF bypass + SSR rendering.
 // On web: server proxy fetches SSR HTML; chapter images extracted from __NEXT_DATA__.
 // Chapter images need Referer: https://bato.to/ to load from the CDN.
-const RENDER_WAIT_MS = 5000;
+const RENDER_WAIT_MS = 10000;
 
 // TTL cache for listing pages — avoids repeated WebView bridge renders.
 const _listingCache = new Map<string, { html: string; expiresAt: number }>();
