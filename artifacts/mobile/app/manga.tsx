@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { getApiBase } from "@/services/api";
+import { translateText } from "@/services/geminiTranslate";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -118,45 +118,35 @@ export default function MangaScreen() {
     setTranslating(true);
     try {
       const userKey = getActiveKey();
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (userKey) headers["X-Gemini-Key"] = userKey;
-
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 30_000);
-      let res: Response;
-      try {
-        res = await fetch(`${getApiBase()}/api/translate`, {
-          method: "POST",
-          headers,
-          signal: controller.signal,
-          body: JSON.stringify({
-            text: manga.description,
-            targetLanguage: readerSettings.targetLanguage,
-            context: `Manga/manhwa description for: ${manga.title}. Genre: ${manga.genres?.join(", ")}`,
-          }),
-        });
-      } finally {
-        clearTimeout(timer);
-      }
-      if (res.status === 429) {
-        if (activeTokenId) markRateLimited(activeTokenId, 70_000);
-        Alert.alert("Rate Limited", "This API key hit its limit. Add another key in Settings.");
+      if (!userKey) {
+        Alert.alert(
+          "Gemini API Key Required",
+          "Open Settings → Gemini API Keys and add your key to enable translations."
+        );
         return;
       }
-      if (!res.ok) throw new Error(`Translation server error (${res.status})`);
-      const data = await res.json();
-      setTranslatedDesc(data.translatedText);
+
+      console.log(`[manga] Translating description — lang=${readerSettings.targetLanguage}`);
+
+      const translated = await translateText(
+        manga.description,
+        readerSettings.targetLanguage,
+        userKey,
+        `Manga/manhwa description for: ${manga.title}. Genre: ${manga.genres?.join(", ")}`
+      );
+
+      setTranslatedDesc(translated);
       incrementTranslationCount();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
-      const msg = err instanceof Error
-        ? err.name === "AbortError"
-          ? "Network timeout — translation server took too long."
-          : err.message.includes("Failed to fetch") || err.message.includes("Network")
-            ? "Translation server unavailable. Check your connection."
-            : err.message
-        : "Could not translate. Check your connection.";
-      Alert.alert("Translation Error", msg);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const isRateLimit = errMsg === "RATE_LIMITED" || errMsg.includes("429");
+      if (isRateLimit) {
+        if (activeTokenId) markRateLimited(activeTokenId, 70_000);
+        Alert.alert("Rate Limited", "This API key hit its limit. Add another key in Settings.");
+      } else {
+        Alert.alert("Translation Error", errMsg);
+      }
     } finally {
       setTranslating(false);
     }

@@ -40,7 +40,7 @@ import { useTokens } from "@/context/TokenContext";
 import { useInpaintServer } from "@/hooks/useInpaintServer";
 import { callInpaintServer } from "@/services/inpaintClient";
 import { useReaderPreloader } from "@/hooks/useReaderPreloader";
-import { getApiBase } from "@/services/api";
+import { translateImage } from "@/services/geminiTranslate";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -159,9 +159,7 @@ export default function ReaderScreen() {
   const bottomPadding = Platform.OS === "web" ? 34 : insets.bottom;
   const isVertical = readerSettings.readingMode === "vertical";
   const isRTL = readerSettings.targetLanguage === "ar";
-  // getApiBase() returns "" on web (proxy handles routing) and the full
-  // EXPO_PUBLIC_API_URL on native so Expo Go / APK can reach the API server.
-  const apiBase = getApiBase();
+  const sourceId = params.sourceId || "mangadex";
 
   // ─── Load pages ────────────────────────────────────────────────────────────
   // Depends on activeChapterId (state), not params.chapterId, so next/prev
@@ -333,36 +331,31 @@ export default function ReaderScreen() {
         regions = result.regions;
         summary = result.summary;
       } else {
-        // ── Default local API ─────────────────────────────────────────────────
+        // ── Direct Gemini API — no backend server required ────────────────────
         const userKey = getLiveKey();
-        const reqHeaders: Record<string, string> = { "Content-Type": "application/json" };
-        if (userKey) reqHeaders["X-Gemini-Key"] = userKey;
-
-        const res = await new Promise<Response>((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error("Request timed out")), 60000);
-          fetch(`${apiBase}/api/translate-image`, {
-            method: "POST",
-            headers: reqHeaders,
-            body: JSON.stringify({
-              imageUrl: pageUrl,
-              targetLanguage: readerSettings.targetLanguage,
-            }),
-          }).then(
-            (r) => { clearTimeout(timer); resolve(r); },
-            (e) => { clearTimeout(timer); reject(e); }
+        if (!userKey) {
+          showErrorModal(
+            "Gemini API Key Required",
+            "Open Settings → Gemini API Keys and add your key to enable translations."
           );
-        });
-
-        if (res.status === 429 && activeTokenId) {
-          markRateLimited(activeTokenId, 70_000);
-          showBanner("API key rate limited. Add another key in Settings.");
           return;
         }
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-        const data = await res.json();
-        regions = data.regions ?? [];
-        summary = data.summary ?? "";
+        console.log(`[reader] Starting single-page translate — page=${idx} lang=${readerSettings.targetLanguage}`);
+
+        const result = await translateImage(
+          pageUrl,
+          readerSettings.targetLanguage,
+          userKey,
+          sourceId
+        );
+
+        if (result === null) throw new Error("No response from Gemini");
+
+        regions = result.regions ?? [];
+        summary = result.summary ?? "";
+
+        console.log(`[reader] Single-page translate success — regions=${regions.length}`);
       }
 
       setPageTranslations((prev) => ({ ...prev, [idx]: regions }));
@@ -385,7 +378,7 @@ export default function ReaderScreen() {
   }, [
     pages,
     pageTranslations,
-    apiBase,
+    sourceId,
     inpaintServerUrl,
     readerSettings.targetLanguage,
     incrementTranslationCount,
@@ -418,7 +411,7 @@ export default function ReaderScreen() {
     await translationQueue.start({
       pages,
       targetLanguage: readerSettings.targetLanguage,
-      apiBase,
+      sourceId,
       userApiKey: getLiveKey(),
       inpaintServerUrl: inpaintServerUrl || null,
       onPageTranslated,
@@ -443,7 +436,7 @@ export default function ReaderScreen() {
     });
   }, [
     pages,
-    apiBase,
+    sourceId,
     inpaintServerUrl,
     readerSettings.targetLanguage,
     incrementTranslationCount,

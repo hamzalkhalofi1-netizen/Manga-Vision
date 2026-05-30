@@ -20,7 +20,6 @@ import { useTokens, GeminiToken, maskKey } from "@/context/TokenContext";
 import { useColors } from "@/hooks/useColors";
 import { useInpaintServer } from "@/hooks/useInpaintServer";
 import { clearTranslationCache, getTranslationCacheSize } from "@/services/translationQueue";
-import { saveApiBaseOverride, getSavedApiBaseUrl, getEffectiveApiBase } from "@/services/api";
 
 type Language = { code: string; label: string };
 
@@ -210,19 +209,10 @@ export default function SettingsScreen() {
   const [pingStatus, setPingStatus] = useState<"idle" | "checking" | "online" | "offline">("idle");
   const [cacheSize, setCacheSize] = useState(0);
   const [clearingCache, setClearingCache] = useState(false);
-  const [apiUrlInput, setApiUrlInput] = useState("");
-  const [apiUrlSaving, setApiUrlSaving] = useState(false);
 
   useEffect(() => {
     setCacheSize(getTranslationCacheSize());
-    getSavedApiBaseUrl().then((saved) => setApiUrlInput(saved));
   }, []);
-
-  const handleSaveApiUrl = async () => {
-    setApiUrlSaving(true);
-    await saveApiBaseOverride(apiUrlInput);
-    setApiUrlSaving(false);
-  };
 
   const handleCheckServer = async () => {
     const target = serverUrlInput.trim().replace(/\/$/, "");
@@ -511,43 +501,6 @@ export default function SettingsScreen() {
               </Pressable>
             )
           )}
-        </View>
-
-        {/* API Server */}
-        <View style={styles.section}>
-          <SectionLabel title="API Server" />
-          <Text style={[styles.keysSubtitle, { color: colors.mutedForeground }]}>
-            Required on Android and iOS. Enter the full URL of your running MangaVerse API server so translations work in the app.
-          </Text>
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius, padding: 14, gap: 10 }]}>
-            <Text style={[styles.rowLabel, { color: colors.foreground }]}>Server URL</Text>
-            <TextInput
-              value={apiUrlInput}
-              onChangeText={(v) => setApiUrlInput(v)}
-              placeholder="https://your-replit-domain.repl.co"
-              placeholderTextColor={colors.mutedForeground}
-              style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.muted }]}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="url"
-            />
-            {Platform.OS !== "web" && (
-              <Text style={{ color: colors.mutedForeground, fontSize: 11, lineHeight: 16 }}>
-                Active: {getEffectiveApiBase() || "(not set — translations will fail on native)"}
-              </Text>
-            )}
-            <Pressable
-              onPress={handleSaveApiUrl}
-              disabled={apiUrlSaving}
-              style={{ backgroundColor: colors.primary, borderRadius: 8, padding: 10, alignItems: "center", opacity: apiUrlSaving ? 0.7 : 1 }}
-            >
-              {apiUrlSaving ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Text style={{ color: "#fff", fontWeight: "600", fontSize: 14 }}>Save</Text>
-              )}
-            </Pressable>
-          </View>
         </View>
 
         {/* Inpaint Server */}
