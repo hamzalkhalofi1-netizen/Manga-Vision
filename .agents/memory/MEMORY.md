@@ -8,3 +8,4 @@
 - [WebView bridge architecture](webview-bridge-arch.md) — Mihon-grade networking: persistent hidden WebViews for CF sources; no popup loops; verify once per session
 - [Overlay rendering architecture](overlay-rendering-arch.md) — BUBBLE_LAYOUT_SCALE=1.35 separates mask geometry (glyph-tight) from text layout (bubble-estimated); three-layer feather mask; safe zone 91%
 - [Expo startup env vars](expo-startup-env.md) — CI=1 kills hot reload; EXPO_UNSTABLE_HEADLESS=1 hides QR/URL; only safe suppression is EXPO_NO_DEVTOOLS=1 + no --go/--web flags
+- [WebView bridge back-nav race](webview-bridge-backnav.md) — processNext must debounce back-navigation (400ms) so AJAX fetches queued after fetchRendered inherit correct Referer

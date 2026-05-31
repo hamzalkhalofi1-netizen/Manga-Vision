@@ -15,6 +15,9 @@ const SOURCE_REGISTRY: Record<string, string> = {
   "comick-cdn": "https://meo.comick.pictures",
   "mangaplus": "https://api.mangaplus.shueisha.co.jp",
   "mangafire": "https://mangafire.to",
+  // CDN for chapter page images — separate from the main site so the proxy
+  // can send Referer: https://mangafire.to/ (required to bypass hotlink protection)
+  "mangafire-cdn": "https://cdn.mangafire.to",
   // asurascans.com is the live domain (asuracomic.net 301-redirects here)
   "asura": "https://asurascans.com",
   "bato": "https://bato.to",
@@ -37,6 +40,7 @@ const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> =
   "comick-cdn":         { referer: "https://comick.io/",             origin: "https://comick.io" },
   "mangaplus":    { referer: "https://mangaplus.shueisha.co.jp/",    origin: "https://mangaplus.shueisha.co.jp" },
   "mangafire":    { referer: "https://mangafire.to/",                origin: "https://mangafire.to" },
+  "mangafire-cdn":{ referer: "https://mangafire.to/",               origin: "https://mangafire.to" },
   "asura":        { referer: "https://asurascans.com/",              origin: "https://asurascans.com" },
   "bato":         { referer: "https://bato.to/",                    origin: "https://bato.to" },
   "kakalot":      { referer: "https://chapmanganato.to/",           origin: "https://chapmanganato.to" },

@@ -115,6 +115,8 @@ interface SourceMutable {
   baseUrl: string;
   currentUri: string;       // tracks the URI we last navigated to
   webViewRef: React.RefObject<WebView | null>;
+  /** Timer ID for debounced back-navigation. Cancelled when a new request arrives. */
+  navigateBackTimer: ReturnType<typeof setTimeout> | null;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────
@@ -156,6 +158,7 @@ export default function GlobalWebViewBridge({
         baseUrl: s.baseUrl,
         currentUri: s.baseUrl,
         webViewRef: React.createRef<WebView | null>(),
+        navigateBackTimer: null,
       };
     }
   }
@@ -175,8 +178,40 @@ export default function GlobalWebViewBridge({
       if (!m || m.processing || !m.ready || m.cfChallenge) return;
       const req = m.queue.shift();
       if (!req) {
-        setSourceStatus(sid, "idle");
+        // Queue is empty.  Schedule a debounced back-navigation so the WebView
+        // stays on its current page (e.g. the reader URL after fetchRendered)
+        // long enough for any immediately-following fetch() calls to be queued
+        // and inherit the correct Referer.
+        //
+        // 400 ms window is intentionally longer than:
+        //   • React's batched re-render cadence (~16 ms)
+        //   • The 60 ms injection setTimeout in the fetch branch below
+        //   • The microtask → macrotask hand-off for promise continuations
+        // so the AJAX request that follows fetchRendered is always queued and
+        // processed before the WebView leaves the reader page.
+        if (m.currentUri !== m.baseUrl && !m.navigateBackTimer) {
+          m.navigateBackTimer = setTimeout(() => {
+            m.navigateBackTimer = null;
+            // Only navigate if the queue is still empty (no new request arrived)
+            if (m.queue.length === 0 && !m.processing) {
+              m.currentUri = m.baseUrl;
+              setUris((prev) => ({ ...prev, [sid]: m.baseUrl }));
+              // onLoadEnd will fire and set status to idle
+            } else {
+              setSourceStatus(sid, "idle");
+            }
+          }, 400);
+        } else if (m.currentUri === m.baseUrl) {
+          setSourceStatus(sid, "idle");
+        }
         return;
+      }
+
+      // A new request arrived — cancel any pending back-navigation timer so
+      // the WebView stays on the current page (reader URL) for the fetch script.
+      if (m.navigateBackTimer !== null) {
+        clearTimeout(m.navigateBackTimer);
+        m.navigateBackTimer = null;
       }
 
       m.processing = true;
@@ -185,11 +220,22 @@ export default function GlobalWebViewBridge({
       setSourceStatus(sid, "executing");
 
       if (req.extractRendered) {
-        // Navigate WebView to the target URL — onLoadEnd will inject extraction script
-        m.currentUri = req.url;
-        setUris((prev) => ({ ...prev, [sid]: req.url }));
+        if (m.currentUri === req.url) {
+          // WebView is already on this exact URL (e.g. retry of same chapter).
+          // Force a reload so onLoadEnd fires and the render script is injected.
+          setTimeout(() => {
+            (m.webViewRef.current as WebView | null)?.reload();
+          }, 60);
+        } else {
+          // Navigate WebView to the target URL — onLoadEnd will inject extraction script
+          m.currentUri = req.url;
+          setUris((prev) => ({ ...prev, [sid]: req.url }));
+        }
       } else {
-        // Stay at base URL, inject fetch() script
+        // Inject a fetch() script into the WebView's current page context.
+        // The WebView may be on the reader page (after fetchRendered) — that is
+        // intentional: the browser's automatic Referer will be the reader URL,
+        // which is required by MangaFire's chapter-image AJAX endpoint.
         const script = buildFetchScript(req);
         setTimeout(() => {
           (m.webViewRef.current as WebView | null)?.injectJavaScript(script);
@@ -268,17 +314,17 @@ export default function GlobalWebViewBridge({
           webViewBridge.resolve(id, { ok: false, status, body: error ?? body });
         }
 
-        const wasRendered = m.wasRendered;
         m.currentReq = null;
         m.processing = false;
         m.wasRendered = false;
 
-        // After SPA extraction, navigate back to base URL so Referer is correct
-        if (wasRendered && m.currentUri !== m.baseUrl) {
-          m.currentUri = m.baseUrl;
-          setUris((prev) => ({ ...prev, [sid]: m.baseUrl }));
-          // onLoadEnd will fire after navigation; it will call processNext
-        } else if (!m.cfChallenge) {
+        // IMPORTANT: Do NOT navigate back to base URL here.
+        // After fetchRendered, the WebView stays on the rendered page so that
+        // any immediately-following fetch() calls (e.g. MangaFire AJAX image
+        // endpoint) inherit the correct Referer (the reader page URL).
+        // Navigation back to base URL happens in processNext when the queue
+        // becomes empty — not mid-sequence.
+        if (!m.cfChallenge) {
           processNext(sid);
         }
       }

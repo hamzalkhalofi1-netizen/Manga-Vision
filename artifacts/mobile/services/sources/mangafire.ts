@@ -477,22 +477,27 @@ function parseChapterImagesFromHtml(html: string): string[] {
   const urls = new Set<string>();
   let m: RegExpExecArray | null;
 
-  // Pattern 1: any img src variant targeting the CDN
-  // Covers: src, data-src, data-lazy-src, data-original, data-lazyload, data-url
+  // Pattern 1: any img src/data-src/data-lazy-src/data-original/data-lazyload targeting CDN
   const flatImgRe = /(?:data-(?:lazy-)?src|data-original|data-lazyload|data-url|src)="(https?:\/\/[^"]*cdn\.mangafire\.to[^"]*\.(?:jpg|jpeg|png|webp)(?:\?[^"]*)?)"/gi;
   while ((m = flatImgRe.exec(html)) !== null) {
     const u = m[1];
     if (!u.includes("logo") && !u.includes("icon") && !u.includes("avatar")) urls.add(u);
   }
 
-  // Pattern 2: any CDN URL in script blocks or data attributes
-  const cdnRe = /(https?:\/\/cdn\.mangafire\.to\/(?:media|assets|uploads|images|i)[^"'\s<>]{4,300}\.(?:jpg|jpeg|png|webp)(?:\?[^"'\s<>]*)?)/gi;
+  // Pattern 2: broad CDN URL — any path under cdn.mangafire.to ending in image ext.
+  // Deliberately broad (no path prefix restriction) to survive CDN restructuring.
+  const cdnRe = /(https?:\/\/cdn\.mangafire\.to\/[^"'\s<>]{4,300}\.(?:jpg|jpeg|png|webp)(?:\?[^"'\s<>]*)?)/gi;
   while ((m = cdnRe.exec(html)) !== null) {
     const u = m[1];
-    if (!u.includes("logo") && !u.includes("icon")) urls.add(u);
+    if (!u.includes("logo") && !u.includes("icon") && !u.includes("avatar")) urls.add(u);
   }
 
-  // Pattern 3: JSON arrays in scripts (images/pages/sources as property)
+  // Pattern 3: CSS background-image: url("https://cdn.mangafire.to/...")
+  // MangaFire reader sometimes renders pages as CSS backgrounds, not <img> elements.
+  const bgImgRe = /background(?:-image)?\s*:\s*url\(["']?(https?:\/\/cdn\.mangafire\.to\/[^"'\s)]{4,300}\.(?:jpg|jpeg|png|webp)(?:\?[^"'\s)]*)?)/gi;
+  while ((m = bgImgRe.exec(html)) !== null) urls.add(m[1]);
+
+  // Pattern 4: JSON arrays in scripts (images/pages/sources as property)
   const scriptRe = /"(?:pages|images|sources|imgs|imageUrls?|urls?)":\s*\[([^\]]{10,})\]/g;
   while ((m = scriptRe.exec(html)) !== null) {
     const inner = m[1];
@@ -501,11 +506,11 @@ function parseChapterImagesFromHtml(html: string): string[] {
     while ((um = urlRe.exec(inner)) !== null) urls.add(um[1]);
   }
 
-  // Pattern 4: tuple arrays like [["https://...", 800, 1200], ...]
+  // Pattern 5: tuple arrays like [["https://...", 800, 1200], ...]
   const tupleRe = /\["(https?:\/\/[^"]+\.(?:jpg|jpeg|png|webp)(?:\?[^"]*)?)",\s*\d/gi;
   while ((m = tupleRe.exec(html)) !== null) urls.add(m[1]);
 
-  // Pattern 5: window.__NUXT__ or window.__data__ style JSON blobs
+  // Pattern 6: window.__NUXT__ / window.__data__ / window.__INITIAL_STATE__ blobs
   const windowRe = /window\.__[A-Z_]+__\s*=\s*(\{[\s\S]{1,50000}?\})\s*;/g;
   while ((m = windowRe.exec(html)) !== null) {
     const blob = m[1];
@@ -516,6 +521,68 @@ function parseChapterImagesFromHtml(html: string): string[] {
 
   console.log(`[mangafire] parseChapterImagesFromHtml → ${urls.size} images`);
   return [...urls];
+}
+
+// ── Web CDN URL rewriter ───────────────────────────────────────────────────
+
+const MF_CDN_PREFIX = "https://cdn.mangafire.to/";
+
+/**
+ * On web, direct CDN requests fail because the browser sends the wrong Referer
+ * (Replit domain instead of mangafire.to) and expo-image ignores the `headers`
+ * prop in web mode.  Route all cdn.mangafire.to URLs through the server proxy
+ * which sends Referer: https://mangafire.to/ to the CDN.
+ *
+ * On native, expo-image sends custom headers (incl. Referer) so direct URLs work.
+ */
+function rewriteForWeb(urls: string[]): string[] {
+  if (Platform.OS !== "web") return urls;
+  return urls.map((url) => {
+    if (url.startsWith(MF_CDN_PREFIX)) {
+      // /api/source-proxy/mangafire-cdn/{path}
+      const path = url.slice(MF_CDN_PREFIX.length);
+      return `/api/source-proxy/mangafire-cdn/${path}`;
+    }
+    return url;
+  });
+}
+
+// ── Chapter session token extraction ─────────────────────────────────────
+
+/**
+ * Extract the chapter session token from HTML.
+ *
+ * The token appears in several places depending on how the page was fetched:
+ *   1. data-a="af266caa520a"                    — rendered DOM attribute (native)
+ *   2. data-token="af266caa520a"                — alternative attribute name
+ *   3. "token":"af266caa520a"                   — JSON config in <script>
+ *   4. window.__CHAPTER_DATA__ = {token:"..."}  — global JS variable
+ *   5. var token = "af266caa520a"               — variable assignment
+ *
+ * Returns null when no token is found (web static HTML without JS execution).
+ */
+function extractChapterToken(html: string): string | null {
+  // Pattern 1: data-a attribute (most common in rendered DOM)
+  const m1 = html.match(/\bdata-a="([a-z0-9]{6,20})"/);
+  if (m1) return m1[1];
+
+  // Pattern 2: alternative data-* attribute names
+  const m2 = html.match(/\bdata-(?:token|key|chapter)="([a-z0-9]{6,20})"/);
+  if (m2) return m2[1];
+
+  // Pattern 3: JSON key/value in script block
+  const m3 = html.match(/"(?:token|chapterToken|chapter_token|a)"\s*:\s*"([a-z0-9]{6,20})"/);
+  if (m3) return m3[1];
+
+  // Pattern 4: JS variable assignment (may appear in SSR inline scripts)
+  const m4 = html.match(/\bvar\s+(?:token|chapterToken)\s*=\s*["']([a-z0-9]{6,20})["']/);
+  if (m4) return m4[1];
+
+  // Pattern 5: NUXT/Next.js SSR JSON blob
+  const m5 = html.match(/"token"\s*:\s*"([a-z0-9]{6,20})"/);
+  if (m5) return m5[1];
+
+  return null;
 }
 
 // ── Source implementation ─────────────────────────────────────────────────
@@ -673,13 +740,15 @@ export const mangafireSource: MangaSource = {
     //
     // Strategy:
     //   Native:  Navigate the persistent WebView to the reader page (fetchRendered,
-    //            7s wait) so MangaFire's React reader JS fully executes and renders
-    //            <img> elements.  Extract images from the fully-rendered DOM.
-    //            Fall back to AJAX with the reader page URL as the Referer (required
-    //            by MangaFire — sending the site root causes "Request is invalid" 403).
+    //            12s) so MangaFire's React JS fully executes.  Extract images from
+    //            the rendered DOM.  If 0 found, fall back to AJAX — the WebView
+    //            STAYS on the reader page after fetchRendered (fixed in bridge), so
+    //            the AJAX call inherits Referer = reader page URL automatically.
     //   Web:     Fetch static reader HTML via proxy, extract token, then call the
     //            AJAX image endpoint with x-proxy-referer = reader page URL so the
-    //            server proxy forwards the correct Referer header.
+    //            server proxy forwards the correct Referer.  Rewrite CDN image URLs
+    //            to go through the server proxy (browser can't send the correct
+    //            Referer for cdn.mangafire.to directly).
     try {
       const readerPath = chapterId.startsWith("/") ? chapterId : `/${chapterId}`;
       const fullReaderUrl = `${SITE_URL}${readerPath}`;
@@ -689,8 +758,9 @@ export const mangafireSource: MangaSource = {
 
       if (Platform.OS !== "web") {
         // Native: navigate the WebView to the reader page so JS can run.
-        // 7 s is enough for the React reader to fetch images internally and
-        // render <img> elements into the DOM.
+        // 12 s gives MangaFire's React reader time to fetch & render images.
+        // After this call, the WebView STAYS on the reader page (bridge fix) so
+        // any subsequent webViewBridge.fetch() call inherits Referer = readerUrl.
         const resp = await webViewBridge.fetchRendered("mangafire", fullReaderUrl, 12000);
         if (!resp.ok && (resp.status === 403 || resp.status === 503)) {
           throw new SourceError(
@@ -705,9 +775,11 @@ export const mangafireSource: MangaSource = {
         const renderedImages = parseChapterImagesFromHtml(html);
         if (renderedImages.length > 0) {
           console.log(`[mangafire] getChapterPages(${chapterId}) rendered DOM → ${renderedImages.length} images`);
-          return renderedImages;
+          return renderedImages; // native: CDN URLs load directly with custom headers
         }
-        console.warn(`[mangafire] Rendered DOM had 0 images — falling back to AJAX (WebView is now back at base URL, Referer will be root)`);
+        // WebView stays on reader page after fetchRendered — AJAX call below will
+        // have Referer = fullReaderUrl automatically (browser sets it).
+        console.log(`[mangafire] getChapterPages(native): DOM had 0 images — trying AJAX (WebView still on reader page)`);
       } else {
         // Web: plain proxy fetch (static HTML, no JS execution).
         html = await mfHtmlFetch(readerPath);
@@ -719,21 +791,18 @@ export const mangafireSource: MangaSource = {
         }
       }
 
-      // Extract the chapter session token (data-a attribute on the reader container)
-      // e.g. data-a="af266caa520a"
-      const tokenM = html.match(/\bdata-a="([a-z0-9]{6,20})"/);
-      const token = tokenM?.[1];
+      // Extract the chapter session token using multi-pattern search.
+      // On native the rendered DOM reliably has data-a; on web (static HTML)
+      // we fall through additional patterns looking in script blocks.
+      const token = extractChapterToken(html);
       console.log(`[mangafire] getChapterPages: token=${token ?? "not found"} html=${html.length}b`);
 
       if (token) {
         try {
-          // Pass the reader page URL as Referer — without this MangaFire returns
-          // {"status":403,"message":"Request is invalid."}.
-          // On web: forwarded via x-proxy-referer server-proxy header.
-          // On native: the WebView is back at base URL after fetchRendered, so the
-          //            automatic Referer will be the site root — same limitation.
-          //            The AJAX call still succeeds if the WebView session has
-          //            cf_clearance; the Referer check appears relaxed for verified sessions.
+          // On native: WebView is still on the reader page → Referer is set
+          //            automatically by the browser — no override needed.
+          // On web:    x-proxy-referer tells the server proxy to forward the
+          //            reader page URL as Referer to MangaFire's AJAX endpoint.
           const json = await mfXhrFetch(
             `/ajax/read/${token}/chapter/en`,
             "",
@@ -742,7 +811,7 @@ export const mangafireSource: MangaSource = {
           const images = parseChapterImages(json);
           if (images.length > 0) {
             console.log(`[mangafire] getChapterPages(${chapterId}) AJAX → ${images.length} images`);
-            return images;
+            return rewriteForWeb(images);
           }
           console.warn(`[mangafire] AJAX returned 0 images for ${chapterId}`);
         } catch (err) {
@@ -758,15 +827,14 @@ export const mangafireSource: MangaSource = {
         }
       }
 
-      // HTML fallback: works only when images are embedded in static HTML
-      // (rare for MangaFire, but covers edge-case chapters).
+      // HTML fallback: works when images appear in static or rendered HTML.
       const fallbackImages = parseChapterImagesFromHtml(html);
       if (fallbackImages.length > 0) {
         console.log(`[mangafire] getChapterPages(${chapterId}) HTML fallback → ${fallbackImages.length} images`);
-        return fallbackImages;
+        return rewriteForWeb(fallbackImages);
       }
 
-      console.warn(`[mangafire] PARSER DIAGNOSTIC: getChapterPages(${chapterId}) exhausted all strategies. HTML size: ${html.length}`);
+      console.warn(`[mangafire] PARSER DIAGNOSTIC: getChapterPages(${chapterId}) exhausted all strategies. html=${html.length}b token=${token ?? "none"}`);
       if (!token) {
         throw new SourceError(
           "MangaFire chapter images require browser verification. Please verify this source first.",
