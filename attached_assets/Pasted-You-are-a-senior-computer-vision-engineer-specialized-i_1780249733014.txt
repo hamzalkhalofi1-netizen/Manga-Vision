@@ -1,0 +1,98 @@
+You are a senior computer vision engineer specialized in manga localization, OCR, image processing and Android performance optimization.
+
+Analyze the entire Yomu AI image translation pipeline.
+
+Current problems:
+
+- Black polygons appear over artwork.
+- Text removal destroys the original image.
+- Speech bubbles are damaged.
+- Arabic text placement is inconsistent.
+- Translation quality is acceptable but rendering quality is poor.
+
+I do NOT want cosmetic fixes.
+
+I want a complete redesign of the rendering pipeline to reach the quality level of professional manga localization tools.
+
+Requirements:
+
+1. Remove the current masking implementation entirely if necessary.
+
+2. Build a professional pipeline:
+
+Image
+→ OCR Detection
+→ Text Region Segmentation
+→ Precise Mask Generation
+→ Mask Refinement
+→ Inpainting
+→ Bubble Analysis
+→ Arabic Layout Engine
+→ Text Rendering
+
+3. OCR:
+
+- Detect text blocks accurately.
+- Extract bounding boxes.
+- Support vertical and horizontal text.
+- Support manga/manhwa layouts.
+
+4. Segmentation:
+
+- Detect only actual text pixels.
+- Avoid masking artwork.
+- Avoid masking bubble borders.
+
+5. Inpainting:
+
+- Preserve artwork details.
+- Preserve gradients.
+- Preserve bubble shapes.
+- Preserve shadows and line art.
+
+6. Use modern Android-compatible libraries when appropriate:
+
+- OpenCV
+- ML Kit
+- MediaPipe
+- Skia
+
+7. Arabic Rendering:
+
+- Full RTL support.
+- Dynamic font sizing.
+- Automatic line wrapping.
+- Bubble-aware text fitting.
+- Balanced multi-line layout.
+- Prevent overflow.
+
+8. Rendering Rules:
+
+- Never draw black polygons.
+- Never cover artwork.
+- Never render outside bubble boundaries.
+- Keep translation visually natural.
+
+9. Performance:
+
+- Fully local processing.
+- Optimized memory usage.
+- Suitable for low and mid-range Android devices.
+- Parallel processing where beneficial.
+
+10. Error Handling:
+
+- If confidence is low, keep original text.
+- Never damage the image.
+
+11. Produce:
+
+- Root cause analysis of current issues.
+- Files that must be changed.
+- Exact architectural improvements.
+- Production-ready implementation.
+- No placeholders.
+- No TODO comments.
+- No temporary fixes.
+
+The final result should visually resemble a professionally translated manga chapter rather than an OCR overlay.

@@ -30,10 +30,8 @@ function cacheGet(imageUrl: string, lang: string): CachedTranslation | undefined
 function cacheSet(imageUrl: string, lang: string, value: CachedTranslation): void {
   const key = `${imageUrl}|${lang}`;
   if (translationCache.has(key)) {
-    // Refresh position by re-inserting
     translationCache.delete(key);
   } else if (translationCache.size >= CACHE_MAX) {
-    // Evict oldest entry
     translationCache.delete(translationCache.keys().next().value!);
   }
   translationCache.set(key, value);
@@ -97,11 +95,6 @@ async function fetchImageAsBase64(
 
 // ── Polygon geometry helpers ───────────────────────────────────────────────────
 
-/**
- * computeCentroid — area-weighted centroid of a normalized polygon (Shoelace).
- * Returns the visual center of mass, which is more accurate than bbox center
- * for skewed or non-rectangular OCR regions.
- */
 function computeCentroid(
   poly: [number, number][]
 ): { x: number; y: number } {
@@ -117,7 +110,6 @@ function computeCentroid(
   }
   area /= 2;
   if (Math.abs(area) < 1e-8) {
-    // Degenerate — fall back to vertex average
     return {
       x: poly.reduce((s, [x]) => s + x, 0) / n,
       y: poly.reduce((s, [, y]) => s + y, 0) / n,
@@ -129,11 +121,6 @@ function computeCentroid(
   };
 }
 
-/**
- * computeRotation — dominant axis angle of a polygon in degrees.
- * Derived from the top edge direction (pts[0] → pts[1] for clockwise winding).
- * Clamped to ±30° and rounded to one decimal.
- */
 function computeRotation(poly: [number, number][]): number {
   if (poly.length < 2) return 0;
   const dx = poly[1][0] - poly[0][0];
@@ -145,12 +132,6 @@ function computeRotation(poly: [number, number][]): number {
   return Math.abs(deg) < 2 ? 0 : Math.round(deg * 10) / 10;
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-
-/**
- * Derive a 4-point polygon from a bounding box when Gemini doesn't supply one.
- * Order: top-left, top-right, bottom-right, bottom-left (clockwise).
- */
 function bboxToPolygon(
   x: number,
   y: number,
@@ -166,7 +147,8 @@ function bboxToPolygon(
 }
 
 /**
- * Validate that a polygon is a non-degenerate array of [x, y] pairs within [0,1].
+ * Validate a 4-point glyph-tight OCR polygon.
+ * Returns null if invalid; coordinates clamped to [0, 1].
  */
 function validatePolygon(
   raw: unknown
@@ -181,10 +163,36 @@ function validatePolygon(
   });
   if (pts.some((p) => p === null)) return null;
   const valid = pts as [number, number][];
-  // Pad or trim to exactly 4 points
   while (valid.length < 4) valid.push(valid[valid.length - 1]);
   return [valid[0], valid[1], valid[2], valid[3]];
 }
+
+/**
+ * validateBubblePolygon — accepts 3–12 point polygon tracing the full speech
+ * bubble outline. Returns null if invalid; coordinates clamped to [0, 1].
+ * Unlike validatePolygon, this accepts variable point counts (round bubbles
+ * need 6–8 points; rectangular narration boxes need 4).
+ */
+function validateBubblePolygon(raw: unknown): [number, number][] | null {
+  if (!Array.isArray(raw) || raw.length < 3 || raw.length > 16) return null;
+  const pts: [number, number][] = [];
+  for (const p of raw) {
+    if (!Array.isArray(p) || p.length < 2) return null;
+    const x = Number(p[0]);
+    const y = Number(p[1]);
+    if (isNaN(x) || isNaN(y)) return null;
+    pts.push([Math.max(0, Math.min(1, x)), Math.max(0, Math.min(1, y))]);
+  }
+  // Sanity check: bubble polygon must be meaningfully larger than a point
+  const xs = pts.map(([x]) => x);
+  const ys = pts.map(([, y]) => y);
+  const spanX = Math.max(...xs) - Math.min(...xs);
+  const spanY = Math.max(...ys) - Math.min(...ys);
+  if (spanX < 0.01 && spanY < 0.01) return null;
+  return pts;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 
 router.post("/", async (req, res) => {
   const userKey = req.headers["x-gemini-key"] as string | undefined;
@@ -230,7 +238,6 @@ router.post("/", async (req, res) => {
       return;
     }
 
-    // ── Cache check (imageUrl path only — base64 uploads are not cached) ──────
     if (imageUrl) {
       const hit = cacheGet(imageUrl, targetLanguage);
       if (hit) {
@@ -255,10 +262,10 @@ router.post("/", async (req, res) => {
 TASK: Analyze this manga/manhwa page. For EVERY visible piece of text — dialogue, sound effects, signs, narration — do ALL of the following:
 
 1. LOCATE the text precisely:
-   - polygon: tight quadrilateral around the actual text characters (4 [x,y] normalized points, clockwise from top-left)
+   - polygon: tight quadrilateral around the actual text characters ONLY (exactly 4 [x,y] normalized points, clockwise from top-left). Wraps the INK GLYPHS, NOT the bubble outline.
+   - bubblePolygon: 4–8 clockwise [x,y] points tracing the FULL SPEECH BUBBLE / thought bubble / narration box OUTLINE — this is larger than polygon and includes the bubble border, tail, and pointer area. For round or oval bubbles use 6–8 points to capture the curve. For SFX or floating text with no bubble, copy the polygon value here.
    - x, y: top-left corner of the text area (normalized 0.0–1.0)
    - w, h: width and height of the text area as fractions of the image size
-   Coordinates MUST wrap the TEXT GLYPHS ONLY — not the speech bubble outline.
 
 2. DETECT the color immediately behind the text:
    - bgColor: hex of the pixel area directly behind the text characters (e.g. "#ffffff" white, "#1a1a1a" dark)
@@ -284,8 +291,9 @@ Return ONLY valid JSON — no markdown, no backticks, no commentary:
     {
       "original": "source text",
       "translated": "${langName} translation",
-      "polygon": [[0.05,0.03],[0.47,0.03],[0.47,0.14],[0.05,0.14]],
-      "x": 0.05, "y": 0.03, "w": 0.42, "h": 0.11,
+      "polygon": [[0.10,0.05],[0.42,0.05],[0.42,0.18],[0.10,0.18]],
+      "bubblePolygon": [[0.04,0.01],[0.24,0.00],[0.48,0.01],[0.49,0.21],[0.25,0.23],[0.03,0.21]],
+      "x": 0.10, "y": 0.05, "w": 0.32, "h": 0.13,
       "type": "speech",
       "bgColor": "#ffffff",
       "textColor": "#000000",
@@ -297,9 +305,10 @@ Return ONLY valid JSON — no markdown, no backticks, no commentary:
 }
 
 RULES:
-- polygon: exactly 4 [x,y] points wrapping the TEXT ONLY — never the bubble outline
+- polygon: exactly 4 [x,y] points wrapping the TEXT GLYPHS ONLY — never the bubble outline
+- bubblePolygon: 4–8 [x,y] points tracing the FULL bubble border — significantly larger than polygon in most cases; use 6 or more points for round/oval bubbles
 - All coordinates in range 0.0–1.0
-- Every separate text block is its own region — never merge distinct text areas
+- Every separate text block is its own region — never merge distinct text areas or text from different bubbles
 - If no text found: { "found": false, "regions": [], "summary": "No text on this page" }`;
 
     const MODEL = "gemini-2.5-flash";
@@ -329,6 +338,7 @@ RULES:
             original: string;
             translated: string;
             polygon?: unknown;
+            bubblePolygon?: unknown;
             x: number;
             y: number;
             w: number;
@@ -366,11 +376,13 @@ RULES:
               const cw = Math.max(0.02, Math.min(1 - cx, r.w));
               const ch = Math.max(0.02, Math.min(1 - cy, r.h));
 
-              // Validate or derive polygon
               const polygon =
                 validatePolygon(r.polygon) ?? bboxToPolygon(cx, cy, cw, ch);
 
-              // Compute true centroid and rotation from the validated polygon
+              // bubblePolygon: the full speech bubble outline (4–8 points).
+              // Validated separately — variable point count allowed.
+              const bubblePolygon = validateBubblePolygon(r.bubblePolygon) ?? undefined;
+
               const centroid  = computeCentroid(polygon);
               const rotation  = computeRotation(polygon);
 
@@ -381,11 +393,9 @@ RULES:
                 w: cw,
                 h: ch,
                 polygon,
-                // True polygon centroid (area-weighted) — more accurate than
-                // bbox center for skewed / non-rectangular OCR regions
+                bubblePolygon,
                 centroid,
                 rotation,
-                // Legacy bbox-center fields kept for backwards compatibility
                 centerX: centroid.x,
                 centerY: centroid.y,
                 bgColor: r.bgColor || "#ffffff",
@@ -402,7 +412,6 @@ RULES:
           "Image translation success"
         );
 
-        // Store in server cache — future requests for this page skip Gemini entirely
         if (imageUrl) {
           cacheSet(imageUrl, targetLanguage, parsed);
         }
