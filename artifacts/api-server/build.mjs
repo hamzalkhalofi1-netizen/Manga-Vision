@@ -70,6 +70,7 @@ async function buildAll() {
       "@parcel/watcher",
       "@sentry/profiling-node",
       "@tree-sitter/*",
+      "@techstark/opencv-js",
       "aws-sdk",
       "classic-level",
       "dd-trace",

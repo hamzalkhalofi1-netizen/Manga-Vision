@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.52.0",
+    "@techstark/opencv-js": "4.12.0-release.1",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/integrations-gemini-ai": "workspace:*",

@@ -1,7 +1,9 @@
 import { Image } from "expo-image";
-import React, { memo, useCallback, useState } from "react";
-import { Dimensions, View } from "react-native";
+import React, { memo, useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Dimensions, View } from "react-native";
 import PremiumOverlayRenderer from "./PremiumOverlayRenderer";
+import CVPipelineRenderer from "./CVPipelineRenderer";
+import { runCVPipelineWithRetry, type CvRefinedRegion } from "./cv/InpaintingEngine";
 import { getBasicImageHeaders } from "@/services/sourceImageHeaders";
 
 const SCREEN_W = Dimensions.get("window").width;
@@ -66,6 +68,11 @@ export interface TextRegion {
   emphasis: boolean;
 }
 
+interface CVState {
+  inpaintedUri: string;
+  refinedRegions: CvRefinedRegion[];
+}
+
 interface MangaPageProps {
   uri: string;
   regions?: TextRegion[];
@@ -87,6 +94,56 @@ function MangaPage({
   const [displayH, setDisplayH] = useState(Math.round(SCREEN_W * DEFAULT_ASPECT));
   const [nativeDims, setNativeDims] = useState({ w: 0, h: 0 });
 
+  // ── CV pipeline state ────────────────────────────────────────────────────
+  const [cvState, setCvState] = useState<CVState | null>(null);
+  const [cvLoading, setCvLoading] = useState(false);
+  const cvRunRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!showOverlay || regions.length === 0) {
+      setCvState(null);
+      setCvLoading(false);
+      cvRunRef.current = null;
+      return;
+    }
+
+    // Deduplicate runs — uri + region count as stable key
+    const runKey = `${uri}|${regions.length}`;
+    if (cvRunRef.current === runKey) return;
+    cvRunRef.current = runKey;
+
+    setCvLoading(true);
+    setCvState(null);
+
+    const cvRegions = regions.map((r) => ({
+      polygon: r.polygon ?? ([
+        [r.x, r.y],
+        [r.x + r.w, r.y],
+        [r.x + r.w, r.y + r.h],
+        [r.x, r.y + r.h],
+      ] as [number, number][]),
+      bubblePolygon: r.bubblePolygon,
+      x: r.x,
+      y: r.y,
+      w: r.w,
+      h: r.h,
+    }));
+
+    runCVPipelineWithRetry(uri, cvRegions)
+      .then((result) => {
+        if (!result) return;
+        if (cvRunRef.current !== runKey) return;
+        setCvState({
+          inpaintedUri: `data:image/png;base64,${result.inpaintedImage}`,
+          refinedRegions: result.refinedRegions,
+        });
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (cvRunRef.current === runKey) setCvLoading(false);
+      });
+  }, [uri, regions, showOverlay]);
+
   const handleLoad = useCallback(
     (e: { source: { width: number; height: number } }) => {
       const { width, height } = e.source;
@@ -100,18 +157,33 @@ function MangaPage({
     [onHeightKnown]
   );
 
+  const imageSource = cvState?.inpaintedUri
+    ? { uri: cvState.inpaintedUri }
+    : { uri, headers: imageHeaders };
+
   return (
     <View style={{ width: SCREEN_W, height: displayH, backgroundColor: "#000" }}>
       <Image
-        source={{ uri, headers: imageHeaders }}
+        source={imageSource}
         style={{ width: SCREEN_W, height: displayH }}
         contentFit="fill"
         transition={100}
-        recyclingKey={uri}
+        recyclingKey={cvState?.inpaintedUri ?? uri}
         onLoad={handleLoad}
       />
 
-      {showOverlay && regions.length > 0 && (
+      {/* ── CV pipeline renderer (inpainted image + clean text) ──────────── */}
+      {showOverlay && cvState && regions.length > 0 && (
+        <CVPipelineRenderer
+          regions={regions}
+          refinedRegions={cvState.refinedRegions}
+          displayW={SCREEN_W}
+          displayH={displayH}
+        />
+      )}
+
+      {/* ── Legacy overlay while CV pipeline loads ───────────────────────── */}
+      {showOverlay && !cvState && regions.length > 0 && !cvLoading && (
         <PremiumOverlayRenderer
           regions={regions}
           displayW={SCREEN_W}
@@ -121,6 +193,21 @@ function MangaPage({
           isRTL={isRTL}
           imageUri={uri}
         />
+      )}
+
+      {/* ── CV loading indicator ─────────────────────────────────────────── */}
+      {showOverlay && cvLoading && (
+        <View
+          style={{
+            position: "absolute",
+            top: 6,
+            right: 8,
+            opacity: 0.6,
+          }}
+          pointerEvents="none"
+        >
+          <ActivityIndicator size="small" color="#7B96FF" />
+        </View>
       )}
     </View>
   );
