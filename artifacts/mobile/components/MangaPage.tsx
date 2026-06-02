@@ -3,7 +3,8 @@ import React, { memo, useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Dimensions, View } from "react-native";
 import PremiumOverlayRenderer from "./PremiumOverlayRenderer";
 import CVPipelineRenderer from "./CVPipelineRenderer";
-import { runCVPipelineWithRetry, type CvRefinedRegion } from "./cv/InpaintingEngine";
+import { runCVPipelineWithRetry, type CvRefinedRegion, type CvRegionInput } from "./cv/InpaintingEngine";
+import { classifyRegion } from "./cv/TextClassificationEngine";
 import { getBasicImageHeaders } from "@/services/sourceImageHeaders";
 
 const SCREEN_W = Dimensions.get("window").width;
@@ -23,46 +24,19 @@ export type BubblePolygon = [
 export interface TextRegion {
   original: string;
   translated: string;
-  /** Normalized bounding box (0–1) of the text glyphs */
   x: number;
   y: number;
   w: number;
   h: number;
-  /**
-   * Normalized center of the bounding box (legacy fallback).
-   * Prefer centroid when available.
-   */
   centerX?: number;
   centerY?: number;
-  /**
-   * True polygon centroid (area-weighted), normalized 0–1.
-   * Computed server-side from the OCR polygon. More accurate than
-   * bbox center for skewed or non-rectangular text regions.
-   */
   centroid?: { x: number; y: number };
-  /**
-   * Rotation angle of the text block in degrees (−45 to 45).
-   * Derived from the polygon's dominant axis (top edge direction).
-   * 0 for horizontal text, positive = clockwise tilt.
-   */
   rotation?: number;
-  /**
-   * 4-point clockwise polygon describing the actual glyph boundary.
-   * Falls back to a rectangle derived from x/y/w/h if absent.
-   */
   polygon?: BubblePolygon;
-  /**
-   * 4–8 point clockwise polygon tracing the FULL speech bubble outline.
-   * Larger than polygon — includes the bubble border, tail, and pointer.
-   * Used as the mask/erase boundary and text container reference.
-   * Falls back to an expanded OCR polygon when absent.
-   */
   bubblePolygon?: [number, number][];
-  /** "speech" | "thought" | "sfx" | "sign" | "narration" | "title" */
+  /** "speech" | "thought" | "sfx" | "sign" | "narration" | "title" | "credits" | "watermark" */
   type: string;
-  /** Hex color of the bubble interior background */
   bgColor: string;
-  /** Hex color of the original text (used to derive translation text color) */
   textColor: string;
   speaker: string | null;
   emphasis: boolean;
@@ -70,7 +44,8 @@ export interface TextRegion {
 
 interface CVState {
   inpaintedUri: string;
-  refinedRegions: CvRefinedRegion[];
+  /** Aligned to regions[]. null for regions that were not inpainted. */
+  refinedRegions: (CvRefinedRegion | null)[];
 }
 
 interface MangaPageProps {
@@ -94,7 +69,6 @@ function MangaPage({
   const [displayH, setDisplayH] = useState(Math.round(SCREEN_W * DEFAULT_ASPECT));
   const [nativeDims, setNativeDims] = useState({ w: 0, h: 0 });
 
-  // ── CV pipeline state ────────────────────────────────────────────────────
   const [cvState, setCvState] = useState<CVState | null>(null);
   const [cvLoading, setCvLoading] = useState(false);
   const cvRunRef = useRef<string | null>(null);
@@ -107,7 +81,6 @@ function MangaPage({
       return;
     }
 
-    // Deduplicate runs — uri + region count as stable key
     const runKey = `${uri}|${regions.length}`;
     if (cvRunRef.current === runKey) return;
     cvRunRef.current = runKey;
@@ -115,27 +88,57 @@ function MangaPage({
     setCvLoading(true);
     setCvState(null);
 
-    const cvRegions = regions.map((r) => ({
-      polygon: r.polygon ?? ([
-        [r.x, r.y],
-        [r.x + r.w, r.y],
-        [r.x + r.w, r.y + r.h],
-        [r.x, r.y + r.h],
-      ] as [number, number][]),
-      bubblePolygon: r.bubblePolygon,
-      x: r.x,
-      y: r.y,
-      w: r.w,
-      h: r.h,
-    }));
+    // ── Classify every region before touching the CV pipeline ─────────────
+    // Only regions that need inpainting (speech bubbles, narration, sfx, signs)
+    // are sent to the server.  Chapter titles, credits, and watermarks are
+    // skipped entirely — they don't need server processing and should not
+    // be rendered.
+    const inpaintIndices: number[] = [];
+    const cvRegions: CvRegionInput[] = [];
+
+    for (let i = 0; i < regions.length; i++) {
+      const r = regions[i];
+      const cls = classifyRegion(r);
+      if (!cls.shouldInpaint) continue;
+
+      inpaintIndices.push(i);
+      cvRegions.push({
+        polygon: r.polygon ?? [
+          [r.x, r.y],
+          [r.x + r.w, r.y],
+          [r.x + r.w, r.y + r.h],
+          [r.x, r.y + r.h],
+        ],
+        bubblePolygon: r.bubblePolygon,
+        x: r.x,
+        y: r.y,
+        w: r.w,
+        h: r.h,
+      });
+    }
+
+    if (cvRegions.length === 0) {
+      setCvLoading(false);
+      return;
+    }
 
     runCVPipelineWithRetry(uri, cvRegions)
       .then((result) => {
         if (!result) return;
         if (cvRunRef.current !== runKey) return;
+
+        // Re-align refinedRegions back to original region indices
+        const fullRefined: (CvRefinedRegion | null)[] = new Array(regions.length).fill(null);
+        result.refinedRegions.forEach((refined, pipelineIdx) => {
+          const originalIdx = inpaintIndices[pipelineIdx];
+          if (originalIdx !== undefined) {
+            fullRefined[originalIdx] = refined;
+          }
+        });
+
         setCvState({
           inpaintedUri: `data:image/png;base64,${result.inpaintedImage}`,
-          refinedRegions: result.refinedRegions,
+          refinedRegions: fullRefined,
         });
       })
       .catch(() => {})
@@ -172,7 +175,6 @@ function MangaPage({
         onLoad={handleLoad}
       />
 
-      {/* ── CV pipeline renderer (inpainted image + clean text) ──────────── */}
       {showOverlay && cvState && regions.length > 0 && (
         <CVPipelineRenderer
           regions={regions}
@@ -182,7 +184,6 @@ function MangaPage({
         />
       )}
 
-      {/* ── Legacy overlay while CV pipeline loads ───────────────────────── */}
       {showOverlay && !cvState && regions.length > 0 && !cvLoading && (
         <PremiumOverlayRenderer
           regions={regions}
@@ -195,15 +196,9 @@ function MangaPage({
         />
       )}
 
-      {/* ── CV loading indicator ─────────────────────────────────────────── */}
       {showOverlay && cvLoading && (
         <View
-          style={{
-            position: "absolute",
-            top: 6,
-            right: 8,
-            opacity: 0.6,
-          }}
+          style={{ position: "absolute", top: 6, right: 8, opacity: 0.6 }}
           pointerEvents="none"
         >
           <ActivityIndicator size="small" color="#7B96FF" />

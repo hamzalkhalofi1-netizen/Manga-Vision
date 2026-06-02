@@ -208,9 +208,11 @@ TASK: Analyze this manga/manhwa page. For EVERY visible piece of text — dialog
    - "speech":    dialogue inside a speech bubble
    - "thought":   text inside a thought bubble
    - "sfx":       large stylized sound effects
-   - "sign":      environmental labels, signs, titles
+   - "sign":      environmental labels, signs
    - "narration": rectangular caption/narration boxes
    - "title":     chapter or volume title cards
+   - "credits":   scanlation group name, translator/editor/cleaner credits
+   - "watermark": website URL or source watermark stamped on the page
 
 4. TRANSLATE to ${langName}:
    ${isRTL

@@ -6,46 +6,64 @@
  *
  * Architecture:
  *   • The manga page image has already been inpainted by the server:
- *     all original text glyphs have been reconstructed back to their
- *     surrounding bubble background using OpenCV Telea inpainting.
- *   • This renderer only needs to position translated text inside
- *     the cleaned bubble boundaries — no erase layer, no opacity fill,
- *     no SVG overlay tricks.
- *   • Text colour is resolved by AdaptiveTextColorEngine from the
- *     bubble's bgColor field, ensuring WCAG-compliant contrast.
- *   • Arabic / RTL layout is handled by ArabicLayoutEngine which
- *     auto-scales font size, balances lines, and compensates for
- *     tashkeel diacritics.
+ *     all original text glyphs have been reconstructed back to the surrounding
+ *     bubble background using OpenCV Telea inpainting.
+ *   • This renderer ONLY positions translated text inside cleaned bubbles.
+ *     No erase layer. No opacity fill. No SVG overlay tricks.
+ *
+ * Pipeline before render:
+ *   1. TextClassificationEngine.classifyRegion() — filter chapter titles,
+ *      credits, watermarks, and unknowns. Only speech_bubble, narration_box,
+ *      and ui_text reach the render stage.
+ *   2. LayoutAnalysisEngine.analyseLayout() — assigns manga reading order
+ *      (right-to-left). Rendered regions are sorted in reading order.
+ *   3. BubbleDetectionEngine.selectBubblePolygon() — picks the best polygon
+ *      (CV contour > Gemini bubble > expanded OCR fallback).
+ *   4. polygonAABB() — axis-aligned bounding box in display pixels.
+ *   5. ArabicLayoutEngine.layoutText() — type-aware font scaling, line
+ *      breaking, tashkeel compensation, bidi direction.
  *
  * Rendering model:
- *   For each translated region:
- *     1. BubbleDetectionEngine.selectBubblePolygon() — picks the best
- *        polygon (refined contour > Gemini bubble > expanded OCR fallback).
- *     2. polygonAABB() — axis-aligned bounding box in display pixels.
- *     3. layoutText() — font size, wrapped lines, line-height, direction.
- *     4. A single absolutely-positioned <View> + <Text> renders the text
- *        inside the AABB centered container.
+ *   One absolutely-positioned <View> per region, centred within the bubble AABB.
+ *   Styling varies by text class:
+ *     speech_bubble  → white/black text, standard weight
+ *     narration_box  → slightly wider letter-spacing, editorial margin
+ *     ui_text        → same as speech, smaller safe zone
  *
- * No SVG. No opacity fills. No erase layer. No renderer patches.
+ * Renderer never guesses positions. Renderer never creates geometry.
+ * Renderer receives bubble polygon, layout data, and only renders.
  */
 
 import React, { memo, useMemo } from "react";
 import { Platform, StyleSheet, Text, View } from "react-native";
 import type { TextRegion } from "./MangaPage";
-import { selectBubblePolygon, polygonAABB } from "./cv/BubbleDetectionEngine";
-import { layoutText, ARABIC_FONT_FAMILY, type RegionType } from "./cv/ArabicLayoutEngine";
+import {
+  selectBubblePolygon,
+  polygonAABB,
+} from "./cv/BubbleDetectionEngine";
+import {
+  layoutText,
+  ARABIC_FONT_FAMILY,
+  type RegionType,
+} from "./cv/ArabicLayoutEngine";
 import type { CvRefinedRegion } from "./cv/InpaintingEngine";
 import { resolveFromCss } from "./AdaptiveTextColorEngine";
+import {
+  classifyRegion,
+  type TextClass,
+} from "./cv/TextClassificationEngine";
+import { analyseLayout } from "./cv/LayoutAnalysisEngine";
 
 interface Props {
   regions: TextRegion[];
-  refinedRegions: CvRefinedRegion[];
+  refinedRegions: (CvRefinedRegion | null)[];
   displayW: number;
   displayH: number;
 }
 
 interface RenderedItem {
   key: number;
+  readingOrder: number;
   x: number;
   y: number;
   w: number;
@@ -55,48 +73,68 @@ interface RenderedItem {
   color: string;
   shadowColor: string;
   shadowRadius: number;
-  type: string;
+  textClass: TextClass;
 }
 
-const MIN_BUBBLE_W = 18;
-const MIN_BUBBLE_H = 14;
+const MIN_BUBBLE_PX = 18;
+const MIN_BUBBLE_PX_H = 14;
+const MIN_AREA_PX = 400;
 
-function shouldRender(region: TextRegion, displayW: number, displayH: number): boolean {
-  const text = region.translated?.trim();
-  if (!text) return false;
-
-  const rW = region.w * displayW;
-  const rH = region.h * displayH;
-  const rTop = region.y * displayH;
-  const rBot = (region.y + region.h) * displayH;
-
-  if (rW < 20 || rH < 14) return false;
-  if (rW * rH < 500) return false;
-  if (rW > displayW * 0.70) return false;
-
-  const aspectRatio = rW / Math.max(rH, 1);
-  if (aspectRatio > 5.5 && rH < 45) return false;
-
-  const isTopStrip = rTop < displayH * 0.025 && rH < displayH * 0.04;
-  const isBottomStrip = rBot > displayH * 0.975 && rH < displayH * 0.04;
-  if (isTopStrip || isBottomStrip) return false;
-
-  return true;
+/**
+ * Map canonical TextClass to ArabicLayoutEngine region type.
+ */
+function toLayoutType(cls: TextClass, geminiType: string): RegionType {
+  if (cls === "narration_box") return "narration";
+  if (cls === "sfx") return "sfx";
+  if (cls === "ui_text") return "sign";
+  const g = geminiType.toLowerCase();
+  if (g === "thought") return "thought";
+  if (g === "sfx") return "sfx";
+  if (g === "sign") return "sign";
+  if (g === "narration") return "narration";
+  return "speech";
 }
 
-function CVPipelineRenderer({ regions, refinedRegions, displayW, displayH }: Props) {
+function CVPipelineRenderer({
+  regions,
+  refinedRegions,
+  displayW,
+  displayH,
+}: Props) {
   const items = useMemo<RenderedItem[]>(() => {
-    const result: RenderedItem[] = [];
-
-    for (let idx = 0; idx < regions.length; idx++) {
-      const region = regions[idx];
-      if (!shouldRender(region, displayW, displayH)) continue;
-
+    // ── Phase 1: Classify and filter regions ─────────────────────────────────
+    const renderableIndices: number[] = [];
+    for (let i = 0; i < regions.length; i++) {
+      const region = regions[i];
       const text = region.translated?.trim();
       if (!text) continue;
 
-      const refined = refinedRegions[idx] ?? null;
+      const cls = classifyRegion(region);
+      if (!cls.shouldRender) continue;
 
+      renderableIndices.push(i);
+    }
+
+    if (!renderableIndices.length) return [];
+
+    // ── Phase 2: Assign manga reading order ───────────────────────────────
+    const renderableRegions = renderableIndices.map((i) => regions[i]);
+    const layout = analyseLayout(renderableRegions);
+    const readingOrderByLocal = new Map<number, number>();
+    for (const ann of layout.annotations) {
+      readingOrderByLocal.set(ann.index, ann.readingOrder);
+    }
+
+    // ── Phase 3: Build render items ───────────────────────────────────────
+    const result: RenderedItem[] = [];
+
+    for (let localIdx = 0; localIdx < renderableIndices.length; localIdx++) {
+      const originalIdx = renderableIndices[localIdx];
+      const region = regions[originalIdx];
+      const refined = refinedRegions[originalIdx] ?? null;
+      const text = region.translated!.trim();
+
+      const cls = classifyRegion(region);
       const bubblePoly = selectBubblePolygon({
         refinedBubblePolygon: refined?.refinedBubblePolygon,
         bubblePolygon: region.bubblePolygon ?? refined?.bubblePolygon,
@@ -108,40 +146,45 @@ function CVPipelineRenderer({ regions, refinedRegions, displayW, displayH }: Pro
       });
 
       const { x, y, w, h } = polygonAABB(bubblePoly, displayW, displayH);
+      if (w < MIN_BUBBLE_PX || h < MIN_BUBBLE_PX_H || w * h < MIN_AREA_PX) continue;
 
-      if (w < MIN_BUBBLE_W || h < MIN_BUBBLE_H) continue;
-
-      const regionType = (region.type ?? "speech") as RegionType;
-      const layout = layoutText(text, w, h, regionType);
-      if (layout.lines.length === 0) continue;
+      const layoutType = toLayoutType(cls.textClass, region.type ?? "speech");
+      const textLayout = layoutText(text, w, h, layoutType);
+      if (!textLayout.lines.length) continue;
 
       const colorProfile = resolveFromCss(region.bgColor || "#ffffff");
-      const color = regionType === "sfx" ? "#FFE566" : colorProfile.color;
-      const shadowColor = regionType === "sfx" ? "rgba(0,0,0,0.95)" : colorProfile.shadowColor;
-      const shadowRadius = regionType === "sfx" ? 8 : colorProfile.shadowRadius;
+      const isSFX = cls.textClass === "sfx" || region.type === "sfx";
+      const color = isSFX ? "#FFE566" : colorProfile.color;
+      const shadowColor = isSFX ? "rgba(0,0,0,0.95)" : colorProfile.shadowColor;
+      const shadowRadius = isSFX ? 8 : colorProfile.shadowRadius;
 
       result.push({
-        key: idx,
+        key: originalIdx,
+        readingOrder: readingOrderByLocal.get(localIdx) ?? localIdx,
         x,
         y,
         w,
         h,
-        layout,
-        text: layout.lines.map((l) => l.text).join("\n"),
+        layout: textLayout,
+        text: textLayout.lines.map((l) => l.text).join("\n"),
         color,
         shadowColor,
         shadowRadius,
-        type: regionType,
+        textClass: cls.textClass,
       });
     }
 
+    result.sort((a, b) => a.readingOrder - b.readingOrder);
     return result;
   }, [regions, refinedRegions, displayW, displayH]);
 
   if (!items.length) return null;
 
   return (
-    <View style={[styles.root, { width: displayW, height: displayH }]}>
+    <View
+      style={[styles.root, { width: displayW, height: displayH }]}
+      pointerEvents="none"
+    >
       {items.map((item) => {
         const paddingX = (item.w - item.layout.safeW) / 2;
         const paddingY = (item.h - item.layout.safeH) / 2;
@@ -170,20 +213,20 @@ function CVPipelineRenderer({ regions, refinedRegions, displayW, displayH }: Pro
                   fontWeight: item.layout.fontWeight,
                   fontStyle: item.layout.fontStyle,
                   writingDirection: item.layout.direction,
-                  ...Platform.select({
-                    web: {
-                      textShadow: item.type === "sfx"
-                        ? `0px 0px 4px ${item.shadowColor}, 0px 0px 10px rgba(0,0,0,0.8)`
-                        : `0px 0px ${item.shadowRadius}px ${item.shadowColor}`,
-                      WebkitFontSmoothing: "antialiased",
-                      direction: item.layout.direction,
-                    } as object,
-                  }),
+                  ...(Platform.OS === "web"
+                    ? ({
+                        textShadow:
+                          item.textClass === "sfx"
+                            ? `0px 0px 4px ${item.shadowColor}, 0px 0px 10px rgba(0,0,0,0.8)`
+                            : `0px 0px ${item.shadowRadius}px ${item.shadowColor}`,
+                        WebkitFontSmoothing: "antialiased",
+                        direction: item.layout.direction,
+                      } as object)
+                    : {}),
                 },
               ]}
               textBreakStrategy="simple"
               allowFontScaling={false}
-              numberOfLines={undefined}
             >
               {item.text}
             </Text>
@@ -200,7 +243,6 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     backgroundColor: "transparent",
-    pointerEvents: "none",
   } as object,
   bubble: {
     position: "absolute",

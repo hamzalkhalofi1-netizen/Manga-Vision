@@ -1,0 +1,182 @@
+You are now acting as a Principal Computer Vision Architect and Senior Manga Localization Engineer.
+
+Analyze the current Yomu AI translation system.
+
+Based on recent test results, the current architecture is fundamentally flawed because it relies mainly on OCR boxes instead of understanding manga page structure.
+
+Observed failures:
+
+- Chapter titles are translated when they should often be ignored.
+- Credits and decorative text are translated.
+- Speech bubbles are not detected correctly.
+- English text remains visible.
+- Arabic text appears outside correct regions.
+- Bubble boundaries are unknown.
+- OCR polygons are incorrectly treated as bubble polygons.
+- Text rendering quality is not comparable to professional scanlation work.
+
+I do NOT want more fixes to the current renderer.
+
+I do NOT want opacity changes.
+
+I do NOT want polygon expansion tweaks.
+
+I do NOT want overlay adjustments.
+
+I want a new architecture.
+
+========================================
+PHASE 1 — AUDIT
+
+First analyze the entire project.
+
+Generate a report containing:
+
+1. Current OCR flow
+2. Current translation flow
+3. Current rendering flow
+4. Current masking flow
+5. Current bubble detection logic
+6. Current text placement logic
+
+Identify every architectural weakness.
+
+========================================
+PHASE 2 — NEW ARCHITECTURE
+
+Design and implement the following modules:
+
+1. OCR Engine
+2. Layout Analysis Engine
+3. Bubble Detection Engine
+4. Text Classification Engine
+5. Inpainting Engine
+6. Arabic Typesetting Engine
+7. Rendering Engine
+
+Create dedicated files for each module.
+
+========================================
+TEXT CLASSIFICATION ENGINE
+
+Every text region must be classified as:
+
+- speech_bubble
+- narration_box
+- sfx
+- chapter_title
+- credits
+- watermark
+- ui_text
+- unknown
+
+Only speech_bubble and narration_box should be translated by default.
+
+Chapter titles, credits, watermarks and decorative typography should be ignored unless explicitly enabled.
+
+========================================
+BUBBLE DETECTION ENGINE
+
+Do NOT use OCR boxes as bubble boundaries.
+
+Detect the actual speech bubble.
+
+Return:
+
+{
+type,
+textPolygon,
+bubblePolygon,
+confidence
+}
+
+Bubble polygons must represent the real visible bubble.
+
+========================================
+INPAINTING ENGINE
+
+Remove text without destroying artwork.
+
+Requirements:
+
+- Preserve bubble borders
+- Preserve gradients
+- Preserve shadows
+- Preserve line art
+- Preserve panel details
+
+Do not erase outside the bubble.
+
+Do not use expanded OCR rectangles.
+
+Use proper masks.
+
+========================================
+ARABIC TYPESETTING ENGINE
+
+Implement:
+
+- RTL layout
+- Dynamic font sizing
+- Line balancing
+- Bubble-aware fitting
+- Overflow prevention
+- Vertical centering
+- Visual centering
+
+Arabic text should look like a professionally translated manga page.
+
+========================================
+RENDERING ENGINE
+
+Renderer must only consume processed layout data.
+
+Renderer must never guess positions.
+
+Renderer must never create bubble geometry.
+
+Renderer receives:
+
+- translated text
+- bubble polygon
+- style data
+
+and only renders.
+
+========================================
+LIBRARIES
+
+Audit existing dependencies.
+
+If required, integrate:
+
+- OpenCV
+- ML Kit
+- Skia
+
+Only if they improve architecture.
+
+Do not install libraries without purpose.
+
+========================================
+DELIVERABLES
+
+Provide:
+
+1. Files to delete
+2. Files to refactor
+3. New files created
+4. New architecture diagram
+5. Dependency changes
+6. Exact implementation details
+
+Do not patch the old pipeline.
+
+Replace the flawed architecture with a production-grade manga localization pipeline.
+
+Target quality:
+Professional manga localization.
+Mihon-quality reader experience.
+No shortcuts.
+No cosmetic fixes.
+No fake implementations.
