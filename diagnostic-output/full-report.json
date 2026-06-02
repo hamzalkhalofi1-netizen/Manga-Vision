@@ -1,0 +1,83 @@
+{
+  "pagesAnalyzed": 1,
+  "totalFailures": 3,
+  "failuresByStage": {
+    "OCR": 3,
+    "Classification": 0,
+    "BubbleDetection": 0,
+    "Segmentation": 0,
+    "Inpainting": 0,
+    "Layout": 0,
+    "Renderer": 0
+  },
+  "failureDetails": {
+    "OCR": [
+      {
+        "manga": "kage_no_jitsuryokush",
+        "page": 1,
+        "error": "Gemini: This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later."
+      },
+      {
+        "manga": "kage_no_jitsuryokush",
+        "page": 2,
+        "error": "Gemini: This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later."
+      },
+      {
+        "manga": "ki_ni_natteru_hito_g",
+        "page": 1,
+        "stage": "OCR",
+        "severity": "CRITICAL",
+        "detail": "No regions returned for page with visible text"
+      }
+    ],
+    "Classification": [],
+    "BubbleDetection": [],
+    "Segmentation": [],
+    "Inpainting": [],
+    "Layout": [],
+    "Renderer": []
+  },
+  "pageResults": [
+    {
+      "label": "ki_ni_natteru_hito_g-ch0-p1",
+      "manga": "ki_ni_natteru_hito_g",
+      "page": 1,
+      "url": "https://cmdxd98sb0x3yprd.mangadex.network/data/af7365d699936cf026bd7423c6669b52/1-d6237193ea4ac617b58fbc0c6f2e1d9ff015f4d0a6968449103050477c38003e.png",
+      "ocrRegions": 0,
+      "ocrFound": false,
+      "ocrTypes": [],
+      "geminiSummary": "",
+      "classSummary": {
+        "total": 0,
+        "speech_bubble": 0,
+        "narration_box": 0,
+        "sfx": 0,
+        "ui_text": 0,
+        "chapter_title": 0,
+        "credits": 0,
+        "watermark": 0,
+        "unknown": 0,
+        "inpainted": 0,
+        "rendered": 0,
+        "skipped": 0
+      },
+      "timing": {
+        "fetchMs": 213,
+        "classifyMs": 0,
+        "segmentMs": 0,
+        "bubbleMs": 0,
+        "inpaintMs": 0,
+        "annotateMs": 219,
+        "totalMs": 432
+      },
+      "failures": [
+        {
+          "stage": "OCR",
+          "severity": "CRITICAL",
+          "detail": "No regions returned for page with visible text"
+        }
+      ],
+      "failureCount": 1
+    }
+  ]
+}

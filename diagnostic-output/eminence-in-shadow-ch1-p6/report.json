@@ -1,0 +1,495 @@
+{
+  "regions": [
+    {
+      "index": 0,
+      "originalText": "IF A NUKE\nIS DROPPED\nON MY HEAD,\nI'LL BE\nVAPORIZED.",
+      "translatedText": "إذا سقطت قنبلة نووية على رأسي، فسوف أتبخر.",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          0.6725,
+          0.076
+        ],
+        [
+          0.8306,
+          0.076
+        ],
+        [
+          0.8306,
+          0.1878
+        ],
+        [
+          0.6725,
+          0.1878
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.6625,
+          0.0633
+        ],
+        [
+          0.8417,
+          0.0633
+        ],
+        [
+          0.8417,
+          0.1992
+        ],
+        [
+          0.6625,
+          0.1992
+        ]
+      ],
+      "refinedBubblePolygon": [
+        [
+          0.6570915619389587,
+          0.065
+        ],
+        [
+          0.8339317773788151,
+          0.06625
+        ],
+        [
+          0.8321364452423698,
+          0.231875
+        ],
+        [
+          0.6543985637342908,
+          0.230625
+        ]
+      ],
+      "renderRect": {
+        "x": 0.6725,
+        "y": 0.076,
+        "w": 0.1581,
+        "h": 0.1118
+      }
+    },
+    {
+      "index": 1,
+      "originalText": "SUCH IS\nTHE LIMIT OF\nBIOLOGICAL\nBEINGS.",
+      "translatedText": "هذا هو حد الكائنات البيولوجية.",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          0.1069,
+          0.2868
+        ],
+        [
+          0.2647,
+          0.2868
+        ],
+        [
+          0.2647,
+          0.3725
+        ],
+        [
+          0.1069,
+          0.3725
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.0967,
+          0.2733
+        ],
+        [
+          0.2767,
+          0.2733
+        ],
+        [
+          0.2767,
+          0.385
+        ],
+        [
+          0.0967,
+          0.385
+        ]
+      ],
+      "refinedBubblePolygon": [
+        [
+          0.09694793536804308,
+          0.25375
+        ],
+        [
+          0.25583482944344704,
+          0.255
+        ],
+        [
+          0.2540394973070018,
+          0.433125
+        ],
+        [
+          0.09605026929982047,
+          0.431875
+        ]
+      ],
+      "renderRect": {
+        "x": 0.1069,
+        "y": 0.2868,
+        "w": 0.1578,
+        "h": 0.0857
+      }
+    },
+    {
+      "index": 2,
+      "originalText": "SO\nWHAT IS THEN\nREQUIRED TO\nAVOID BEING\nVAPORIZED?",
+      "translatedText": "إذن ما المطلوب لتجنب التبخر؟",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          0.2522,
+          0.5471
+        ],
+        [
+          0.4047,
+          0.5471
+        ],
+        [
+          0.4047,
+          0.6416
+        ],
+        [
+          0.2522,
+          0.6416
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.2425,
+          0.5342
+        ],
+        [
+          0.4158,
+          0.5342
+        ],
+        [
+          0.4158,
+          0.6542
+        ],
+        [
+          0.2425,
+          0.6542
+        ]
+      ],
+      "refinedBubblePolygon": [
+        [
+          0.36894075403949733,
+          0.52
+        ],
+        [
+          0.36983842010771995,
+          0.659375
+        ],
+        [
+          0.22621184919210055,
+          0.66
+        ],
+        [
+          0.22262118491921004,
+          0.699375
+        ],
+        [
+          0.11400359066427289,
+          0.699375
+        ],
+        [
+          0.11310592459605028,
+          0.585625
+        ],
+        [
+          0.2244165170556553,
+          0.584375
+        ],
+        [
+          0.22621184919210055,
+          0.52
+        ]
+      ],
+      "renderRect": {
+        "x": 0.2522,
+        "y": 0.5471,
+        "w": 0.1525,
+        "h": 0.0945
+      }
+    },
+    {
+      "index": 3,
+      "originalText": "THAT'S WHAT\nI HAD TO\nFIGURE OUT\nNEXT.",
+      "translatedText": "هذا ما كان علي اكتشافه بعد ذلك.",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          0.1167,
+          0.6062
+        ],
+        [
+          0.2311,
+          0.6062
+        ],
+        [
+          0.2311,
+          0.6756
+        ],
+        [
+          0.1167,
+          0.6756
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.1067,
+          0.5925
+        ],
+        [
+          0.2417,
+          0.5925
+        ],
+        [
+          0.2417,
+          0.6875
+        ],
+        [
+          0.1067,
+          0.6875
+        ]
+      ],
+      "refinedBubblePolygon": [
+        [
+          0.36894075403949733,
+          0.52
+        ],
+        [
+          0.36983842010771995,
+          0.659375
+        ],
+        [
+          0.22621184919210055,
+          0.66
+        ],
+        [
+          0.22262118491921004,
+          0.699375
+        ],
+        [
+          0.11400359066427289,
+          0.699375
+        ],
+        [
+          0.11310592459605028,
+          0.585625
+        ],
+        [
+          0.2244165170556553,
+          0.584375
+        ],
+        [
+          0.22621184919210055,
+          0.52
+        ]
+      ],
+      "renderRect": {
+        "x": 0.1167,
+        "y": 0.6062,
+        "w": 0.1144,
+        "h": 0.0694
+      }
+    },
+    {
+      "index": 4,
+      "originalText": "THE \"EMINENCE\nIN SHADOW\"\nI WANT TO BECOME\nWOULDN'T BE\nVAPORIZED BY\nA NUKE.",
+      "translatedText": "الـ\"ظل البارز\" الذي أريد أن أصبح عليه لن يتبخر بقنبلة نووية.",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          0.7208,
+          0.551
+        ],
+        [
+          0.8756,
+          0.551
+        ],
+        [
+          0.8756,
+          0.6698
+        ],
+        [
+          0.7208,
+          0.6698
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.7108,
+          0.5383
+        ],
+        [
+          0.8867,
+          0.5383
+        ],
+        [
+          0.8867,
+          0.6808
+        ],
+        [
+          0.7108,
+          0.6808
+        ]
+      ],
+      "refinedBubblePolygon": [
+        [
+          0.7190305206463196,
+          0.54
+        ],
+        [
+          0.8644524236983842,
+          0.54125
+        ],
+        [
+          0.8617594254937163,
+          0.686875
+        ],
+        [
+          0.7172351885098743,
+          0.685625
+        ]
+      ],
+      "renderRect": {
+        "x": 0.7208,
+        "y": 0.551,
+        "w": 0.1548,
+        "h": 0.1188
+      }
+    },
+    {
+      "index": 5,
+      "originalText": "AND THEN\nTHE ANSWER\nDAWNED\nON ME...",
+      "translatedText": "ثم لاح لي الجواب...",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          0.2078,
+          0.803
+        ],
+        [
+          0.3203,
+          0.803
+        ],
+        [
+          0.3203,
+          0.8708
+        ],
+        [
+          0.2078,
+          0.8708
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.1983,
+          0.7892
+        ],
+        [
+          0.3308,
+          0.7892
+        ],
+        [
+          0.3308,
+          0.8825
+        ],
+        [
+          0.1983,
+          0.8825
+        ]
+      ],
+      "refinedBubblePolygon": [
+        [
+          0.19030520646319568,
+          0.75875
+        ],
+        [
+          0.34201077199281865,
+          0.759375
+        ],
+        [
+          0.34111310592459604,
+          0.903125
+        ],
+        [
+          0.18940754039497307,
+          0.9025
+        ]
+      ],
+      "renderRect": {
+        "x": 0.2078,
+        "y": 0.803,
+        "w": 0.1125,
+        "h": 0.0678
+      }
+    }
+  ],
+  "summary": {
+    "total": 6,
+    "speech_bubble": 0,
+    "narration_box": 6,
+    "sfx": 0,
+    "ui_text": 0,
+    "chapter_title": 0,
+    "credits": 0,
+    "watermark": 0,
+    "unknown": 0,
+    "inpainted": 6,
+    "rendered": 6,
+    "skipped": 0
+  },
+  "timing": {
+    "fetchMs": 75,
+    "classifyMs": 1,
+    "segmentMs": 96,
+    "bubbleMs": 71,
+    "inpaintMs": 884,
+    "annotateMs": 108,
+    "totalMs": 1235
+  },
+  "imageSize": {
+    "width": 1114,
+    "height": 1600
+  }
+}

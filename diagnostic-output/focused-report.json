@@ -1,0 +1,234 @@
+{
+  "manga": "eminence-in-shadow",
+  "pagesAnalyzed": 5,
+  "totalRegions": 6,
+  "failureCounts": {
+    "OCR": 4,
+    "Classification": 0,
+    "BubbleDetection": 0,
+    "Segmentation": 0,
+    "Inpainting": 0,
+    "Layout": 0,
+    "Renderer": 0
+  },
+  "failureDetails": {
+    "OCR": [
+      {
+        "page": 1,
+        "msg": "Gemini reported found=false — page may be wordless or OCR missed text"
+      },
+      {
+        "page": 3,
+        "msg": "Gemini reported found=false — page may be wordless or OCR missed text"
+      },
+      {
+        "page": 11,
+        "msg": "Gemini reported found=false — page may be wordless or OCR missed text"
+      },
+      {
+        "page": 15,
+        "msg": "Gemini reported found=false — page may be wordless or OCR missed text"
+      }
+    ],
+    "Classification": [],
+    "BubbleDetection": [],
+    "Segmentation": [],
+    "Inpainting": [],
+    "Layout": [],
+    "Renderer": []
+  },
+  "pageResults": [
+    {
+      "prefix": "eminence-in-shadow-ch1-p1",
+      "page": 1,
+      "url": "https://cmdxd98sb0x3yprd.mangadex.network/data/cfdcdc22b8556e8adb22744ed24c05e7/x1-99066c859da11f13dad0402c3fce96fcd3d2f37474ba526dae3b290a411b44a2.jpg",
+      "imageSize": {
+        "width": 0,
+        "height": 0
+      },
+      "ocrRegions": 0,
+      "ocrFound": false,
+      "ocrModel": "gemini-2.5-flash",
+      "ocrTypes": [],
+      "geminiSummary": "",
+      "classSummary": {
+        "total": 0,
+        "speech_bubble": 0,
+        "narration_box": 0,
+        "sfx": 0,
+        "ui_text": 0,
+        "chapter_title": 0,
+        "credits": 0,
+        "watermark": 0,
+        "unknown": 0,
+        "inpainted": 0,
+        "rendered": 0,
+        "skipped": 0
+      },
+      "timing": {
+        "fetchMs": 102,
+        "classifyMs": 0,
+        "segmentMs": 0,
+        "bubbleMs": 0,
+        "inpaintMs": 0,
+        "annotateMs": 57,
+        "totalMs": 159
+      },
+      "pageFailures": 0
+    },
+    {
+      "prefix": "eminence-in-shadow-ch1-p3",
+      "page": 3,
+      "url": "https://cmdxd98sb0x3yprd.mangadex.network/data/cfdcdc22b8556e8adb22744ed24c05e7/x3-282f9eaa9c3f9f425b7a86d15088de0d9715b7e2b4dd366dcbcd4ab6fd0b7c4a.jpg",
+      "imageSize": {
+        "width": 0,
+        "height": 0
+      },
+      "ocrRegions": 0,
+      "ocrFound": false,
+      "ocrModel": "gemini-2.5-flash",
+      "ocrTypes": [],
+      "geminiSummary": "",
+      "classSummary": {
+        "total": 0,
+        "speech_bubble": 0,
+        "narration_box": 0,
+        "sfx": 0,
+        "ui_text": 0,
+        "chapter_title": 0,
+        "credits": 0,
+        "watermark": 0,
+        "unknown": 0,
+        "inpainted": 0,
+        "rendered": 0,
+        "skipped": 0
+      },
+      "timing": {
+        "fetchMs": 109,
+        "classifyMs": 0,
+        "segmentMs": 0,
+        "bubbleMs": 0,
+        "inpaintMs": 0,
+        "annotateMs": 172,
+        "totalMs": 282
+      },
+      "pageFailures": 0
+    },
+    {
+      "prefix": "eminence-in-shadow-ch1-p6",
+      "page": 6,
+      "url": "https://cmdxd98sb0x3yprd.mangadex.network/data/cfdcdc22b8556e8adb22744ed24c05e7/x6-600c6ed9faa536b585bed1b13b5fbc6a8e41ac9f10b61e7fd451028df1373ca4.png",
+      "imageSize": {
+        "width": 1114,
+        "height": 1600
+      },
+      "ocrRegions": 6,
+      "ocrFound": true,
+      "ocrModel": "gemini-2.5-flash",
+      "ocrTypes": [
+        "narration"
+      ],
+      "geminiSummary": "A man contemplates his mortality against a nuclear attack and realizes he needs to become an 'eminence in shadow' who cannot be vaporized by a nuke.",
+      "classSummary": {
+        "total": 6,
+        "speech_bubble": 0,
+        "narration_box": 6,
+        "sfx": 0,
+        "ui_text": 0,
+        "chapter_title": 0,
+        "credits": 0,
+        "watermark": 0,
+        "unknown": 0,
+        "inpainted": 6,
+        "rendered": 6,
+        "skipped": 0
+      },
+      "timing": {
+        "fetchMs": 75,
+        "classifyMs": 1,
+        "segmentMs": 96,
+        "bubbleMs": 71,
+        "inpaintMs": 884,
+        "annotateMs": 108,
+        "totalMs": 1235
+      },
+      "pageFailures": 0
+    },
+    {
+      "prefix": "eminence-in-shadow-ch1-p11",
+      "page": 11,
+      "url": "https://cmdxd98sb0x3yprd.mangadex.network/data/cfdcdc22b8556e8adb22744ed24c05e7/x11-7b3adc466375668da8f3c4dadb98fc160df7ef9af07545a61fc4a1101f3e6a80.png",
+      "imageSize": {
+        "width": 0,
+        "height": 0
+      },
+      "ocrRegions": 0,
+      "ocrFound": false,
+      "ocrModel": "gemini-2.5-flash",
+      "ocrTypes": [],
+      "geminiSummary": "",
+      "classSummary": {
+        "total": 0,
+        "speech_bubble": 0,
+        "narration_box": 0,
+        "sfx": 0,
+        "ui_text": 0,
+        "chapter_title": 0,
+        "credits": 0,
+        "watermark": 0,
+        "unknown": 0,
+        "inpainted": 0,
+        "rendered": 0,
+        "skipped": 0
+      },
+      "timing": {
+        "fetchMs": 98,
+        "classifyMs": 0,
+        "segmentMs": 0,
+        "bubbleMs": 0,
+        "inpaintMs": 0,
+        "annotateMs": 59,
+        "totalMs": 157
+      },
+      "pageFailures": 0
+    },
+    {
+      "prefix": "eminence-in-shadow-ch1-p15",
+      "page": 15,
+      "url": "https://cmdxd98sb0x3yprd.mangadex.network/data/cfdcdc22b8556e8adb22744ed24c05e7/x15-1a71b8cedb3858c40d2707d3c3caaeb0671f0de8f0a16ae2b9976e386bbb808f.png",
+      "imageSize": {
+        "width": 0,
+        "height": 0
+      },
+      "ocrRegions": 0,
+      "ocrFound": false,
+      "ocrModel": "gemini-2.5-flash",
+      "ocrTypes": [],
+      "geminiSummary": "",
+      "classSummary": {
+        "total": 0,
+        "speech_bubble": 0,
+        "narration_box": 0,
+        "sfx": 0,
+        "ui_text": 0,
+        "chapter_title": 0,
+        "credits": 0,
+        "watermark": 0,
+        "unknown": 0,
+        "inpainted": 0,
+        "rendered": 0,
+        "skipped": 0
+      },
+      "timing": {
+        "fetchMs": 84,
+        "classifyMs": 0,
+        "segmentMs": 0,
+        "bubbleMs": 0,
+        "inpaintMs": 0,
+        "annotateMs": 51,
+        "totalMs": 135
+      },
+      "pageFailures": 0
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "regions": [],
+  "summary": {
+    "total": 0,
+    "speech_bubble": 0,
+    "narration_box": 0,
+    "sfx": 0,
+    "ui_text": 0,
+    "chapter_title": 0,
+    "credits": 0,
+    "watermark": 0,
+    "unknown": 0,
+    "inpainted": 0,
+    "rendered": 0,
+    "skipped": 0
+  },
+  "timing": {
+    "fetchMs": 98,
+    "classifyMs": 0,
+    "segmentMs": 0,
+    "bubbleMs": 0,
+    "inpaintMs": 0,
+    "annotateMs": 59,
+    "totalMs": 157
+  },
+  "imageSize": {
+    "width": 0,
+    "height": 0
+  }
+}
