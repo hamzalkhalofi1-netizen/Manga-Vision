@@ -10,3 +10,5 @@
 - [Expo startup env vars](expo-startup-env.md) — CI=1 kills hot reload; EXPO_UNSTABLE_HEADLESS=1 hides QR/URL; only safe suppression is EXPO_NO_DEVTOOLS=1 + no --go/--web flags
 - [WebView bridge back-nav race](webview-bridge-backnav.md) — processNext must debounce back-navigation (400ms) so AJAX fetches queued after fetchRendered inherit correct Referer
 - [CV pipeline OpenCV loading](cv-pipeline-opencv.md) — dynamic import() of @techstark/opencv-js hangs in compiled ESM; must use createRequire for synchronous CJS load + pre-warm at import time
+- [CV WASM memory bug](cv-wasm-memory-bug.md) — Buffer.from(mat.data.buffer, offset, len) is a zero-copy view into freed WASM heap; always Buffer.from(mat.data) to copy before mat.delete()
+- [Gemini thinkingBudget OCR](gemini-thinking-budget.md) — gemini-2.5-flash needs thinkingBudget:0 for manga OCR; free tier = 20 req/day; without it ~80% pages return 0 regions

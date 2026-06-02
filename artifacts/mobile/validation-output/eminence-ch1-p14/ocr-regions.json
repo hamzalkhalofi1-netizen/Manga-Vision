@@ -1,0 +1,446 @@
+{
+  "regions": [
+    {
+      "original": "BUT\nI REJECT\nTHAT\nNOTION!!!",
+      "translated": "لكنني أرفض ذلك التصور!!!",
+      "polygon": [
+        [
+          394,
+          76
+        ],
+        [
+          465,
+          76
+        ],
+        [
+          465,
+          172
+        ],
+        [
+          394,
+          172
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          379,
+          62
+        ],
+        [
+          503,
+          62
+        ],
+        [
+          503,
+          196
+        ],
+        [
+          379,
+          196
+        ]
+      ],
+      "x": 0.379,
+      "y": 0.062,
+      "w": 0.124,
+      "h": 0.134,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "SINCE THERE\nARE NO SUCH\nADVANCED\nWEAPONS IN\nTHIS WORLD,\nI COULD JUST\nNOT WORRY\nABOUT IT...",
+      "translated": "بما أنه لا توجد مثل هذه الأسلحة المتقدمة في هذا العالم، يمكنني فقط ألا أقلق بشأنها...",
+      "polygon": [
+        [
+          582,
+          94
+        ],
+        [
+          690,
+          94
+        ],
+        [
+          690,
+          203
+        ],
+        [
+          582,
+          203
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          571,
+          75
+        ],
+        [
+          714,
+          75
+        ],
+        [
+          714,
+          233
+        ],
+        [
+          571,
+          233
+        ]
+      ],
+      "x": 0.571,
+      "y": 0.075,
+      "w": 0.143,
+      "h": 0.158,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "HOWEVER,\nI'M STILL\nNO MATCH\nAGAINST\nA NUKE.",
+      "translated": "ومع ذلك، لا أزال لا أضاهي قنبلة نووية.",
+      "polygon": [
+        [
+          748,
+          161
+        ],
+        [
+          835,
+          161
+        ],
+        [
+          835,
+          235
+        ],
+        [
+          748,
+          235
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          733,
+          149
+        ],
+        [
+          862,
+          149
+        ],
+        [
+          862,
+          260
+        ],
+        [
+          733,
+          260
+        ]
+      ],
+      "x": 0.733,
+      "y": 0.149,
+      "w": 0.129,
+      "h": 0.111,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "ヒユッ",
+      "translated": "هيوي",
+      "polygon": [
+        [
+          626,
+          319
+        ],
+        [
+          664,
+          319
+        ],
+        [
+          664,
+          345
+        ],
+        [
+          626,
+          345
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          622,
+          318
+        ],
+        [
+          665,
+          318
+        ],
+        [
+          665,
+          346
+        ],
+        [
+          622,
+          346
+        ]
+      ],
+      "x": 0.622,
+      "y": 0.318,
+      "w": 0.043,
+      "h": 0.028,
+      "type": "sfx",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "A REAL\nEMINENCE OF\nSHADOW KNOWS\nNO COMPRO-\nMISE!!!",
+      "translated": "قامة الظلام الحقيقية لا تعرف المساومة!!!",
+      "polygon": [
+        [
+          68,
+          417
+        ],
+        [
+          203,
+          417
+        ],
+        [
+          203,
+          506
+        ],
+        [
+          68,
+          506
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          51,
+          404
+        ],
+        [
+          220,
+          404
+        ],
+        [
+          220,
+          521
+        ],
+        [
+          51,
+          521
+        ]
+      ],
+      "x": 0.051,
+      "y": 0.404,
+      "w": 0.169,
+      "h": 0.117,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "WHICH\nMEANS,\nI'LL BE\nTRAINING\nTONIGHT\nAS WELL!",
+      "translated": "مما يعني أنني سأتدرب الليلة أيضًا!",
+      "polygon": [
+        [
+          768,
+          579
+        ],
+        [
+          851,
+          579
+        ],
+        [
+          851,
+          659
+        ],
+        [
+          768,
+          659
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          752,
+          563
+        ],
+        [
+          871,
+          563
+        ],
+        [
+          871,
+          679
+        ],
+        [
+          752,
+          679
+        ]
+      ],
+      "x": 0.752,
+      "y": 0.563,
+      "w": 0.119,
+      "h": 0.116,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "I'VE HEARD\nTHAT BANDITS\nTOOK UP\nRESIDENCE IN\nTHE FOREST\nNEARBY,\nTOO.",
+      "translated": "سمعت أن اللصوص استقروا في الغابة القريبة أيضًا.",
+      "polygon": [
+        [
+          636,
+          617
+        ],
+        [
+          722,
+          617
+        ],
+        [
+          722,
+          699
+        ],
+        [
+          636,
+          699
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          622,
+          597
+        ],
+        [
+          738,
+          597
+        ],
+        [
+          738,
+          720
+        ],
+        [
+          622,
+          720
+        ]
+      ],
+      "x": 0.622,
+      "y": 0.597,
+      "w": 0.116,
+      "h": 0.123,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "MAYBE\nI'LL GO\nAND TAKE\nCARE OF\nTHEM!!",
+      "translated": "ربما سأذهب وأعتني بهم!!",
+      "polygon": [
+        [
+          167,
+          722
+        ],
+        [
+          251,
+          722
+        ],
+        [
+          251,
+          792
+        ],
+        [
+          167,
+          792
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          151,
+          707
+        ],
+        [
+          271,
+          707
+        ],
+        [
+          271,
+          810
+        ],
+        [
+          151,
+          810
+        ]
+      ],
+      "x": 0.151,
+      "y": 0.707,
+      "w": 0.12,
+      "h": 0.103,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "AAA",
+      "translated": "آآآ",
+      "polygon": [
+        [
+          371,
+          574
+        ],
+        [
+          430,
+          574
+        ],
+        [
+          430,
+          608
+        ],
+        [
+          371,
+          608
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          371,
+          574
+        ],
+        [
+          430,
+          574
+        ],
+        [
+          430,
+          608
+        ],
+        [
+          371,
+          608
+        ]
+      ],
+      "x": 0.371,
+      "y": 0.574,
+      "w": 0.059,
+      "h": 0.034,
+      "type": "sfx",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    }
+  ],
+  "ocrMs": 12242
+}

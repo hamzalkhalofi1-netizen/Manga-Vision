@@ -1,0 +1,1475 @@
+{
+  "regions": [
+    {
+      "original": "Chapter 1",
+      "translated": "الفصل الأول",
+      "polygon": [
+        [
+          41,
+          222
+        ],
+        [
+          240,
+          222
+        ],
+        [
+          240,
+          248
+        ],
+        [
+          41,
+          248
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          222
+        ],
+        [
+          240,
+          222
+        ],
+        [
+          240,
+          248
+        ],
+        [
+          41,
+          248
+        ]
+      ],
+      "x": 0.041,
+      "y": 0.222,
+      "w": 0.199,
+      "h": 0.026,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "raw: biamamscans",
+      "translated": "الخام: بيامامسكانز",
+      "polygon": [
+        [
+          42,
+          313
+        ],
+        [
+          276,
+          313
+        ],
+        [
+          276,
+          335
+        ],
+        [
+          42,
+          335
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          42,
+          313
+        ],
+        [
+          276,
+          313
+        ],
+        [
+          276,
+          335
+        ],
+        [
+          42,
+          335
+        ]
+      ],
+      "x": 0.042,
+      "y": 0.313,
+      "w": 0.234,
+      "h": 0.022,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "Translations: rottenpantsu",
+      "translated": "الترجمات: روتاينبانتسو",
+      "polygon": [
+        [
+          41,
+          345
+        ],
+        [
+          326,
+          345
+        ],
+        [
+          326,
+          367
+        ],
+        [
+          41,
+          367
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          345
+        ],
+        [
+          326,
+          345
+        ],
+        [
+          326,
+          367
+        ],
+        [
+          41,
+          367
+        ]
+      ],
+      "x": 0.041,
+      "y": 0.345,
+      "w": 0.285,
+      "h": 0.022,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "JOIN OUR DISCORD!",
+      "translated": "انضم إلى ديسكوردنا!",
+      "polygon": [
+        [
+          41,
+          448
+        ],
+        [
+          322,
+          448
+        ],
+        [
+          322,
+          474
+        ],
+        [
+          41,
+          474
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          448
+        ],
+        [
+          322,
+          448
+        ],
+        [
+          322,
+          474
+        ],
+        [
+          41,
+          474
+        ]
+      ],
+      "x": 0.041,
+      "y": 0.448,
+      "w": 0.281,
+      "h": 0.026,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "https://discord.gg/bV4HN8z",
+      "translated": "https://discord.gg/bV4HN8z",
+      "polygon": [
+        [
+          41,
+          480
+        ],
+        [
+          400,
+          480
+        ],
+        [
+          400,
+          508
+        ],
+        [
+          41,
+          508
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          480
+        ],
+        [
+          400,
+          480
+        ],
+        [
+          400,
+          508
+        ],
+        [
+          41,
+          508
+        ]
+      ],
+      "x": 0.041,
+      "y": 0.48,
+      "w": 0.359,
+      "h": 0.028,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "PLEASE HELP US BY DONATING THRU",
+      "translated": "الرجاء مساعدتنا بالتبرع من خلال",
+      "polygon": [
+        [
+          41,
+          566
+        ],
+        [
+          404,
+          566
+        ],
+        [
+          404,
+          587
+        ],
+        [
+          41,
+          587
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          566
+        ],
+        [
+          404,
+          566
+        ],
+        [
+          404,
+          587
+        ],
+        [
+          41,
+          587
+        ]
+      ],
+      "x": 0.041,
+      "y": 0.566,
+      "w": 0.363,
+      "h": 0.021,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "paypal.me/biamamscans",
+      "translated": "paypal.me/biamamscans",
+      "polygon": [
+        [
+          41,
+          597
+        ],
+        [
+          356,
+          597
+        ],
+        [
+          356,
+          619
+        ],
+        [
+          41,
+          619
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          597
+        ],
+        [
+          356,
+          597
+        ],
+        [
+          356,
+          619
+        ],
+        [
+          41,
+          619
+        ]
+      ],
+      "x": 0.041,
+      "y": 0.597,
+      "w": 0.315,
+      "h": 0.022,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "OR BECOME A PATRON",
+      "translated": "أو كن راعيًا",
+      "polygon": [
+        [
+          41,
+          676
+        ],
+        [
+          286,
+          676
+        ],
+        [
+          286,
+          698
+        ],
+        [
+          41,
+          698
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          676
+        ],
+        [
+          286,
+          676
+        ],
+        [
+          286,
+          698
+        ],
+        [
+          41,
+          698
+        ]
+      ],
+      "x": 0.041,
+      "y": 0.676,
+      "w": 0.245,
+      "h": 0.022,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "patreon.com/biamamscans",
+      "translated": "patreon.com/biamamscans",
+      "polygon": [
+        [
+          41,
+          708
+        ],
+        [
+          370,
+          708
+        ],
+        [
+          370,
+          730
+        ],
+        [
+          41,
+          730
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          708
+        ],
+        [
+          370,
+          708
+        ],
+        [
+          370,
+          730
+        ],
+        [
+          41,
+          730
+        ]
+      ],
+      "x": 0.041,
+      "y": 0.708,
+      "w": 0.329,
+      "h": 0.022,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "Special thanks to our patrons,\nTobias, Shawn Rodgers, Kagoyasha,\nNathan Nguyen and hyrule13!",
+      "translated": "شكر خاص لداعمينا:\nتوبياس، شون رودجرز، كاغوياشا،\nناثان نغوين وهايرول13!",
+      "polygon": [
+        [
+          41,
+          788
+        ],
+        [
+          388,
+          788
+        ],
+        [
+          388,
+          856
+        ],
+        [
+          41,
+          856
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          788
+        ],
+        [
+          388,
+          788
+        ],
+        [
+          388,
+          856
+        ],
+        [
+          41,
+          856
+        ]
+      ],
+      "x": 0.041,
+      "y": 0.788,
+      "w": 0.347,
+      "h": 0.068,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "Thanks for your support!",
+      "translated": "شكرا لدعمكم!",
+      "polygon": [
+        [
+          41,
+          870
+        ],
+        [
+          322,
+          870
+        ],
+        [
+          322,
+          896
+        ],
+        [
+          41,
+          896
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          870
+        ],
+        [
+          322,
+          870
+        ],
+        [
+          322,
+          896
+        ],
+        [
+          41,
+          896
+        ]
+      ],
+      "x": 0.041,
+      "y": 0.87,
+      "w": 0.281,
+      "h": 0.026,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "メディアミックスコミックマガジン",
+      "translated": "مجلة المانغا ميديا ميكس",
+      "polygon": [
+        [
+          518,
+          20
+        ],
+        [
+          728,
+          20
+        ],
+        [
+          728,
+          30
+        ],
+        [
+          518,
+          30
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          518,
+          20
+        ],
+        [
+          728,
+          20
+        ],
+        [
+          728,
+          30
+        ],
+        [
+          518,
+          30
+        ]
+      ],
+      "x": 0.518,
+      "y": 0.02,
+      "w": 0.21,
+      "h": 0.01,
+      "type": "title",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "月刊",
+      "translated": "شهريًا",
+      "polygon": [
+        [
+          443,
+          20
+        ],
+        [
+          475,
+          20
+        ],
+        [
+          475,
+          30
+        ],
+        [
+          443,
+          30
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          443,
+          20
+        ],
+        [
+          475,
+          20
+        ],
+        [
+          475,
+          30
+        ],
+        [
+          443,
+          30
+        ]
+      ],
+      "x": 0.443,
+      "y": 0.02,
+      "w": 0.032,
+      "h": 0.01,
+      "type": "title",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "コンプエース",
+      "translated": "كومب إيس",
+      "polygon": [
+        [
+          480,
+          20
+        ],
+        [
+          514,
+          20
+        ],
+        [
+          514,
+          30
+        ],
+        [
+          480,
+          30
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          480,
+          20
+        ],
+        [
+          514,
+          20
+        ],
+        [
+          514,
+          30
+        ],
+        [
+          480,
+          30
+        ]
+      ],
+      "x": 0.48,
+      "y": 0.02,
+      "w": 0.034,
+      "h": 0.01,
+      "type": "title",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "月刊",
+      "translated": "شهريًا",
+      "polygon": [
+        [
+          460,
+          56
+        ],
+        [
+          484,
+          56
+        ],
+        [
+          484,
+          76
+        ],
+        [
+          460,
+          76
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          460,
+          56
+        ],
+        [
+          484,
+          56
+        ],
+        [
+          484,
+          76
+        ],
+        [
+          460,
+          76
+        ]
+      ],
+      "x": 0.46,
+      "y": 0.056,
+      "w": 0.024,
+      "h": 0.02,
+      "type": "title",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "超人気Web発小説が早くもコミック化!!",
+      "translated": "رواية الويب الأكثر شعبية تتحول إلى مانغا بسرعة!!",
+      "polygon": [
+        [
+          752,
+          102
+        ],
+        [
+          964,
+          102
+        ],
+        [
+          964,
+          126
+        ],
+        [
+          752,
+          126
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          752,
+          102
+        ],
+        [
+          964,
+          102
+        ],
+        [
+          964,
+          126
+        ],
+        [
+          752,
+          126
+        ]
+      ],
+      "x": 0.752,
+      "y": 0.102,
+      "w": 0.212,
+      "h": 0.024,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "青年×人外少女の異世界冒険譚",
+      "translated": "قصة مغامرة عالم آخر لشاب وفتاة من عالم آخر",
+      "polygon": [
+        [
+          468,
+          172
+        ],
+        [
+          604,
+          172
+        ],
+        [
+          604,
+          182
+        ],
+        [
+          468,
+          182
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          468,
+          172
+        ],
+        [
+          604,
+          172
+        ],
+        [
+          604,
+          182
+        ],
+        [
+          468,
+          182
+        ]
+      ],
+      "x": 0.468,
+      "y": 0.172,
+      "w": 0.136,
+      "h": 0.01,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "魔導の覇王とゴーレムの戦記",
+      "translated": "حرب الإمبراطور الساحر وجوليم",
+      "polygon": [
+        [
+          468,
+          187
+        ],
+        [
+          604,
+          187
+        ],
+        [
+          604,
+          196
+        ],
+        [
+          468,
+          196
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          468,
+          187
+        ],
+        [
+          604,
+          187
+        ],
+        [
+          604,
+          196
+        ],
+        [
+          468,
+          196
+        ]
+      ],
+      "x": 0.468,
+      "y": 0.187,
+      "w": 0.136,
+      "h": 0.009,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "原作\n下村裕一\n漫画\n飯島しんご",
+      "translated": "الأصل:\nيوئيتشي شيمومورا\nالمانغا:\nشينغو إيجيما",
+      "polygon": [
+        [
+          470,
+          211
+        ],
+        [
+          514,
+          211
+        ],
+        [
+          514,
+          237
+        ],
+        [
+          470,
+          237
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          470,
+          211
+        ],
+        [
+          514,
+          211
+        ],
+        [
+          514,
+          237
+        ],
+        [
+          470,
+          237
+        ]
+      ],
+      "x": 0.47,
+      "y": 0.211,
+      "w": 0.044,
+      "h": 0.026,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "2\n2019 FEBRUARY",
+      "translated": "2\nفبراير 2019",
+      "polygon": [
+        [
+          912,
+          404
+        ],
+        [
+          952,
+          404
+        ],
+        [
+          952,
+          430
+        ],
+        [
+          912,
+          430
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          912,
+          404
+        ],
+        [
+          952,
+          404
+        ],
+        [
+          952,
+          430
+        ],
+        [
+          912,
+          430
+        ]
+      ],
+      "x": 0.912,
+      "y": 0.404,
+      "w": 0.04,
+      "h": 0.026,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "新\n連\n載",
+      "translated": "سلسلة جديدة",
+      "polygon": [
+        [
+          438,
+          430
+        ],
+        [
+          476,
+          430
+        ],
+        [
+          476,
+          566
+        ],
+        [
+          438,
+          566
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          438,
+          430
+        ],
+        [
+          476,
+          430
+        ],
+        [
+          476,
+          566
+        ],
+        [
+          438,
+          566
+        ]
+      ],
+      "x": 0.438,
+      "y": 0.43,
+      "w": 0.038,
+      "h": 0.136,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "表紙\n&",
+      "translated": "الغلاف\n&",
+      "polygon": [
+        [
+          480,
+          528
+        ],
+        [
+          500,
+          528
+        ],
+        [
+          500,
+          552
+        ],
+        [
+          480,
+          552
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          480,
+          528
+        ],
+        [
+          500,
+          528
+        ],
+        [
+          500,
+          552
+        ],
+        [
+          480,
+          552
+        ]
+      ],
+      "x": 0.48,
+      "y": 0.528,
+      "w": 0.02,
+      "h": 0.024,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "LV999の村人",
+      "translated": "قروي المستوى 999",
+      "polygon": [
+        [
+          836,
+          706
+        ],
+        [
+          916,
+          706
+        ],
+        [
+          916,
+          716
+        ],
+        [
+          836,
+          716
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          836,
+          706
+        ],
+        [
+          916,
+          706
+        ],
+        [
+          916,
+          716
+        ],
+        [
+          836,
+          716
+        ]
+      ],
+      "x": 0.836,
+      "y": 0.706,
+      "w": 0.08,
+      "h": 0.01,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "原作/星月夜",
+      "translated": "قصة أصلية/هوشيزوكويا",
+      "polygon": [
+        [
+          836,
+          696
+        ],
+        [
+          916,
+          696
+        ],
+        [
+          916,
+          704
+        ],
+        [
+          836,
+          704
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          836,
+          696
+        ],
+        [
+          916,
+          696
+        ],
+        [
+          916,
+          704
+        ],
+        [
+          836,
+          704
+        ]
+      ],
+      "x": 0.836,
+      "y": 0.696,
+      "w": 0.08,
+      "h": 0.008,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "話題のWeb発小説のコミック化が満載!",
+      "translated": "مليئة بتحويلات القصص الويب الشهيرة إلى كوميكس!",
+      "polygon": [
+        [
+          836,
+          720
+        ],
+        [
+          964,
+          720
+        ],
+        [
+          964,
+          730
+        ],
+        [
+          836,
+          730
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          836,
+          720
+        ],
+        [
+          964,
+          720
+        ],
+        [
+          964,
+          730
+        ],
+        [
+          836,
+          730
+        ]
+      ],
+      "x": 0.836,
+      "y": 0.72,
+      "w": 0.128,
+      "h": 0.01,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "原案/岸田メ",
+      "translated": "تصميم الشخصيات الأصلي/كيشيدا ميتسوكي",
+      "polygon": [
+        [
+          836,
+          732
+        ],
+        [
+          916,
+          732
+        ],
+        [
+          916,
+          740
+        ],
+        [
+          836,
+          740
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          836,
+          732
+        ],
+        [
+          916,
+          732
+        ],
+        [
+          916,
+          740
+        ],
+        [
+          836,
+          740
+        ]
+      ],
+      "x": 0.836,
+      "y": 0.732,
+      "w": 0.08,
+      "h": 0.008,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "漫画/笹木ささき",
+      "translated": "مانغا/ساساكي ساساكي",
+      "polygon": [
+        [
+          836,
+          742
+        ],
+        [
+          916,
+          742
+        ],
+        [
+          916,
+          750
+        ],
+        [
+          836,
+          750
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          836,
+          742
+        ],
+        [
+          916,
+          742
+        ],
+        [
+          916,
+          750
+        ],
+        [
+          836,
+          750
+        ]
+      ],
+      "x": 0.836,
+      "y": 0.742,
+      "w": 0.08,
+      "h": 0.008,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "オーバーロード\nLV99の村人\n異世界はスマートフォ\n使い魔は賢者\n異世界で",
+      "translated": "تجاوز الحدود\nقروي المستوى 99\nالعالم الآخر هو هاتف ذكي\nالخدم هو حكيم\nفي عالم آخر",
+      "polygon": [
+        [
+          836,
+          680
+        ],
+        [
+          942,
+          680
+        ],
+        [
+          942,
+          888
+        ],
+        [
+          836,
+          888
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          836,
+          680
+        ],
+        [
+          942,
+          680
+        ],
+        [
+          942,
+          888
+        ],
+        [
+          836,
+          888
+        ]
+      ],
+      "x": 0.836,
+      "y": 0.68,
+      "w": 0.106,
+      "h": 0.208,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "ダンジョン",
+      "translated": "متاهة",
+      "polygon": [
+        [
+          836,
+          890
+        ],
+        [
+          942,
+          890
+        ],
+        [
+          942,
+          902
+        ],
+        [
+          836,
+          902
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          836,
+          890
+        ],
+        [
+          942,
+          890
+        ],
+        [
+          942,
+          902
+        ],
+        [
+          836,
+          902
+        ]
+      ],
+      "x": 0.836,
+      "y": 0.89,
+      "w": 0.106,
+      "h": 0.012,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "原作/滝沢大介\n漫画/東ヶ崎\nキャラクター原案/野",
+      "translated": "قصة أصلية/تاكيساوا دايسوكي\nمانغا/توغاساكي\nتصميم الشخصيات الأصلي/نو",
+      "polygon": [
+        [
+          632,
+          894
+        ],
+        [
+          780,
+          894
+        ],
+        [
+          780,
+          920
+        ],
+        [
+          632,
+          920
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          632,
+          894
+        ],
+        [
+          780,
+          894
+        ],
+        [
+          780,
+          920
+        ],
+        [
+          632,
+          920
+        ]
+      ],
+      "x": 0.632,
+      "y": 0.894,
+      "w": 0.148,
+      "h": 0.026,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    }
+  ],
+  "ocrMs": 62394
+}

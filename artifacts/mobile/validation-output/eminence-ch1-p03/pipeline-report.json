@@ -1,0 +1,877 @@
+{
+  "summary": {
+    "total": 15,
+    "speech_bubble": 0,
+    "narration_box": 7,
+    "sfx": 0,
+    "ui_text": 0,
+    "chapter_title": 5,
+    "credits": 3,
+    "watermark": 0,
+    "unknown": 0,
+    "inpainted": 7,
+    "rendered": 7,
+    "skipped": 8
+  },
+  "timing": {
+    "fetchMs": 115,
+    "classifyMs": 0,
+    "segmentMs": 175,
+    "bubbleMs": 194,
+    "inpaintMs": 1286,
+    "annotateMs": 535,
+    "totalMs": 2305
+  },
+  "regions": [
+    {
+      "index": 0,
+      "originalText": "what if that became reality?",
+      "translatedText": "ماذا لو أصبح هذا حقيقة؟",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          0.08,
+          0.05
+        ],
+        [
+          0.32,
+          0.05
+        ],
+        [
+          0.32,
+          0.13
+        ],
+        [
+          0.08,
+          0.13
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.08,
+          0.05
+        ],
+        [
+          0.32,
+          0.05
+        ],
+        [
+          0.32,
+          0.13
+        ],
+        [
+          0.08,
+          0.13
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.1,
+        "y": 0.05,
+        "w": 0.32,
+        "h": 0.13
+      }
+    },
+    {
+      "index": 1,
+      "originalText": "if you enjoy that kind of setting",
+      "translatedText": "إذا كنت تستمتع بهذا النوع من الإعدادات",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          0.34,
+          0.06
+        ],
+        [
+          0.46,
+          0.06
+        ],
+        [
+          0.46,
+          0.15
+        ],
+        [
+          0.34,
+          0.15
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.34,
+          0.06
+        ],
+        [
+          0.46,
+          0.06
+        ],
+        [
+          0.46,
+          0.15
+        ],
+        [
+          0.34,
+          0.15
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.34,
+        "y": 0.06,
+        "w": 0.46,
+        "h": 0.15
+      }
+    },
+    {
+      "index": 2,
+      "originalText": "and plotting to defeat the Dark Order ...",
+      "translatedText": "ويتآمر لهزيمة النظام المظلم...",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          0.55,
+          0.09
+        ],
+        [
+          0.72,
+          0.09
+        ],
+        [
+          0.72,
+          0.19
+        ],
+        [
+          0.55,
+          0.19
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.55,
+          0.09
+        ],
+        [
+          0.72,
+          0.09
+        ],
+        [
+          0.72,
+          0.19
+        ],
+        [
+          0.55,
+          0.19
+        ]
+      ],
+      "refinedBubblePolygon": [
+        [
+          0.5849609375,
+          0.13460231135282122
+        ],
+        [
+          0.640625,
+          0.16859279401767505
+        ],
+        [
+          0.70654296875,
+          0.08089734874235215
+        ],
+        [
+          0.78564453125,
+          0.26920462270564244
+        ],
+        [
+          0.7080078125,
+          0.08157715839564922
+        ],
+        [
+          0.640625,
+          0.1672331747110809
+        ]
+      ],
+      "renderRect": {
+        "x": 0.55,
+        "y": 0.09,
+        "w": 0.72,
+        "h": 0.19
+      }
+    },
+    {
+      "index": 3,
+      "originalText": "Secretly being a powerful person",
+      "translatedText": "أن تكون شخصًا قويًا سراً",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          0.78,
+          0.04
+        ],
+        [
+          0.95,
+          0.04
+        ],
+        [
+          0.95,
+          0.13
+        ],
+        [
+          0.78,
+          0.13
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.78,
+          0.04
+        ],
+        [
+          0.95,
+          0.04
+        ],
+        [
+          0.95,
+          0.13
+        ],
+        [
+          0.78,
+          0.13
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.78,
+        "y": 0.04,
+        "w": 0.95,
+        "h": 0.13
+      }
+    },
+    {
+      "index": 4,
+      "originalText": "NEW SERIALISATION",
+      "translatedText": "مسلسل جديد",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          0.03,
+          0.53
+        ],
+        [
+          0.17,
+          0.53
+        ],
+        [
+          0.17,
+          0.57
+        ],
+        [
+          0.03,
+          0.57
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.03,
+          0.53
+        ],
+        [
+          0.17,
+          0.53
+        ],
+        [
+          0.17,
+          0.57
+        ],
+        [
+          0.03,
+          0.57
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.03,
+        "y": 0.53,
+        "w": 0.17,
+        "h": 0.57
+      }
+    },
+    {
+      "index": 5,
+      "originalText": "陰の実力者",
+      "translatedText": "قوة الظل",
+      "detectedType": "title",
+      "textClass": "chapter_title",
+      "confidence": 0.82,
+      "reason": "gemini:title",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          0.08,
+          0.61
+        ],
+        [
+          0.45,
+          0.61
+        ],
+        [
+          0.45,
+          0.79
+        ],
+        [
+          0.08,
+          0.79
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.08,
+          0.61
+        ],
+        [
+          0.45,
+          0.61
+        ],
+        [
+          0.45,
+          0.79
+        ],
+        [
+          0.08,
+          0.79
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.08,
+        "y": 0.61,
+        "w": 0.45,
+        "h": 0.79
+      }
+    },
+    {
+      "index": 6,
+      "originalText": "になりたくて!",
+      "translatedText": "أريد أن أكون!",
+      "detectedType": "title",
+      "textClass": "chapter_title",
+      "confidence": 0.82,
+      "reason": "gemini:title",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          0.47,
+          0.62
+        ],
+        [
+          0.86,
+          0.62
+        ],
+        [
+          0.86,
+          0.79
+        ],
+        [
+          0.47,
+          0.79
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.47,
+          0.62
+        ],
+        [
+          0.86,
+          0.62
+        ],
+        [
+          0.86,
+          0.79
+        ],
+        [
+          0.47,
+          0.79
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.47,
+        "y": 0.62,
+        "w": 0.86,
+        "h": 0.79
+      }
+    },
+    {
+      "index": 7,
+      "originalText": "STRONGEST MC",
+      "translatedText": "أقوى بطل",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          0.34,
+          0.49
+        ],
+        [
+          0.48,
+          0.49
+        ],
+        [
+          0.48,
+          0.52
+        ],
+        [
+          0.34,
+          0.52
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.34,
+          0.49
+        ],
+        [
+          0.48,
+          0.49
+        ],
+        [
+          0.48,
+          0.52
+        ],
+        [
+          0.34,
+          0.52
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.34,
+        "y": 0.49,
+        "w": 0.48,
+        "h": 0.52
+      }
+    },
+    {
+      "index": 8,
+      "originalText": "X ISEKAI REINCARNATION X MISUNDERSTANDING COMEDY!!!",
+      "translatedText": "X تناسخ إيسيكاي X كوميديا سوء الفهم!!!",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          0.5,
+          0.49
+        ],
+        [
+          0.98,
+          0.49
+        ],
+        [
+          0.98,
+          0.52
+        ],
+        [
+          0.5,
+          0.52
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.5,
+          0.49
+        ],
+        [
+          0.98,
+          0.49
+        ],
+        [
+          0.98,
+          0.52
+        ],
+        [
+          0.5,
+          0.52
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.5,
+        "y": 0.49,
+        "w": 0.98,
+        "h": 0.52
+      }
+    },
+    {
+      "index": 9,
+      "originalText": "- The Eminence in Shadow-",
+      "translatedText": "- النبلاء في الظل -",
+      "detectedType": "title",
+      "textClass": "chapter_title",
+      "confidence": 0.82,
+      "reason": "gemini:title",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          0.64,
+          0.55
+        ],
+        [
+          0.95,
+          0.55
+        ],
+        [
+          0.95,
+          0.58
+        ],
+        [
+          0.64,
+          0.58
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.64,
+          0.55
+        ],
+        [
+          0.95,
+          0.55
+        ],
+        [
+          0.95,
+          0.58
+        ],
+        [
+          0.64,
+          0.58
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.64,
+        "y": 0.55,
+        "w": 0.95,
+        "h": 0.58
+      }
+    },
+    {
+      "index": 10,
+      "originalText": "MANGA SAKANO ANRI",
+      "translatedText": "مانجا ساكانو أنري",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          0.03,
+          0.84
+        ],
+        [
+          0.24,
+          0.84
+        ],
+        [
+          0.24,
+          0.88
+        ],
+        [
+          0.03,
+          0.88
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.03,
+          0.84
+        ],
+        [
+          0.24,
+          0.84
+        ],
+        [
+          0.24,
+          0.88
+        ],
+        [
+          0.03,
+          0.88
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.03,
+        "y": 0.84,
+        "w": 0.24,
+        "h": 0.88
+      }
+    },
+    {
+      "index": 11,
+      "originalText": "SCRIPT AIZAWA DAISUKE",
+      "translatedText": "السيناريو: أيزاوا دايسوكي",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          0.03,
+          0.9
+        ],
+        [
+          0.27,
+          0.9
+        ],
+        [
+          0.27,
+          0.94
+        ],
+        [
+          0.03,
+          0.94
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.03,
+          0.9
+        ],
+        [
+          0.27,
+          0.9
+        ],
+        [
+          0.27,
+          0.94
+        ],
+        [
+          0.03,
+          0.94
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.03,
+        "y": 0.9,
+        "w": 0.27,
+        "h": 0.94
+      }
+    },
+    {
+      "index": 12,
+      "originalText": "CHARACTER DESIGNS TOUSEI",
+      "translatedText": "تصاميم الشخصيات: توسي",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          0.03,
+          0.96
+        ],
+        [
+          0.29,
+          0.96
+        ],
+        [
+          0.29,
+          0.99
+        ],
+        [
+          0.03,
+          0.99
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.03,
+          0.96
+        ],
+        [
+          0.29,
+          0.96
+        ],
+        [
+          0.29,
+          0.99
+        ],
+        [
+          0.03,
+          0.99
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.03,
+        "y": 0.96,
+        "w": 0.29,
+        "h": 0.99
+      }
+    },
+    {
+      "index": 13,
+      "originalText": "Episode 1",
+      "translatedText": "الحلقة 1",
+      "detectedType": "narration",
+      "textClass": "chapter_title",
+      "confidence": 0.88,
+      "reason": "chapter-pattern",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          0.82,
+          0.77
+        ],
+        [
+          0.91,
+          0.77
+        ],
+        [
+          0.91,
+          0.82
+        ],
+        [
+          0.82,
+          0.82
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.82,
+          0.77
+        ],
+        [
+          0.91,
+          0.77
+        ],
+        [
+          0.91,
+          0.82
+        ],
+        [
+          0.82,
+          0.82
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.82,
+        "y": 0.77,
+        "w": 0.91,
+        "h": 0.82
+      }
+    },
+    {
+      "index": 14,
+      "originalText": "VOLUME 1 OF THE ORIGINAL WORK IS NOW SELLING REALLY WELL!!",
+      "translatedText": "المجلد الأول من العمل الأصلي يُباع جيداً الآن!!",
+      "detectedType": "narration",
+      "textClass": "chapter_title",
+      "confidence": 0.88,
+      "reason": "chapter-pattern",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          0.64,
+          0.92
+        ],
+        [
+          0.98,
+          0.92
+        ],
+        [
+          0.98,
+          0.98
+        ],
+        [
+          0.64,
+          0.98
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.64,
+          0.92
+        ],
+        [
+          0.98,
+          0.92
+        ],
+        [
+          0.98,
+          0.98
+        ],
+        [
+          0.64,
+          0.98
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.64,
+        "y": 0.92,
+        "w": 0.98,
+        "h": 0.98
+      }
+    }
+  ]
+}

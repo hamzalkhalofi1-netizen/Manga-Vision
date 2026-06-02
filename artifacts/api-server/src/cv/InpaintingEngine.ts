@@ -21,6 +21,13 @@
  *   Manga bubbles have flat, uniform fills.  Telea's geometric propagation
  *   is faster and produces sharper results on flat regions.  NS is better
  *   suited for photographic textures.
+ *
+ * CRITICAL — memory safety:
+ *   All Buffer values derived from OpenCV Mat must be COPIED before the Mat
+ *   is deleted.  `Buffer.from(mat.data)` copies the Uint8ClampedArray data
+ *   into independent Node.js heap memory.  Never use
+ *   `Buffer.from(mat.data.buffer, byteOffset, length)` — that is a zero-copy
+ *   view into the WASM heap that becomes invalid after mat.delete().
  */
 
 import sharp from "sharp";
@@ -47,14 +54,14 @@ export async function inpaintImage(
     .toBuffer({ resolveWithObject: true });
 
   const srcRGBA = new cv.Mat(height, width, cv.CV_8UC4);
-  srcRGBA.data.set(new Uint8Array(rawSrc.buffer, rawSrc.byteOffset, rawSrc.length));
+  srcRGBA.data.set(new Uint8Array(rawSrc));   // copy from Node.js Buffer → WASM
 
   const srcBGR = new cv.Mat();
   cv.cvtColor(srcRGBA, srcBGR, cv.COLOR_RGBA2BGR);
   srcRGBA.delete();
 
   const maskMat = new cv.Mat(height, width, cv.CV_8UC1);
-  maskMat.data.set(new Uint8Array(maskData.buffer, maskData.byteOffset, maskData.length));
+  maskMat.data.set(new Uint8Array(maskData));  // copy from Node.js Buffer → WASM
 
   const dst = new cv.Mat();
   cv.inpaint(srcBGR, maskMat, dst, radius, cv.INPAINT_TELEA);
@@ -65,11 +72,9 @@ export async function inpaintImage(
   cv.cvtColor(dst, resultRGB, cv.COLOR_BGR2RGB);
   dst.delete();
 
-  const resultRaw = Buffer.from(
-    resultRGB.data.buffer,
-    resultRGB.data.byteOffset,
-    resultRGB.data.byteLength
-  );
+  // SAFE copy: must copy WASM data into Node.js Buffer BEFORE mat.delete().
+  // Buffer.from(typedArray) allocates new Node.js heap memory and copies.
+  const resultRaw = Buffer.from(resultRGB.data);
   resultRGB.delete();
 
   const imageBuffer = await sharp(resultRaw, {

@@ -1,0 +1,1677 @@
+{
+  "summary": {
+    "total": 30,
+    "speech_bubble": 0,
+    "narration_box": 10,
+    "sfx": 0,
+    "ui_text": 0,
+    "chapter_title": 5,
+    "credits": 13,
+    "watermark": 2,
+    "unknown": 0,
+    "inpainted": 10,
+    "rendered": 10,
+    "skipped": 20
+  },
+  "timing": {
+    "fetchMs": 188,
+    "classifyMs": 1,
+    "segmentMs": 121,
+    "bubbleMs": 154,
+    "inpaintMs": 118,
+    "annotateMs": 218,
+    "totalMs": 801
+  },
+  "regions": [
+    {
+      "index": 0,
+      "originalText": "Chapter 1",
+      "translatedText": "الفصل الأول",
+      "detectedType": "narration",
+      "textClass": "chapter_title",
+      "confidence": 0.88,
+      "reason": "chapter-pattern",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          41,
+          222
+        ],
+        [
+          240,
+          222
+        ],
+        [
+          240,
+          248
+        ],
+        [
+          41,
+          248
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          222
+        ],
+        [
+          240,
+          222
+        ],
+        [
+          240,
+          248
+        ],
+        [
+          41,
+          248
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.041,
+        "y": 0.222,
+        "w": 0.199,
+        "h": 0.026
+      }
+    },
+    {
+      "index": 1,
+      "originalText": "raw: biamamscans",
+      "translatedText": "الخام: بيامامسكانز",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          42,
+          313
+        ],
+        [
+          276,
+          313
+        ],
+        [
+          276,
+          335
+        ],
+        [
+          42,
+          335
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          42,
+          313
+        ],
+        [
+          276,
+          313
+        ],
+        [
+          276,
+          335
+        ],
+        [
+          42,
+          335
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.042,
+        "y": 0.313,
+        "w": 0.234,
+        "h": 0.022
+      }
+    },
+    {
+      "index": 2,
+      "originalText": "Translations: rottenpantsu",
+      "translatedText": "الترجمات: روتاينبانتسو",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.92,
+      "reason": "credits-keyword",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          41,
+          345
+        ],
+        [
+          326,
+          345
+        ],
+        [
+          326,
+          367
+        ],
+        [
+          41,
+          367
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          345
+        ],
+        [
+          326,
+          345
+        ],
+        [
+          326,
+          367
+        ],
+        [
+          41,
+          367
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.041,
+        "y": 0.345,
+        "w": 0.285,
+        "h": 0.022
+      }
+    },
+    {
+      "index": 3,
+      "originalText": "JOIN OUR DISCORD!",
+      "translatedText": "انضم إلى ديسكوردنا!",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          41,
+          448
+        ],
+        [
+          322,
+          448
+        ],
+        [
+          322,
+          474
+        ],
+        [
+          41,
+          474
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          448
+        ],
+        [
+          322,
+          448
+        ],
+        [
+          322,
+          474
+        ],
+        [
+          41,
+          474
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.041,
+        "y": 0.448,
+        "w": 0.281,
+        "h": 0.026
+      }
+    },
+    {
+      "index": 4,
+      "originalText": "https://discord.gg/bV4HN8z",
+      "translatedText": "https://discord.gg/bV4HN8z",
+      "detectedType": "credits",
+      "textClass": "watermark",
+      "confidence": 0.97,
+      "reason": "url-pattern",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          41,
+          480
+        ],
+        [
+          400,
+          480
+        ],
+        [
+          400,
+          508
+        ],
+        [
+          41,
+          508
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          480
+        ],
+        [
+          400,
+          480
+        ],
+        [
+          400,
+          508
+        ],
+        [
+          41,
+          508
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.041,
+        "y": 0.48,
+        "w": 0.359,
+        "h": 0.028
+      }
+    },
+    {
+      "index": 5,
+      "originalText": "PLEASE HELP US BY DONATING THRU",
+      "translatedText": "الرجاء مساعدتنا بالتبرع من خلال",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          41,
+          566
+        ],
+        [
+          404,
+          566
+        ],
+        [
+          404,
+          587
+        ],
+        [
+          41,
+          587
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          566
+        ],
+        [
+          404,
+          566
+        ],
+        [
+          404,
+          587
+        ],
+        [
+          41,
+          587
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.041,
+        "y": 0.566,
+        "w": 0.363,
+        "h": 0.021
+      }
+    },
+    {
+      "index": 6,
+      "originalText": "paypal.me/biamamscans",
+      "translatedText": "paypal.me/biamamscans",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          41,
+          597
+        ],
+        [
+          356,
+          597
+        ],
+        [
+          356,
+          619
+        ],
+        [
+          41,
+          619
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          597
+        ],
+        [
+          356,
+          597
+        ],
+        [
+          356,
+          619
+        ],
+        [
+          41,
+          619
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.041,
+        "y": 0.597,
+        "w": 0.315,
+        "h": 0.022
+      }
+    },
+    {
+      "index": 7,
+      "originalText": "OR BECOME A PATRON",
+      "translatedText": "أو كن راعيًا",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          41,
+          676
+        ],
+        [
+          286,
+          676
+        ],
+        [
+          286,
+          698
+        ],
+        [
+          41,
+          698
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          676
+        ],
+        [
+          286,
+          676
+        ],
+        [
+          286,
+          698
+        ],
+        [
+          41,
+          698
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.041,
+        "y": 0.676,
+        "w": 0.245,
+        "h": 0.022
+      }
+    },
+    {
+      "index": 8,
+      "originalText": "patreon.com/biamamscans",
+      "translatedText": "patreon.com/biamamscans",
+      "detectedType": "credits",
+      "textClass": "watermark",
+      "confidence": 0.97,
+      "reason": "url-pattern",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          41,
+          708
+        ],
+        [
+          370,
+          708
+        ],
+        [
+          370,
+          730
+        ],
+        [
+          41,
+          730
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          708
+        ],
+        [
+          370,
+          708
+        ],
+        [
+          370,
+          730
+        ],
+        [
+          41,
+          730
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.041,
+        "y": 0.708,
+        "w": 0.329,
+        "h": 0.022
+      }
+    },
+    {
+      "index": 9,
+      "originalText": "Special thanks to our patrons,\nTobias, Shawn Rodgers, Kagoyasha,\nNathan Nguyen and hyrule13!",
+      "translatedText": "شكر خاص لداعمينا:\nتوبياس، شون رودجرز، كاغوياشا،\nناثان نغوين وهايرول13!",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          41,
+          788
+        ],
+        [
+          388,
+          788
+        ],
+        [
+          388,
+          856
+        ],
+        [
+          41,
+          856
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          788
+        ],
+        [
+          388,
+          788
+        ],
+        [
+          388,
+          856
+        ],
+        [
+          41,
+          856
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.041,
+        "y": 0.788,
+        "w": 0.347,
+        "h": 0.068
+      }
+    },
+    {
+      "index": 10,
+      "originalText": "Thanks for your support!",
+      "translatedText": "شكرا لدعمكم!",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          41,
+          870
+        ],
+        [
+          322,
+          870
+        ],
+        [
+          322,
+          896
+        ],
+        [
+          41,
+          896
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          41,
+          870
+        ],
+        [
+          322,
+          870
+        ],
+        [
+          322,
+          896
+        ],
+        [
+          41,
+          896
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.041,
+        "y": 0.87,
+        "w": 0.281,
+        "h": 0.026
+      }
+    },
+    {
+      "index": 11,
+      "originalText": "メディアミックスコミックマガジン",
+      "translatedText": "مجلة المانغا ميديا ميكس",
+      "detectedType": "title",
+      "textClass": "chapter_title",
+      "confidence": 0.82,
+      "reason": "gemini:title",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          518,
+          20
+        ],
+        [
+          728,
+          20
+        ],
+        [
+          728,
+          30
+        ],
+        [
+          518,
+          30
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          518,
+          20
+        ],
+        [
+          728,
+          20
+        ],
+        [
+          728,
+          30
+        ],
+        [
+          518,
+          30
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.518,
+        "y": 0.02,
+        "w": 0.21,
+        "h": 0.01
+      }
+    },
+    {
+      "index": 12,
+      "originalText": "月刊",
+      "translatedText": "شهريًا",
+      "detectedType": "title",
+      "textClass": "chapter_title",
+      "confidence": 0.82,
+      "reason": "gemini:title",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          443,
+          20
+        ],
+        [
+          475,
+          20
+        ],
+        [
+          475,
+          30
+        ],
+        [
+          443,
+          30
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          443,
+          20
+        ],
+        [
+          475,
+          20
+        ],
+        [
+          475,
+          30
+        ],
+        [
+          443,
+          30
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.443,
+        "y": 0.02,
+        "w": 0.032,
+        "h": 0.01
+      }
+    },
+    {
+      "index": 13,
+      "originalText": "コンプエース",
+      "translatedText": "كومب إيس",
+      "detectedType": "title",
+      "textClass": "chapter_title",
+      "confidence": 0.82,
+      "reason": "gemini:title",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          480,
+          20
+        ],
+        [
+          514,
+          20
+        ],
+        [
+          514,
+          30
+        ],
+        [
+          480,
+          30
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          480,
+          20
+        ],
+        [
+          514,
+          20
+        ],
+        [
+          514,
+          30
+        ],
+        [
+          480,
+          30
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.48,
+        "y": 0.02,
+        "w": 0.034,
+        "h": 0.01
+      }
+    },
+    {
+      "index": 14,
+      "originalText": "月刊",
+      "translatedText": "شهريًا",
+      "detectedType": "title",
+      "textClass": "chapter_title",
+      "confidence": 0.82,
+      "reason": "gemini:title",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          460,
+          56
+        ],
+        [
+          484,
+          56
+        ],
+        [
+          484,
+          76
+        ],
+        [
+          460,
+          76
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          460,
+          56
+        ],
+        [
+          484,
+          56
+        ],
+        [
+          484,
+          76
+        ],
+        [
+          460,
+          76
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.46,
+        "y": 0.056,
+        "w": 0.024,
+        "h": 0.02
+      }
+    },
+    {
+      "index": 15,
+      "originalText": "超人気Web発小説が早くもコミック化!!",
+      "translatedText": "رواية الويب الأكثر شعبية تتحول إلى مانغا بسرعة!!",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          752,
+          102
+        ],
+        [
+          964,
+          102
+        ],
+        [
+          964,
+          126
+        ],
+        [
+          752,
+          126
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          752,
+          102
+        ],
+        [
+          964,
+          102
+        ],
+        [
+          964,
+          126
+        ],
+        [
+          752,
+          126
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.752,
+        "y": 0.102,
+        "w": 0.212,
+        "h": 0.024
+      }
+    },
+    {
+      "index": 16,
+      "originalText": "青年×人外少女の異世界冒険譚",
+      "translatedText": "قصة مغامرة عالم آخر لشاب وفتاة من عالم آخر",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          468,
+          172
+        ],
+        [
+          604,
+          172
+        ],
+        [
+          604,
+          182
+        ],
+        [
+          468,
+          182
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          468,
+          172
+        ],
+        [
+          604,
+          172
+        ],
+        [
+          604,
+          182
+        ],
+        [
+          468,
+          182
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.468,
+        "y": 0.172,
+        "w": 0.136,
+        "h": 0.01
+      }
+    },
+    {
+      "index": 17,
+      "originalText": "魔導の覇王とゴーレムの戦記",
+      "translatedText": "حرب الإمبراطور الساحر وجوليم",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          468,
+          187
+        ],
+        [
+          604,
+          187
+        ],
+        [
+          604,
+          196
+        ],
+        [
+          468,
+          196
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          468,
+          187
+        ],
+        [
+          604,
+          187
+        ],
+        [
+          604,
+          196
+        ],
+        [
+          468,
+          196
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.468,
+        "y": 0.187,
+        "w": 0.136,
+        "h": 0.009
+      }
+    },
+    {
+      "index": 18,
+      "originalText": "原作\n下村裕一\n漫画\n飯島しんご",
+      "translatedText": "الأصل:\nيوئيتشي شيمومورا\nالمانغا:\nشينغو إيجيما",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          470,
+          211
+        ],
+        [
+          514,
+          211
+        ],
+        [
+          514,
+          237
+        ],
+        [
+          470,
+          237
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          470,
+          211
+        ],
+        [
+          514,
+          211
+        ],
+        [
+          514,
+          237
+        ],
+        [
+          470,
+          237
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.47,
+        "y": 0.211,
+        "w": 0.044,
+        "h": 0.026
+      }
+    },
+    {
+      "index": 19,
+      "originalText": "2\n2019 FEBRUARY",
+      "translatedText": "2\nفبراير 2019",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          912,
+          404
+        ],
+        [
+          952,
+          404
+        ],
+        [
+          952,
+          430
+        ],
+        [
+          912,
+          430
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          912,
+          404
+        ],
+        [
+          952,
+          404
+        ],
+        [
+          952,
+          430
+        ],
+        [
+          912,
+          430
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.912,
+        "y": 0.404,
+        "w": 0.04,
+        "h": 0.026
+      }
+    },
+    {
+      "index": 20,
+      "originalText": "新\n連\n載",
+      "translatedText": "سلسلة جديدة",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          438,
+          430
+        ],
+        [
+          476,
+          430
+        ],
+        [
+          476,
+          566
+        ],
+        [
+          438,
+          566
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          438,
+          430
+        ],
+        [
+          476,
+          430
+        ],
+        [
+          476,
+          566
+        ],
+        [
+          438,
+          566
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.438,
+        "y": 0.43,
+        "w": 0.038,
+        "h": 0.136
+      }
+    },
+    {
+      "index": 21,
+      "originalText": "表紙\n&",
+      "translatedText": "الغلاف\n&",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          480,
+          528
+        ],
+        [
+          500,
+          528
+        ],
+        [
+          500,
+          552
+        ],
+        [
+          480,
+          552
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          480,
+          528
+        ],
+        [
+          500,
+          528
+        ],
+        [
+          500,
+          552
+        ],
+        [
+          480,
+          552
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.48,
+        "y": 0.528,
+        "w": 0.02,
+        "h": 0.024
+      }
+    },
+    {
+      "index": 22,
+      "originalText": "LV999の村人",
+      "translatedText": "قروي المستوى 999",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          836,
+          706
+        ],
+        [
+          916,
+          706
+        ],
+        [
+          916,
+          716
+        ],
+        [
+          836,
+          716
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          836,
+          706
+        ],
+        [
+          916,
+          706
+        ],
+        [
+          916,
+          716
+        ],
+        [
+          836,
+          716
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.836,
+        "y": 0.706,
+        "w": 0.08,
+        "h": 0.01
+      }
+    },
+    {
+      "index": 23,
+      "originalText": "原作/星月夜",
+      "translatedText": "قصة أصلية/هوشيزوكويا",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          836,
+          696
+        ],
+        [
+          916,
+          696
+        ],
+        [
+          916,
+          704
+        ],
+        [
+          836,
+          704
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          836,
+          696
+        ],
+        [
+          916,
+          696
+        ],
+        [
+          916,
+          704
+        ],
+        [
+          836,
+          704
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.836,
+        "y": 0.696,
+        "w": 0.08,
+        "h": 0.008
+      }
+    },
+    {
+      "index": 24,
+      "originalText": "話題のWeb発小説のコミック化が満載!",
+      "translatedText": "مليئة بتحويلات القصص الويب الشهيرة إلى كوميكس!",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          836,
+          720
+        ],
+        [
+          964,
+          720
+        ],
+        [
+          964,
+          730
+        ],
+        [
+          836,
+          730
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          836,
+          720
+        ],
+        [
+          964,
+          720
+        ],
+        [
+          964,
+          730
+        ],
+        [
+          836,
+          730
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.836,
+        "y": 0.72,
+        "w": 0.128,
+        "h": 0.01
+      }
+    },
+    {
+      "index": 25,
+      "originalText": "原案/岸田メ",
+      "translatedText": "تصميم الشخصيات الأصلي/كيشيدا ميتسوكي",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          836,
+          732
+        ],
+        [
+          916,
+          732
+        ],
+        [
+          916,
+          740
+        ],
+        [
+          836,
+          740
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          836,
+          732
+        ],
+        [
+          916,
+          732
+        ],
+        [
+          916,
+          740
+        ],
+        [
+          836,
+          740
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.836,
+        "y": 0.732,
+        "w": 0.08,
+        "h": 0.008
+      }
+    },
+    {
+      "index": 26,
+      "originalText": "漫画/笹木ささき",
+      "translatedText": "مانغا/ساساكي ساساكي",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          836,
+          742
+        ],
+        [
+          916,
+          742
+        ],
+        [
+          916,
+          750
+        ],
+        [
+          836,
+          750
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          836,
+          742
+        ],
+        [
+          916,
+          742
+        ],
+        [
+          916,
+          750
+        ],
+        [
+          836,
+          750
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.836,
+        "y": 0.742,
+        "w": 0.08,
+        "h": 0.008
+      }
+    },
+    {
+      "index": 27,
+      "originalText": "オーバーロード\nLV99の村人\n異世界はスマートフォ\n使い魔は賢者\n異世界で",
+      "translatedText": "تجاوز الحدود\nقروي المستوى 99\nالعالم الآخر هو هاتف ذكي\nالخدم هو حكيم\nفي عالم آخر",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          836,
+          680
+        ],
+        [
+          942,
+          680
+        ],
+        [
+          942,
+          888
+        ],
+        [
+          836,
+          888
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          836,
+          680
+        ],
+        [
+          942,
+          680
+        ],
+        [
+          942,
+          888
+        ],
+        [
+          836,
+          888
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.836,
+        "y": 0.68,
+        "w": 0.106,
+        "h": 0.208
+      }
+    },
+    {
+      "index": 28,
+      "originalText": "ダンジョン",
+      "translatedText": "متاهة",
+      "detectedType": "narration",
+      "textClass": "narration_box",
+      "confidence": 0.82,
+      "reason": "gemini:narration",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          836,
+          890
+        ],
+        [
+          942,
+          890
+        ],
+        [
+          942,
+          902
+        ],
+        [
+          836,
+          902
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          836,
+          890
+        ],
+        [
+          942,
+          890
+        ],
+        [
+          942,
+          902
+        ],
+        [
+          836,
+          902
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.836,
+        "y": 0.89,
+        "w": 0.106,
+        "h": 0.012
+      }
+    },
+    {
+      "index": 29,
+      "originalText": "原作/滝沢大介\n漫画/東ヶ崎\nキャラクター原案/野",
+      "translatedText": "قصة أصلية/تاكيساوا دايسوكي\nمانغا/توغاساكي\nتصميم الشخصيات الأصلي/نو",
+      "detectedType": "credits",
+      "textClass": "credits",
+      "confidence": 0.82,
+      "reason": "gemini:credits",
+      "shouldTranslate": false,
+      "shouldInpaint": false,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          632,
+          894
+        ],
+        [
+          780,
+          894
+        ],
+        [
+          780,
+          920
+        ],
+        [
+          632,
+          920
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          632,
+          894
+        ],
+        [
+          780,
+          894
+        ],
+        [
+          780,
+          920
+        ],
+        [
+          632,
+          920
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.632,
+        "y": 0.894,
+        "w": 0.148,
+        "h": 0.026
+      }
+    }
+  ]
+}

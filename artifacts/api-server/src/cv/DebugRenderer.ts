@@ -69,11 +69,11 @@ export async function toPNG(bgrMat: any, w: number, h: number): Promise<Buffer> 
   const cv = getCV();
   const rgbMat = new cv.Mat();
   cv.cvtColor(bgrMat, rgbMat, cv.COLOR_BGR2RGB);
-  const raw = Buffer.from(
-    rgbMat.data.buffer,
-    rgbMat.data.byteOffset,
-    rgbMat.data.byteLength
-  );
+  // SAFE copy: Buffer.from(typedArray) copies data before the WASM Mat is
+  // deleted.  Buffer.from(mat.data.buffer, byteOffset, length) would create
+  // a view into WASM heap that becomes invalid after mat.delete(), producing
+  // the tiling artifact seen in diagnostic stage images.
+  const raw = Buffer.from(rgbMat.data);
   rgbMat.delete();
   return sharp(raw, { raw: { width: w, height: h, channels: 3 } })
     .png({ compressionLevel: 3 })

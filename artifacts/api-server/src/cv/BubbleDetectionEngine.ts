@@ -14,15 +14,28 @@
  *      high enough to reject halftone noise.
  *   4. findContours (RETR_LIST, CHAIN_APPROX_SIMPLE).
  *   5. For each region's hint polygon:
- *        a. Compute IOU between contour bounding boxes and hint bbox.
- *        b. Best-matching contour with IOU ≥ 0.20 is selected.
- *        c. approxPolyDP at 2.5% perimeter → simplified polygon.
- *        d. Accept if 4–12 vertices, normalize to [0,1].
- *        e. Fall back to Gemini bubblePolygon or polygon if no match.
+ *        a. Compute the hint bounding box and centroid.
+ *        b. Filter candidate contours:
+ *             - Contour must not already be assigned to another region
+ *               (uniqueness constraint prevents shared-contour bugs).
+ *             - Hint centroid must lie inside the contour bounding rect
+ *               (spatial containment check — rejects distant contours).
+ *             - IOU between contour bbox and hint bbox must be ≥ 0.30
+ *               (raised from 0.20 to reduce false assignments).
+ *        c. Best-matching contour (highest IOU) is selected.
+ *        d. approxPolyDP at 2.5% perimeter → simplified polygon.
+ *        e. Accept if 4–12 vertices, normalize to [0,1].
+ *        f. Mark the contour as used; fall back to Gemini bubblePolygon
+ *           or polygon if no valid match found.
  *
- * The 0.20 IOU minimum is intentionally permissive.  Manga bubble borders
- * are often single-pixel-wide and soft, producing incomplete contours.
- * A partial overlap is sufficient to identify the correct structural contour.
+ * Why uniqueness matters:
+ *   Without it, two adjacent regions can both match the same large panel-
+ *   border contour (highest IOU for both).  The first region gets the
+ *   correct polygon; the second gets a duplicate of the first region's
+ *   contour, placing Arabic text in the wrong bubble.
+ *
+ * CRITICAL — memory safety:
+ *   See SegmentationEngine.ts — same Buffer.from(mat.data) copy rule applies.
  */
 
 import sharp from "sharp";
@@ -50,7 +63,7 @@ export async function refineBubblePolygons(
   const H = info.height;
 
   const rgbaMat = new cv.Mat(H, W, cv.CV_8UC4);
-  rgbaMat.data.set(new Uint8Array(rawData.buffer, rawData.byteOffset, rawData.length));
+  rgbaMat.data.set(new Uint8Array(rawData));   // safe copy
 
   const grayMat = new cv.Mat();
   cv.cvtColor(rgbaMat, grayMat, cv.COLOR_RGBA2GRAY);
@@ -71,6 +84,11 @@ export async function refineBubblePolygons(
   hierarchy.delete();
 
   const nContours = contours.size();
+
+  // Track which contours have already been assigned to a region.
+  // Prevents two close regions from both matching the same large contour.
+  const usedContourIndices = new Set<number>();
+
   const results: RefinedRegion[] = [];
 
   for (const region of regions) {
@@ -88,15 +106,23 @@ export async function refineBubblePolygons(
     const hy2 = Math.max(...hYs);
     const hArea = Math.max(1, (hx2 - hx1) * (hy2 - hy1));
 
+    // Skip tiny regions — too small to have a reliable contour match.
     if (hArea < 400) {
       results.push({ ...region });
       continue;
     }
 
+    // Hint centroid (pixel coords) — used for spatial containment check.
+    const hCx = (hx1 + hx2) / 2;
+    const hCy = (hy1 + hy2) / 2;
+
     let bestIdx = -1;
     let bestIOU = 0;
 
     for (let i = 0; i < nContours; i++) {
+      // Skip contours already claimed by an earlier region.
+      if (usedContourIndices.has(i)) continue;
+
       const c = contours.get(i);
       const cArea = cv.contourArea(c);
       if (cArea < 200 || cArea > W * H * 0.4) continue;
@@ -107,6 +133,11 @@ export async function refineBubblePolygons(
       const cx2 = rect.x + rect.width;
       const cy2 = rect.y + rect.height;
       const cBboxArea = rect.width * rect.height;
+
+      // Spatial containment: the hint's centroid must lie inside the
+      // contour's bounding rect.  This rejects distant panel borders that
+      // happen to have a non-zero IOU due to proximity at the image edge.
+      if (hCx < cx1 || hCx > cx2 || hCy < cy1 || hCy > cy2) continue;
 
       const ix1 = Math.max(hx1, cx1);
       const iy1 = Math.max(hy1, cy1);
@@ -122,7 +153,11 @@ export async function refineBubblePolygons(
       }
     }
 
-    if (bestIdx >= 0 && bestIOU >= 0.20) {
+    // IOU threshold raised from 0.20 → 0.30 for stronger matching.
+    if (bestIdx >= 0 && bestIOU >= 0.30) {
+      // Mark this contour as used so no later region can claim it.
+      usedContourIndices.add(bestIdx);
+
       const best = contours.get(bestIdx);
       const approx = new cv.Mat();
       const perimeter = cv.arcLength(best, true);

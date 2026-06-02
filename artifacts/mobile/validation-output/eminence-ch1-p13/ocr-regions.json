@@ -1,0 +1,544 @@
+{
+  "regions": [
+    {
+      "original": "OH,\nBOY.",
+      "translated": "يا إلهي.",
+      "polygon": [
+        [
+          835,
+          172
+        ],
+        [
+          835,
+          222
+        ],
+        [
+          908,
+          222
+        ],
+        [
+          908,
+          172
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          818,
+          154
+        ],
+        [
+          922,
+          154
+        ],
+        [
+          922,
+          237
+        ],
+        [
+          818,
+          237
+        ]
+      ],
+      "x": 0.818,
+      "y": 0.154,
+      "w": 0.104,
+      "h": 0.083,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "I MUST SAY,\nMY ACT OF\nMEDIOCRITY\nWAS AS\nPERFECT\nAS ALWAYS.",
+      "translated": "لا بد لي أن أقول،\nكان تمثيلي\nللتواضع\nمثاليًا\nكما هو الحال دائمًا.",
+      "polygon": [
+        [
+          150,
+          310
+        ],
+        [
+          150,
+          417
+        ],
+        [
+          374,
+          417
+        ],
+        [
+          374,
+          310
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          135,
+          296
+        ],
+        [
+          393,
+          296
+        ],
+        [
+          393,
+          431
+        ],
+        [
+          135,
+          431
+        ]
+      ],
+      "x": 0.135,
+      "y": 0.296,
+      "w": 0.258,
+      "h": 0.135,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "Cid Kagenoh (10)\n(Protagonist)",
+      "translated": "سيد كاغينوه (10)\n(البطل)",
+      "polygon": [
+        [
+          719,
+          410
+        ],
+        [
+          719,
+          452
+        ],
+        [
+          876,
+          452
+        ],
+        [
+          876,
+          410
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          711,
+          404
+        ],
+        [
+          883,
+          404
+        ],
+        [
+          883,
+          456
+        ],
+        [
+          711,
+          456
+        ]
+      ],
+      "x": 0.711,
+      "y": 0.404,
+      "w": 0.172,
+      "h": 0.052,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "WITH FURTHER\nRESEARCH, I'M\nSURE I COULD\nDISCOVER EVEN\nMORE AMAZING\nPOWERS.",
+      "translated": "بمزيد من\nالبحث، أنا\nمتأكد أنني\nأستطيع اكتشاف\nقوى أكثر\nإثارة للدهشة.",
+      "polygon": [
+        [
+          106,
+          608
+        ],
+        [
+          106,
+          693
+        ],
+        [
+          286,
+          693
+        ],
+        [
+          286,
+          608
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          91,
+          597
+        ],
+        [
+          296,
+          597
+        ],
+        [
+          296,
+          706
+        ],
+        [
+          91,
+          706
+        ]
+      ],
+      "x": 0.091,
+      "y": 0.597,
+      "w": 0.205,
+      "h": 0.109,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "INHUMAN\nDISPLAYS OF\nSTRENGTH OR\nHEALING ARE\nPOSSIBLE.",
+      "translated": "تظاهرات\nقوة أو شفاء\nغير بشرية\nممكنة.",
+      "polygon": [
+        [
+          388,
+          563
+        ],
+        [
+          388,
+          638
+        ],
+        [
+          500,
+          638
+        ],
+        [
+          500,
+          563
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          379,
+          555
+        ],
+        [
+          508,
+          555
+        ],
+        [
+          508,
+          648
+        ],
+        [
+          379,
+          648
+        ]
+      ],
+      "x": 0.379,
+      "y": 0.555,
+      "w": 0.129,
+      "h": 0.093,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "I KNEW ALL\nABOUT IT SINCE\nI WAS A BABY,\nMAYBE BECAUSE\nOF MY EXPERI-\nENCES IN MY\nPAST LIFE.",
+      "translated": "كنت أعلم كل\nشيء عن ذلك\nمنذ أن كنت طفلاً،\nربما بسبب\nتجاربي في\nحياتي الماضية.",
+      "polygon": [
+        [
+          626,
+          563
+        ],
+        [
+          626,
+          674
+        ],
+        [
+          747,
+          674
+        ],
+        [
+          747,
+          563
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          618,
+          555
+        ],
+        [
+          757,
+          555
+        ],
+        [
+          757,
+          683
+        ],
+        [
+          618,
+          683
+        ]
+      ],
+      "x": 0.618,
+      "y": 0.555,
+      "w": 0.139,
+      "h": 0.128,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "I MASTERED\nTHE USE\nOF MAGIC\nLONG AGO.",
+      "translated": "لقد أتقنت\nاستخدام\nالسحر\nمنذ زمن بعيد.",
+      "polygon": [
+        [
+          812,
+          545
+        ],
+        [
+          812,
+          608
+        ],
+        [
+          911,
+          608
+        ],
+        [
+          911,
+          545
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          804,
+          538
+        ],
+        [
+          918,
+          538
+        ],
+        [
+          918,
+          615
+        ],
+        [
+          804,
+          615
+        ]
+      ],
+      "x": 0.804,
+      "y": 0.538,
+      "w": 0.114,
+      "h": 0.077,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "Whop",
+      "translated": "ضربه",
+      "polygon": [
+        [
+          838,
+          668
+        ],
+        [
+          838,
+          683
+        ],
+        [
+          872,
+          683
+        ],
+        [
+          872,
+          668
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          830,
+          664
+        ],
+        [
+          879,
+          664
+        ],
+        [
+          879,
+          691
+        ],
+        [
+          830,
+          691
+        ]
+      ],
+      "x": 0.83,
+      "y": 0.664,
+      "w": 0.049,
+      "h": 0.027,
+      "type": "sfx",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "Whop",
+      "translated": "ضربه",
+      "polygon": [
+        [
+          596,
+          755
+        ],
+        [
+          596,
+          770
+        ],
+        [
+          632,
+          770
+        ],
+        [
+          632,
+          755
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          588,
+          751
+        ],
+        [
+          638,
+          751
+        ],
+        [
+          638,
+          778
+        ],
+        [
+          588,
+          778
+        ]
+      ],
+      "x": 0.588,
+      "y": 0.751,
+      "w": 0.05,
+      "h": 0.027,
+      "type": "sfx",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "I CAN DO THIS.\nBUT AN EMI-\nNENCE OF\nSHADOW MUST\nHIDE HIS\nFANGS.",
+      "translated": "أستطيع فعل هذا.\nلكن هيمنة\nالظل يجب أن\nتخفي\nأنيابه.",
+      "polygon": [
+        [
+          140,
+          792
+        ],
+        [
+          140,
+          874
+        ],
+        [
+          278,
+          874
+        ],
+        [
+          278,
+          792
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          125,
+          779
+        ],
+        [
+          288,
+          779
+        ],
+        [
+          288,
+          883
+        ],
+        [
+          125,
+          883
+        ]
+      ],
+      "x": 0.125,
+      "y": 0.779,
+      "w": 0.163,
+      "h": 0.104,
+      "type": "speech",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "20",
+      "translated": "20",
+      "polygon": [
+        [
+          884,
+          959
+        ],
+        [
+          884,
+          977
+        ],
+        [
+          906,
+          977
+        ],
+        [
+          906,
+          959
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          884,
+          959
+        ],
+        [
+          906,
+          959
+        ],
+        [
+          906,
+          977
+        ],
+        [
+          884,
+          977
+        ]
+      ],
+      "x": 0.884,
+      "y": 0.959,
+      "w": 0.022,
+      "h": 0.018,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    }
+  ],
+  "ocrMs": 13755
+}

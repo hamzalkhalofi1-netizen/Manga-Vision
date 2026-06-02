@@ -1,0 +1,740 @@
+{
+  "regions": [
+    {
+      "original": "what if that became reality?",
+      "translated": "ماذا لو أصبح هذا حقيقة؟",
+      "polygon": [
+        [
+          0.08,
+          0.05
+        ],
+        [
+          0.32,
+          0.05
+        ],
+        [
+          0.32,
+          0.13
+        ],
+        [
+          0.08,
+          0.13
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.08,
+          0.05
+        ],
+        [
+          0.32,
+          0.05
+        ],
+        [
+          0.32,
+          0.13
+        ],
+        [
+          0.08,
+          0.13
+        ]
+      ],
+      "x": 0.1,
+      "y": 0.05,
+      "w": 0.32,
+      "h": 0.13,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "if you enjoy that kind of setting",
+      "translated": "إذا كنت تستمتع بهذا النوع من الإعدادات",
+      "polygon": [
+        [
+          0.34,
+          0.06
+        ],
+        [
+          0.46,
+          0.06
+        ],
+        [
+          0.46,
+          0.15
+        ],
+        [
+          0.34,
+          0.15
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.34,
+          0.06
+        ],
+        [
+          0.46,
+          0.06
+        ],
+        [
+          0.46,
+          0.15
+        ],
+        [
+          0.34,
+          0.15
+        ]
+      ],
+      "x": 0.34,
+      "y": 0.06,
+      "w": 0.46,
+      "h": 0.15,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "and plotting to defeat the Dark Order ...",
+      "translated": "ويتآمر لهزيمة النظام المظلم...",
+      "polygon": [
+        [
+          0.55,
+          0.09
+        ],
+        [
+          0.72,
+          0.09
+        ],
+        [
+          0.72,
+          0.19
+        ],
+        [
+          0.55,
+          0.19
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.55,
+          0.09
+        ],
+        [
+          0.72,
+          0.09
+        ],
+        [
+          0.72,
+          0.19
+        ],
+        [
+          0.55,
+          0.19
+        ]
+      ],
+      "x": 0.55,
+      "y": 0.09,
+      "w": 0.72,
+      "h": 0.19,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "Secretly being a powerful person",
+      "translated": "أن تكون شخصًا قويًا سراً",
+      "polygon": [
+        [
+          0.78,
+          0.04
+        ],
+        [
+          0.95,
+          0.04
+        ],
+        [
+          0.95,
+          0.13
+        ],
+        [
+          0.78,
+          0.13
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.78,
+          0.04
+        ],
+        [
+          0.95,
+          0.04
+        ],
+        [
+          0.95,
+          0.13
+        ],
+        [
+          0.78,
+          0.13
+        ]
+      ],
+      "x": 0.78,
+      "y": 0.04,
+      "w": 0.95,
+      "h": 0.13,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "NEW SERIALISATION",
+      "translated": "مسلسل جديد",
+      "polygon": [
+        [
+          0.03,
+          0.53
+        ],
+        [
+          0.17,
+          0.53
+        ],
+        [
+          0.17,
+          0.57
+        ],
+        [
+          0.03,
+          0.57
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.03,
+          0.53
+        ],
+        [
+          0.17,
+          0.53
+        ],
+        [
+          0.17,
+          0.57
+        ],
+        [
+          0.03,
+          0.57
+        ]
+      ],
+      "x": 0.03,
+      "y": 0.53,
+      "w": 0.17,
+      "h": 0.57,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "陰の実力者",
+      "translated": "قوة الظل",
+      "polygon": [
+        [
+          0.08,
+          0.61
+        ],
+        [
+          0.45,
+          0.61
+        ],
+        [
+          0.45,
+          0.79
+        ],
+        [
+          0.08,
+          0.79
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.08,
+          0.61
+        ],
+        [
+          0.45,
+          0.61
+        ],
+        [
+          0.45,
+          0.79
+        ],
+        [
+          0.08,
+          0.79
+        ]
+      ],
+      "x": 0.08,
+      "y": 0.61,
+      "w": 0.45,
+      "h": 0.79,
+      "type": "title",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": true
+    },
+    {
+      "original": "になりたくて!",
+      "translated": "أريد أن أكون!",
+      "polygon": [
+        [
+          0.47,
+          0.62
+        ],
+        [
+          0.86,
+          0.62
+        ],
+        [
+          0.86,
+          0.79
+        ],
+        [
+          0.47,
+          0.79
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.47,
+          0.62
+        ],
+        [
+          0.86,
+          0.62
+        ],
+        [
+          0.86,
+          0.79
+        ],
+        [
+          0.47,
+          0.79
+        ]
+      ],
+      "x": 0.47,
+      "y": 0.62,
+      "w": 0.86,
+      "h": 0.79,
+      "type": "title",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": true
+    },
+    {
+      "original": "STRONGEST MC",
+      "translated": "أقوى بطل",
+      "polygon": [
+        [
+          0.34,
+          0.49
+        ],
+        [
+          0.48,
+          0.49
+        ],
+        [
+          0.48,
+          0.52
+        ],
+        [
+          0.34,
+          0.52
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.34,
+          0.49
+        ],
+        [
+          0.48,
+          0.49
+        ],
+        [
+          0.48,
+          0.52
+        ],
+        [
+          0.34,
+          0.52
+        ]
+      ],
+      "x": 0.34,
+      "y": 0.49,
+      "w": 0.48,
+      "h": 0.52,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "X ISEKAI REINCARNATION X MISUNDERSTANDING COMEDY!!!",
+      "translated": "X تناسخ إيسيكاي X كوميديا سوء الفهم!!!",
+      "polygon": [
+        [
+          0.5,
+          0.49
+        ],
+        [
+          0.98,
+          0.49
+        ],
+        [
+          0.98,
+          0.52
+        ],
+        [
+          0.5,
+          0.52
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.5,
+          0.49
+        ],
+        [
+          0.98,
+          0.49
+        ],
+        [
+          0.98,
+          0.52
+        ],
+        [
+          0.5,
+          0.52
+        ]
+      ],
+      "x": 0.5,
+      "y": 0.49,
+      "w": 0.98,
+      "h": 0.52,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "- The Eminence in Shadow-",
+      "translated": "- النبلاء في الظل -",
+      "polygon": [
+        [
+          0.64,
+          0.55
+        ],
+        [
+          0.95,
+          0.55
+        ],
+        [
+          0.95,
+          0.58
+        ],
+        [
+          0.64,
+          0.58
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.64,
+          0.55
+        ],
+        [
+          0.95,
+          0.55
+        ],
+        [
+          0.95,
+          0.58
+        ],
+        [
+          0.64,
+          0.58
+        ]
+      ],
+      "x": 0.64,
+      "y": 0.55,
+      "w": 0.95,
+      "h": 0.58,
+      "type": "title",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": true
+    },
+    {
+      "original": "MANGA SAKANO ANRI",
+      "translated": "مانجا ساكانو أنري",
+      "polygon": [
+        [
+          0.03,
+          0.84
+        ],
+        [
+          0.24,
+          0.84
+        ],
+        [
+          0.24,
+          0.88
+        ],
+        [
+          0.03,
+          0.88
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.03,
+          0.84
+        ],
+        [
+          0.24,
+          0.84
+        ],
+        [
+          0.24,
+          0.88
+        ],
+        [
+          0.03,
+          0.88
+        ]
+      ],
+      "x": 0.03,
+      "y": 0.84,
+      "w": 0.24,
+      "h": 0.88,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "SCRIPT AIZAWA DAISUKE",
+      "translated": "السيناريو: أيزاوا دايسوكي",
+      "polygon": [
+        [
+          0.03,
+          0.9
+        ],
+        [
+          0.27,
+          0.9
+        ],
+        [
+          0.27,
+          0.94
+        ],
+        [
+          0.03,
+          0.94
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.03,
+          0.9
+        ],
+        [
+          0.27,
+          0.9
+        ],
+        [
+          0.27,
+          0.94
+        ],
+        [
+          0.03,
+          0.94
+        ]
+      ],
+      "x": 0.03,
+      "y": 0.9,
+      "w": 0.27,
+      "h": 0.94,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "CHARACTER DESIGNS TOUSEI",
+      "translated": "تصاميم الشخصيات: توسي",
+      "polygon": [
+        [
+          0.03,
+          0.96
+        ],
+        [
+          0.29,
+          0.96
+        ],
+        [
+          0.29,
+          0.99
+        ],
+        [
+          0.03,
+          0.99
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.03,
+          0.96
+        ],
+        [
+          0.29,
+          0.96
+        ],
+        [
+          0.29,
+          0.99
+        ],
+        [
+          0.03,
+          0.99
+        ]
+      ],
+      "x": 0.03,
+      "y": 0.96,
+      "w": 0.29,
+      "h": 0.99,
+      "type": "credits",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "Episode 1",
+      "translated": "الحلقة 1",
+      "polygon": [
+        [
+          0.82,
+          0.77
+        ],
+        [
+          0.91,
+          0.77
+        ],
+        [
+          0.91,
+          0.82
+        ],
+        [
+          0.82,
+          0.82
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.82,
+          0.77
+        ],
+        [
+          0.91,
+          0.77
+        ],
+        [
+          0.91,
+          0.82
+        ],
+        [
+          0.82,
+          0.82
+        ]
+      ],
+      "x": 0.82,
+      "y": 0.77,
+      "w": 0.91,
+      "h": 0.82,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    },
+    {
+      "original": "VOLUME 1 OF THE ORIGINAL WORK IS NOW SELLING REALLY WELL!!",
+      "translated": "المجلد الأول من العمل الأصلي يُباع جيداً الآن!!",
+      "polygon": [
+        [
+          0.64,
+          0.92
+        ],
+        [
+          0.98,
+          0.92
+        ],
+        [
+          0.98,
+          0.98
+        ],
+        [
+          0.64,
+          0.98
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          0.64,
+          0.92
+        ],
+        [
+          0.98,
+          0.92
+        ],
+        [
+          0.98,
+          0.98
+        ],
+        [
+          0.64,
+          0.98
+        ]
+      ],
+      "x": 0.64,
+      "y": 0.92,
+      "w": 0.98,
+      "h": 0.98,
+      "type": "narration",
+      "bgColor": "#ffffff",
+      "textColor": "#000000",
+      "speaker": null,
+      "emphasis": false
+    }
+  ],
+  "ocrMs": 16966
+}

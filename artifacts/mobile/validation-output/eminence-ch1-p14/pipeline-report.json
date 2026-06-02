@@ -1,0 +1,522 @@
+{
+  "summary": {
+    "total": 9,
+    "speech_bubble": 7,
+    "narration_box": 0,
+    "sfx": 2,
+    "ui_text": 0,
+    "chapter_title": 0,
+    "credits": 0,
+    "watermark": 0,
+    "unknown": 0,
+    "inpainted": 9,
+    "rendered": 7,
+    "skipped": 2
+  },
+  "timing": {
+    "fetchMs": 102,
+    "classifyMs": 0,
+    "segmentMs": 146,
+    "bubbleMs": 193,
+    "inpaintMs": 156,
+    "annotateMs": 284,
+    "totalMs": 881
+  },
+  "regions": [
+    {
+      "index": 0,
+      "originalText": "BUT\nI REJECT\nTHAT\nNOTION!!!",
+      "translatedText": "لكنني أرفض ذلك التصور!!!",
+      "detectedType": "speech",
+      "textClass": "speech_bubble",
+      "confidence": 0.82,
+      "reason": "gemini:speech",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          394,
+          76
+        ],
+        [
+          465,
+          76
+        ],
+        [
+          465,
+          172
+        ],
+        [
+          394,
+          172
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          379,
+          62
+        ],
+        [
+          503,
+          62
+        ],
+        [
+          503,
+          196
+        ],
+        [
+          379,
+          196
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.379,
+        "y": 0.062,
+        "w": 0.124,
+        "h": 0.134
+      }
+    },
+    {
+      "index": 1,
+      "originalText": "SINCE THERE\nARE NO SUCH\nADVANCED\nWEAPONS IN\nTHIS WORLD,\nI COULD JUST\nNOT WORRY\nABOUT IT...",
+      "translatedText": "بما أنه لا توجد مثل هذه الأسلحة المتقدمة في هذا العالم، يمكنني فقط ألا أقلق بشأنها...",
+      "detectedType": "speech",
+      "textClass": "speech_bubble",
+      "confidence": 0.82,
+      "reason": "gemini:speech",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          582,
+          94
+        ],
+        [
+          690,
+          94
+        ],
+        [
+          690,
+          203
+        ],
+        [
+          582,
+          203
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          571,
+          75
+        ],
+        [
+          714,
+          75
+        ],
+        [
+          714,
+          233
+        ],
+        [
+          571,
+          233
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.571,
+        "y": 0.075,
+        "w": 0.143,
+        "h": 0.158
+      }
+    },
+    {
+      "index": 2,
+      "originalText": "HOWEVER,\nI'M STILL\nNO MATCH\nAGAINST\nA NUKE.",
+      "translatedText": "ومع ذلك، لا أزال لا أضاهي قنبلة نووية.",
+      "detectedType": "speech",
+      "textClass": "speech_bubble",
+      "confidence": 0.82,
+      "reason": "gemini:speech",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          748,
+          161
+        ],
+        [
+          835,
+          161
+        ],
+        [
+          835,
+          235
+        ],
+        [
+          748,
+          235
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          733,
+          149
+        ],
+        [
+          862,
+          149
+        ],
+        [
+          862,
+          260
+        ],
+        [
+          733,
+          260
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.733,
+        "y": 0.149,
+        "w": 0.129,
+        "h": 0.111
+      }
+    },
+    {
+      "index": 3,
+      "originalText": "ヒユッ",
+      "translatedText": "هيوي",
+      "detectedType": "sfx",
+      "textClass": "sfx",
+      "confidence": 0.82,
+      "reason": "gemini:sfx",
+      "shouldTranslate": false,
+      "shouldInpaint": true,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          626,
+          319
+        ],
+        [
+          664,
+          319
+        ],
+        [
+          664,
+          345
+        ],
+        [
+          626,
+          345
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          622,
+          318
+        ],
+        [
+          665,
+          318
+        ],
+        [
+          665,
+          346
+        ],
+        [
+          622,
+          346
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.622,
+        "y": 0.318,
+        "w": 0.043,
+        "h": 0.028
+      }
+    },
+    {
+      "index": 4,
+      "originalText": "A REAL\nEMINENCE OF\nSHADOW KNOWS\nNO COMPRO-\nMISE!!!",
+      "translatedText": "قامة الظلام الحقيقية لا تعرف المساومة!!!",
+      "detectedType": "speech",
+      "textClass": "speech_bubble",
+      "confidence": 0.82,
+      "reason": "gemini:speech",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          68,
+          417
+        ],
+        [
+          203,
+          417
+        ],
+        [
+          203,
+          506
+        ],
+        [
+          68,
+          506
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          51,
+          404
+        ],
+        [
+          220,
+          404
+        ],
+        [
+          220,
+          521
+        ],
+        [
+          51,
+          521
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.051,
+        "y": 0.404,
+        "w": 0.169,
+        "h": 0.117
+      }
+    },
+    {
+      "index": 5,
+      "originalText": "WHICH\nMEANS,\nI'LL BE\nTRAINING\nTONIGHT\nAS WELL!",
+      "translatedText": "مما يعني أنني سأتدرب الليلة أيضًا!",
+      "detectedType": "speech",
+      "textClass": "speech_bubble",
+      "confidence": 0.82,
+      "reason": "gemini:speech",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          768,
+          579
+        ],
+        [
+          851,
+          579
+        ],
+        [
+          851,
+          659
+        ],
+        [
+          768,
+          659
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          752,
+          563
+        ],
+        [
+          871,
+          563
+        ],
+        [
+          871,
+          679
+        ],
+        [
+          752,
+          679
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.752,
+        "y": 0.563,
+        "w": 0.119,
+        "h": 0.116
+      }
+    },
+    {
+      "index": 6,
+      "originalText": "I'VE HEARD\nTHAT BANDITS\nTOOK UP\nRESIDENCE IN\nTHE FOREST\nNEARBY,\nTOO.",
+      "translatedText": "سمعت أن اللصوص استقروا في الغابة القريبة أيضًا.",
+      "detectedType": "speech",
+      "textClass": "speech_bubble",
+      "confidence": 0.82,
+      "reason": "gemini:speech",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          636,
+          617
+        ],
+        [
+          722,
+          617
+        ],
+        [
+          722,
+          699
+        ],
+        [
+          636,
+          699
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          622,
+          597
+        ],
+        [
+          738,
+          597
+        ],
+        [
+          738,
+          720
+        ],
+        [
+          622,
+          720
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.622,
+        "y": 0.597,
+        "w": 0.116,
+        "h": 0.123
+      }
+    },
+    {
+      "index": 7,
+      "originalText": "MAYBE\nI'LL GO\nAND TAKE\nCARE OF\nTHEM!!",
+      "translatedText": "ربما سأذهب وأعتني بهم!!",
+      "detectedType": "speech",
+      "textClass": "speech_bubble",
+      "confidence": 0.82,
+      "reason": "gemini:speech",
+      "shouldTranslate": true,
+      "shouldInpaint": true,
+      "shouldRender": true,
+      "ocrPolygon": [
+        [
+          167,
+          722
+        ],
+        [
+          251,
+          722
+        ],
+        [
+          251,
+          792
+        ],
+        [
+          167,
+          792
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          151,
+          707
+        ],
+        [
+          271,
+          707
+        ],
+        [
+          271,
+          810
+        ],
+        [
+          151,
+          810
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.151,
+        "y": 0.707,
+        "w": 0.12,
+        "h": 0.103
+      }
+    },
+    {
+      "index": 8,
+      "originalText": "AAA",
+      "translatedText": "آآآ",
+      "detectedType": "sfx",
+      "textClass": "sfx",
+      "confidence": 0.82,
+      "reason": "gemini:sfx",
+      "shouldTranslate": false,
+      "shouldInpaint": true,
+      "shouldRender": false,
+      "ocrPolygon": [
+        [
+          371,
+          574
+        ],
+        [
+          430,
+          574
+        ],
+        [
+          430,
+          608
+        ],
+        [
+          371,
+          608
+        ]
+      ],
+      "bubblePolygon": [
+        [
+          371,
+          574
+        ],
+        [
+          430,
+          574
+        ],
+        [
+          430,
+          608
+        ],
+        [
+          371,
+          608
+        ]
+      ],
+      "refinedBubblePolygon": null,
+      "renderRect": {
+        "x": 0.371,
+        "y": 0.574,
+        "w": 0.059,
+        "h": 0.034
+      }
+    }
+  ]
+}
