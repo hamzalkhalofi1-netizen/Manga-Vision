@@ -63,10 +63,10 @@ export interface ClassifiableRegion {
 // ── Content-pattern tables ─────────────────────────────────────────────────────
 
 const URL_PATTERN =
-  /https?:\/\/|www\.|\.com[\s/]|\.net[\s/]|\.org[\s/]|\.io[\s/]/i;
+  /https?:\/\/|www\.|\.com(?:[\s/]|$)|\.net(?:[\s/]|$)|\.org(?:[\s/]|$)|\.io(?:[\s/]|$)/i;
 
 const CREDITS_KEYWORDS =
-  /\b(scanlat|translator|translat|editor|clean(er|ing)|typeset|redraw|proofreader|quality.?check|group:|team:|source:)\b|©|\(c\)/i;
+  /\b(scanlat|translator|translat|editor|clean(er|ing)|typeset|redraw|proofreader|quality.?check|group:|team:|source:|flamecomics)\b|©|\(c\)/i;
 
 const CHAPTER_PATTERNS = [
   /^ch(apter|\.)\s*\d+/i,
@@ -77,7 +77,7 @@ const CHAPTER_PATTERNS = [
 ];
 
 const WATERMARK_SIGNALS =
-  /\[?\s*(official|fan.?trans|read.?online|mangaplus|mangadex|viz|webtoon|tapas|toonily|mangatx|manhwatop|asura|bato)\s*\]?/i;
+  /\[?\s*(official|fan.?trans|read.?online|mangaplus|mangadex|viz|webtoon|tapas|toonily|mangatx|manhwatop|asura|bato|flamecomics)\s*\]?/i;
 
 function isUrl(text: string): boolean {
   return URL_PATTERN.test(text);

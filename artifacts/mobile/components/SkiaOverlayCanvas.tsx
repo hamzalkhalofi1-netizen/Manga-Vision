@@ -91,6 +91,10 @@ const ERASE_EXPAND_PX = 4;
 
 // ── Region filtering ──────────────────────────────────────────────────────────
 
+// Patterns for detecting watermarks/credits that should never be rendered.
+const OVERLAY_URL_RE  = /https?:\/\/|www\.|\.com(?:[\s/]|$)|\.net(?:[\s/]|$)|\.org(?:[\s/]|$)|\.io(?:[\s/]|$)/i;
+const OVERLAY_CRED_RE = /\b(scanlat|translator|translat|editor|clean(er|ing)|typeset|redraw|proofreader|quality.?check|group:|team:|source:|flamecomics|tapas|webtoon|mangadex|mangaplus|toonily|mangatx|asura|bato)\b|©|\(c\)/i;
+
 /**
  * shouldRenderRegion — client-side heuristic filter.
  *
@@ -106,6 +110,14 @@ function shouldRenderRegion(
   const text = region.translated?.trim();
   if (!text) return false;
 
+  // ── Hard block: Gemini-classified watermarks / credits ─────────────────────
+  const type = (region.type ?? "").toLowerCase();
+  if (type === "watermark" || type === "credits") return false;
+
+  // ── Hard block: URL / credits text content ──────────────────────────────────
+  const orig = (region.original ?? "").trim();
+  if (orig && (OVERLAY_URL_RE.test(orig) || OVERLAY_CRED_RE.test(orig))) return false;
+
   const regionW   = region.w * displayW;
   const regionH   = region.h * displayH;
   const regionTop = region.y * displayH;
@@ -113,7 +125,6 @@ function shouldRenderRegion(
 
   if (regionW < 20 || regionH < 14)        return false;
   if (regionW * regionH < 500)             return false;
-  if (regionW > displayW * 0.70)           return false;
 
   const aspectRatio = regionW / Math.max(regionH, 1);
   if (aspectRatio > 5.5 && regionH < 45)  return false;
@@ -122,8 +133,18 @@ function shouldRenderRegion(
   const isBottomStrip = regionBot > displayH * 0.975 && regionH < displayH * 0.04;
   if (isTopStrip || isBottomStrip)         return false;
 
+  // ── Corner watermark: small area in any corner ─────────────────────────────
+  const area = region.w * region.h;
+  const isCorner =
+    area < 0.005 &&
+    ((region.x > 0.70 && region.y > 0.85) ||
+     (region.x < 0.15 && region.y > 0.85) ||
+     (region.x > 0.70 && region.y < 0.05) ||
+     (region.x < 0.15 && region.y < 0.05));
+  if (isCorner) return false;
+
   if (
-    (region.type === "sign" || region.type === "title") &&
+    (type === "sign" || type === "title") &&
     (regionTop < displayH * 0.04 || regionBot > displayH * 0.96) &&
     (region.translated?.split(/\s+/).length ?? 0) <= 1
   ) {
@@ -353,23 +374,25 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
         const shadowColor  = isSFX ? "rgba(0,0,0,0.95)" : colorProfile.shadowColor;
         const shadowRadius = isSFX ? 8 : colorProfile.shadowRadius;
 
-        // ── ERASE path: tight OCR polygon + ERASE_EXPAND_PX ─────────────────
-        // Removes only the original ink glyphs.
-        // Does NOT touch the bubble border or surrounding artwork.
+        // ── ERASE path: tight OCR polygon + expansion (SFX only) ────────────
+        // Used only for SFX where there is no text bed.
         const erasePts  = expandPolygon(ocrPts, cx, cy, ERASE_EXPAND_PX);
         const erasePath = polygonToSmoothPath(erasePts);
 
         // ── TEXT BED path: full bubble outline ───────────────────────────────
-        // Used as both the background fill (bgColor @ 92%) and the border stroke.
-        // When bubblePolygon is from Gemini this is the exact bubble shape.
+        // Rendered at 100% opacity — this IS also the erase fill for non-SFX.
+        // Using the full bubble polygon ensures ALL original ink inside the
+        // bubble (including glyph edges that bleed past the tight OCR box) is
+        // completely hidden before Arabic text is drawn.
         const textBedPath = polygonToSmoothPath(bubblePts);
 
         // ── Border stroke colour ─────────────────────────────────────────────
-        // Contrast with bubble fill: dark stroke for light bubbles (restores the
-        // natural black bubble outline), light stroke for dark panels.
+        // Strengthened vs. the old 0.40/0.45 — we now fill the full bubble at
+        // 100% opacity, which may overwrite the original bubble border.
+        // A stronger stroke restores that natural outline.
         const borderStroke    = colorProfile.isDark
-          ? "rgba(220,220,220,0.45)"
-          : "rgba(20,20,20,0.40)";
+          ? "rgba(200,200,200,0.80)"
+          : "rgba(20,20,20,0.78)";
         const borderDashArray = isThought ? "4 3" : undefined;
 
         // Debug paths (no-ops when DEBUG_OVERLAY is false)
@@ -408,12 +431,11 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
        */}
       <Svg width={displayW} height={displayH} style={StyleSheet.absoluteFillObject}>
 
-        {/* ── ERASE ──────────────────────────────────────────────────────────
-            Tight OCR polygon fill at full opacity.
-            Removes original glyph ink using the bubble's own background colour.
-            Deliberately NOT the full bubble — preserves the bubble border and
-            any artwork outside the text glyphs. */}
-        {items.map((item) => item && (
+        {/* ── ERASE (SFX only) ────────────────────────────────────────────────
+            Tight OCR polygon fill at full opacity, used ONLY for SFX.
+            Non-SFX bubbles use the TEXT BED below (full bubble at 100%),
+            which also serves as the erase layer — no separate pass needed. */}
+        {items.map((item) => item && item.isSFX && (
           <Path
             key={`erase-${item.key}`}
             d={item.erasePath}
@@ -422,28 +444,26 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
           />
         ))}
 
-        {/* ── TEXT BED ───────────────────────────────────────────────────────
-            Full bubble outline filled with bgColor at 92% opacity.
-            Replaces the old 78%-black overlay entirely.
-            White speech bubble → white fill → dark text (#1A1A1A) on top.
-            Dark panel          → dark fill  → light text (#F8F8F8) on top.
-            The result looks like the original bubble with translated text —
-            no visible dark rectangle over the artwork.
+        {/* ── TEXT BED (also serves as ERASE for non-SFX) ─────────────────────
+            Full bubble outline at 100% opacity so ALL original ink is
+            completely hidden before the Arabic translation is drawn.
+            100% (not 92%) is critical: at 92% black glyphs bleed through
+            as a faint grey tinge on white bubbles and are fully visible
+            on dark narration panels.
             Skipped for SFX: sound effects render directly on the artwork. */}
         {items.map((item) => item && !item.isSFX && (
           <Path
             key={`bed-${item.key}`}
             d={item.textBedPath}
             fill={item.bgColor}
-            fillOpacity={0.92}
+            fillOpacity={1}
           />
         ))}
 
         {/* ── BORDER ─────────────────────────────────────────────────────────
-            Thin contrast stroke tracing the bubble outline.
-            Dark (rgba 20,20,20 @ 40%) for white/light bubbles — restores the
-            natural black manga bubble border.
-            Light (rgba 220,220,220 @ 45%) for dark panels.
+            Strengthened stroke (2 px, 78-80% opacity) restores the bubble
+            outline that the 100% fill may have overwritten.
+            Dark stroke for light bubbles, light stroke for dark panels.
             Dashed (4 3 pattern) for thought bubbles.
             Skipped for SFX. */}
         {items.map((item) => item && !item.isSFX && (
@@ -452,7 +472,7 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
             d={item.textBedPath}
             fill="none"
             stroke={item.borderStroke}
-            strokeWidth={1.2}
+            strokeWidth={2}
             strokeLinejoin="round"
             strokeLinecap="round"
             strokeDasharray={item.borderDashArray}

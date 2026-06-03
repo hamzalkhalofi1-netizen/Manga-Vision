@@ -1,6 +1,6 @@
 import { Image } from "expo-image";
 import React, { memo, useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Dimensions, View } from "react-native";
+import { ActivityIndicator, Dimensions, Platform, View } from "react-native";
 import PremiumOverlayRenderer from "./PremiumOverlayRenderer";
 import CVPipelineRenderer from "./CVPipelineRenderer";
 import { runCVPipelineWithRetry, type CvRefinedRegion, type CvRegionInput } from "./cv/InpaintingEngine";
@@ -122,7 +122,13 @@ function MangaPage({
       return;
     }
 
-    runCVPipelineWithRetry(uri, cvRegions)
+    // On native the app uses an absolute HTTPS URL; on web a relative path works.
+    const apiBase =
+      Platform.OS === "web"
+        ? "/api"
+        : `${process.env.EXPO_PUBLIC_API_URL ?? ""}`.replace(/\/$/, "") + "/api";
+
+    runCVPipelineWithRetry(uri, cvRegions, apiBase)
       .then((result) => {
         if (!result) return;
         if (cvRunRef.current !== runKey) return;
@@ -165,7 +171,7 @@ function MangaPage({
     : { uri, headers: imageHeaders };
 
   return (
-    <View style={{ width: SCREEN_W, height: displayH, backgroundColor: "#000" }}>
+    <View style={{ width: SCREEN_W, height: displayH, backgroundColor: "#000", overflow: "hidden" }}>
       <Image
         source={imageSource}
         style={{ width: SCREEN_W, height: displayH }}
