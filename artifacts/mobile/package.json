@@ -4,7 +4,7 @@
   "private": true,
   "main": "expo-router/entry",
   "scripts": {
-    "dev": "EXPO_NO_DEVTOOLS=1 DANGEROUSLY_DISABLE_HOST_CHECK=true EXPO_PACKAGER_PROXY_URL=https://$REPLIT_EXPO_DEV_DOMAIN EXPO_PUBLIC_REPL_ID=$REPL_ID REACT_NATIVE_PACKAGER_HOSTNAME=$REPLIT_DEV_DOMAIN pnpm exec expo start --localhost --port ${EXPO_DEV_PORT:-5001}",
+    "dev": "EXPO_NO_DEVTOOLS=1 DANGEROUSLY_DISABLE_HOST_CHECK=true EXPO_PACKAGER_PROXY_URL=https://$REPLIT_EXPO_DEV_DOMAIN EXPO_PUBLIC_REPL_ID=$REPL_ID REACT_NATIVE_PACKAGER_HOSTNAME=$REPLIT_DEV_DOMAIN EXPO_PUBLIC_API_URL=https://$REPLIT_DEV_DOMAIN pnpm exec expo start --localhost --port ${EXPO_DEV_PORT:-5001}",
     "proxy": "node server/proxy.js",
     "tunnel": "bash scripts/start-expo-tunnel.sh",
     "tunnel:ngrok": "bash scripts/start-expo-tunnel.sh --tunnel",

@@ -17,26 +17,16 @@ export EXPO_DEV_PORT="${EXPO_DEV_PORT:-5001}"
 export EXPO_API_PORT="${EXPO_API_PORT:-3000}"
 
 # ── Kill stale proxy process and free the proxy port only ──────────────────
-echo "[start.sh] Freeing proxy port $PORT from stale processes..."
+# IMPORTANT: We do NOT touch Metro/Expo processes here.
+# The `artifacts/mobile: expo` Replit artifact workflow manages Metro on port
+# $EXPO_DEV_PORT. Killing it causes it to restart on a different port, which
+# breaks the EXPO_PACKAGER_PROXY_URL routing and produces an exp.direct URL.
+# We coexist: start.sh = proxy only; artifact workflow = Metro.
+echo "[start.sh] Freeing proxy port $PORT from stale proxy processes..."
 pkill -9 -f "server/proxy.js" 2>/dev/null || true
 pid=$(lsof -ti tcp:"$PORT" 2>/dev/null) && kill -9 $pid 2>/dev/null || true
 fuser -k "${PORT}/tcp" 2>/dev/null || true
 sleep 1
-
-# ── Detect if Expo is already running (e.g. via artifact workflow) ──────────
-EXPO_ALREADY_RUNNING=false
-if lsof -ti tcp:"$EXPO_DEV_PORT" >/dev/null 2>&1; then
-  echo "[start.sh] Expo already running on port $EXPO_DEV_PORT (artifact workflow detected) — skipping Metro start."
-  EXPO_ALREADY_RUNNING=true
-else
-  # Only kill Metro if we're going to start it ourselves
-  echo "[start.sh] Freeing Expo port $EXPO_DEV_PORT..."
-  pkill -9 -f "expo start" 2>/dev/null || true
-  pkill -9 -f "metro" 2>/dev/null || true
-  pkill -9 -f "react-native-packager" 2>/dev/null || true
-  fuser -k "${EXPO_DEV_PORT}/tcp" 2>/dev/null || true
-  sleep 1
-fi
 
 # ── Replit-specific Expo environment ──────────────────────────────────────
 export DANGEROUSLY_DISABLE_HOST_CHECK=true
@@ -79,29 +69,15 @@ cleanup() {
 }
 trap cleanup SIGTERM SIGINT EXIT
 
-# ── Start proxy ────────────────────────────────────────────────────────────
+# ── Start proxy (proxy-only mode) ─────────────────────────────────────────
+# Metro is managed by the `artifacts/mobile: expo` Replit artifact workflow.
+# start.sh only runs the proxy that routes:
+#   /api/*  → API server (port $EXPO_API_PORT)
+#   *       → Expo Metro (port $EXPO_DEV_PORT)
+echo "[start.sh] Proxy-only mode — Expo Metro managed by artifact workflow."
 echo "[start.sh] Starting dev proxy on port $PORT..."
+echo "[start.sh] Routes: /api/* → :$EXPO_API_PORT   * → :$EXPO_DEV_PORT"
 node server/proxy.js &
 PROXY_PID=$!
 
-# ── Start Expo Metro (only if not already running) ─────────────────────────
-if [[ "$EXPO_ALREADY_RUNNING" == "true" ]]; then
-  echo "[start.sh] Expo Metro already running on $EXPO_DEV_PORT — proxy only mode."
-  echo "[start.sh] Proxy (port $PORT) → Expo (port $EXPO_DEV_PORT) ready."
-  wait "$PROXY_PID"
-else
-  # --localhost: bind Metro to 127.0.0.1 (proxy handles external access)
-  # --clear: wipe Metro's transform cache to avoid stale-bundle crashes
-  # No --go / --web: those invoke xdg-open which crashes on headless Replit
-  echo "[start.sh] Starting Expo Metro on port $EXPO_DEV_PORT (clearing cache)..."
-  echo "[start.sh] Expo Go tunnel URL will appear below once Metro is ready."
-
-  ./node_modules/.bin/expo start \
-    --localhost \
-    --port "$EXPO_DEV_PORT" \
-    --clear \
-    &
-  EXPO_PID=$!
-
-  wait "$EXPO_PID"
-fi
+wait "$PROXY_PID"

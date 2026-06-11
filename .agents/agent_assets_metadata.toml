@@ -17,3 +17,33 @@ id = "N4I6iF4QQzMe63sXycIgH"
 uri = "file://hf-deploy/mangaverse-hf-deploy.tar.gz"
 type = "unspecified"
 title = "mangaverse-hf-deploy.tar.gz — All 4 files ready to commit"
+
+[[outputs]]
+id = "oHQvwipcwW1UKc1z53TqV"
+uri = "file://.local/state/pipeline-proof/0_original_input.png"
+type = "image"
+title = "INPUT — Synthetic test: 800×1200, 5 black text bars (simulating English dialogue)"
+
+[[outputs]]
+id = "qyWVTJVn46ipwK6u1IzP0"
+uri = "file://.local/state/pipeline-proof/2_mask.png"
+type = "image"
+title = "S5 Segmentation mask — white pixels = ink that will be inpainted"
+
+[[outputs]]
+id = "O9fOkfHEX03sfCOjaubpx"
+uri = "file://.local/state/pipeline-proof/3_inpainted.png"
+type = "image"
+title = "S6 Inpainted result — OpenCV Telea removed ALL text (100% ink removal)"
+
+[[outputs]]
+id = "Csslg-d0yqJ0LlsICX3SK"
+uri = "file://.local/state/pipeline-proof/6_classification.png"
+type = "image"
+title = "S3 Classification — green = speech_bubble, shouldInpaint=true, shouldRender=true"
+
+[[outputs]]
+id = "K0d7P_iZk8lnuxlbubdZE"
+uri = "file://.local/state/pipeline-proof/5_final_render.png"
+type = "image"
+title = "S8 Final page — this is what the APK receives as the inpainted image"
