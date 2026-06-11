@@ -6,6 +6,7 @@ import CVPipelineRenderer from "./CVPipelineRenderer";
 import { runCVPipelineWithRetry, type CvRefinedRegion, type CvRegionInput } from "./cv/InpaintingEngine";
 import { classifyRegion } from "./cv/TextClassificationEngine";
 import { getBasicImageHeaders } from "@/services/sourceImageHeaders";
+import { getApiBase } from "@/services/api";
 
 const SCREEN_W = Dimensions.get("window").width;
 const DEFAULT_ASPECT = 1.45;
@@ -122,16 +123,30 @@ function MangaPage({
       return;
     }
 
-    // On native the app uses an absolute HTTPS URL; on web a relative path works.
+    // getApiBase() priority: AsyncStorage override (Settings) > EXPO_PUBLIC_API_URL > ""
+    // This ensures Settings → API Server URL works on native without a rebuild.
     const apiBase =
       Platform.OS === "web"
         ? "/api"
-        : `${process.env.EXPO_PUBLIC_API_URL ?? ""}`.replace(/\/$/, "") + "/api";
+        : `${getApiBase()}`.replace(/\/$/, "") + "/api";
+
+    const pipelineLabel = `CV_PIPELINE page="${uri.slice(-40)}" regions=${cvRegions.length} apiBase="${apiBase}"`;
+    console.log(`[MangaPage] CV_PIPELINE_USED=PENDING  ${pipelineLabel}`);
 
     runCVPipelineWithRetry(uri, cvRegions, apiBase)
       .then((result) => {
-        if (!result) return;
+        if (!result) {
+          console.warn(`[MangaPage] CV_PIPELINE_USED=false  result=null  FALLBACK_RENDERER_USED=true`);
+          return;
+        }
         if (cvRunRef.current !== runKey) return;
+
+        const inpSize = result.inpaintedImage?.length ?? 0;
+        console.log(
+          `[MangaPage] CV_PIPELINE_USED=true  FALLBACK_RENDERER_USED=false` +
+          `  inpaintedImage=${inpSize}B  refinedRegions=${result.refinedRegions?.length}` +
+          `  page="${uri.slice(-40)}"`
+        );
 
         // Re-align refinedRegions back to original region indices
         const fullRefined: (CvRefinedRegion | null)[] = new Array(regions.length).fill(null);
@@ -147,7 +162,13 @@ function MangaPage({
           refinedRegions: fullRefined,
         });
       })
-      .catch(() => {})
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(
+          `[MangaPage] CV_PIPELINE_USED=false  FALLBACK_RENDERER_USED=true` +
+          `  error="${msg}"  apiBase="${apiBase}"  page="${uri.slice(-40)}"`
+        );
+      })
       .finally(() => {
         if (cvRunRef.current === runKey) setCvLoading(false);
       });

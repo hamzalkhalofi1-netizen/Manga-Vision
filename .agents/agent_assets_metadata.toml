@@ -47,3 +47,27 @@ id = "K0d7P_iZk8lnuxlbubdZE"
 uri = "file://.local/state/pipeline-proof/5_final_render.png"
 type = "image"
 title = "S8 Final page — this is what the APK receives as the inpainted image"
+
+[[outputs]]
+id = "pu-096kMeaE_-vcq21bse"
+uri = "file://.local/state/pipeline-proof/original_page.png"
+type = "image"
+title = "REAL PAGE — Chainsaw Man Ch.1 p.4 from MangaDex CDN (1781×1300, 20.2% dark = heavy text)"
+
+[[outputs]]
+id = "mMGaUkNkK3WIX5vQaBaY1"
+uri = "file://.local/state/pipeline-proof/2_segmentation_mask.png"
+type = "image"
+title = "Segmentation mask — white = text ink detected by OpenCV adaptive threshold"
+
+[[outputs]]
+id = "Jw2XyRLyE2yZbAlSKgghu"
+uri = "file://.local/state/pipeline-proof/3_inpainted_page.png"
+type = "image"
+title = "Inpainted page — after OpenCV Telea: text pixels erased, bubbles cleaned"
+
+[[outputs]]
+id = "rqLHEcO4Ls__ijpHuihwe"
+uri = "file://.local/state/pipeline-proof/5_cv_pipeline_apk_output.png"
+type = "image"
+title = "APK OUTPUT (/api/cv-pipeline) — EXACT image the APK receives: 649,654 → 486,188 dark px (25% ink removed)"
