@@ -1,6 +1,13 @@
 import { Image } from "expo-image";
 import React, { memo, useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Dimensions, Platform, View } from "react-native";
+import {
+  ActivityIndicator,
+  Dimensions,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import PremiumOverlayRenderer from "./PremiumOverlayRenderer";
 import CVPipelineRenderer from "./CVPipelineRenderer";
 import { runCVPipelineWithRetry, type CvRefinedRegion, type CvRegionInput } from "./cv/InpaintingEngine";
@@ -11,10 +18,6 @@ import { getApiBase } from "@/services/api";
 const SCREEN_W = Dimensions.get("window").width;
 const DEFAULT_ASPECT = 1.45;
 
-/**
- * A 4-point polygon in normalized [0,1] image coordinates.
- * Order: top-left, top-right, bottom-right, bottom-left (clockwise).
- */
 export type BubblePolygon = [
   [number, number],
   [number, number],
@@ -35,7 +38,6 @@ export interface TextRegion {
   rotation?: number;
   polygon?: BubblePolygon;
   bubblePolygon?: [number, number][];
-  /** "speech" | "thought" | "sfx" | "sign" | "narration" | "title" | "credits" | "watermark" */
   type: string;
   bgColor: string;
   textColor: string;
@@ -43,10 +45,12 @@ export interface TextRegion {
   emphasis: boolean;
 }
 
+type RenderPath = "idle" | "pending" | "cv" | "fallback";
+
 interface CVState {
   inpaintedUri: string;
-  /** Aligned to regions[]. null for regions that were not inpainted. */
   refinedRegions: (CvRefinedRegion | null)[];
+  inpaintedBytes: number;
 }
 
 interface MangaPageProps {
@@ -72,12 +76,14 @@ function MangaPage({
 
   const [cvState, setCvState] = useState<CVState | null>(null);
   const [cvLoading, setCvLoading] = useState(false);
+  const [renderPath, setRenderPath] = useState<RenderPath>("idle");
   const cvRunRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!showOverlay || regions.length === 0) {
       setCvState(null);
       setCvLoading(false);
+      setRenderPath("idle");
       cvRunRef.current = null;
       return;
     }
@@ -88,12 +94,8 @@ function MangaPage({
 
     setCvLoading(true);
     setCvState(null);
+    setRenderPath("pending");
 
-    // ── Classify every region before touching the CV pipeline ─────────────
-    // Only regions that need inpainting (speech bubbles, narration, sfx, signs)
-    // are sent to the server.  Chapter titles, credits, and watermarks are
-    // skipped entirely — they don't need server processing and should not
-    // be rendered.
     const inpaintIndices: number[] = [];
     const cvRegions: CvRegionInput[] = [];
 
@@ -120,35 +122,45 @@ function MangaPage({
 
     if (cvRegions.length === 0) {
       setCvLoading(false);
+      setRenderPath("fallback");
+      console.log(`[MangaPage] CV_PIPELINE_USED=false  FALLBACK_RENDERER_USED=true  reason="no inpaintable regions"  page="${uri.slice(-50)}"`);
       return;
     }
 
-    // getApiBase() priority: AsyncStorage override (Settings) > EXPO_PUBLIC_API_URL > ""
-    // This ensures Settings → API Server URL works on native without a rebuild.
     const apiBase =
       Platform.OS === "web"
         ? "/api"
         : `${getApiBase()}`.replace(/\/$/, "") + "/api";
 
-    const pipelineLabel = `CV_PIPELINE page="${uri.slice(-40)}" regions=${cvRegions.length} apiBase="${apiBase}"`;
-    console.log(`[MangaPage] CV_PIPELINE_USED=PENDING  ${pipelineLabel}`);
+    console.log(
+      `[MangaPage] CV_PIPELINE_USED=PENDING` +
+      `  apiBase="${apiBase}"` +
+      `  regions=${cvRegions.length}` +
+      `  page="${uri.slice(-50)}"`
+    );
 
     runCVPipelineWithRetry(uri, cvRegions, apiBase)
       .then((result) => {
         if (!result) {
-          console.warn(`[MangaPage] CV_PIPELINE_USED=false  result=null  FALLBACK_RENDERER_USED=true`);
+          setRenderPath("fallback");
+          console.warn(
+            `[MangaPage] CV_PIPELINE_USED=false  FALLBACK_RENDERER_USED=true` +
+            `  INPAINTED_IMAGE_BYTES=0  reason="null result"` +
+            `  page="${uri.slice(-50)}"`
+          );
           return;
         }
         if (cvRunRef.current !== runKey) return;
 
-        const inpSize = result.inpaintedImage?.length ?? 0;
+        const inpBytes = Math.round((result.inpaintedImage?.length ?? 0) * 3 / 4);
         console.log(
           `[MangaPage] CV_PIPELINE_USED=true  FALLBACK_RENDERER_USED=false` +
-          `  inpaintedImage=${inpSize}B  refinedRegions=${result.refinedRegions?.length}` +
-          `  page="${uri.slice(-40)}"`
+          `  INPAINTED_IMAGE_BYTES=${inpBytes}` +
+          `  refinedRegions=${result.refinedRegions?.length}` +
+          `  apiBase="${apiBase}"` +
+          `  page="${uri.slice(-50)}"`
         );
 
-        // Re-align refinedRegions back to original region indices
         const fullRefined: (CvRefinedRegion | null)[] = new Array(regions.length).fill(null);
         result.refinedRegions.forEach((refined, pipelineIdx) => {
           const originalIdx = inpaintIndices[pipelineIdx];
@@ -160,13 +172,19 @@ function MangaPage({
         setCvState({
           inpaintedUri: `data:image/png;base64,${result.inpaintedImage}`,
           refinedRegions: fullRefined,
+          inpaintedBytes: inpBytes,
         });
+        setRenderPath("cv");
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
+        setRenderPath("fallback");
         console.error(
           `[MangaPage] CV_PIPELINE_USED=false  FALLBACK_RENDERER_USED=true` +
-          `  error="${msg}"  apiBase="${apiBase}"  page="${uri.slice(-40)}"`
+          `  INPAINTED_IMAGE_BYTES=0` +
+          `  error="${msg}"` +
+          `  apiBase="${apiBase}"` +
+          `  page="${uri.slice(-50)}"`
         );
       })
       .finally(() => {
@@ -190,6 +208,8 @@ function MangaPage({
   const imageSource = cvState?.inpaintedUri
     ? { uri: cvState.inpaintedUri }
     : { uri, headers: imageHeaders };
+
+  const showBadge = showOverlay && regions.length > 0 && renderPath !== "idle";
 
   return (
     <View style={{ width: SCREEN_W, height: displayH, backgroundColor: "#000", overflow: "hidden" }}>
@@ -223,16 +243,91 @@ function MangaPage({
         />
       )}
 
+      {/* ── Loading spinner ─────────────────────────────────────────────── */}
       {showOverlay && cvLoading && (
         <View
-          style={{ position: "absolute", top: 6, right: 8, opacity: 0.6 }}
+          style={styles.spinnerContainer}
           pointerEvents="none"
         >
           <ActivityIndicator size="small" color="#7B96FF" />
         </View>
       )}
+
+      {/* ── CV PIPELINE / FALLBACK badge ────────────────────────────────── */}
+      {showBadge && !cvLoading && (
+        <View
+          style={[
+            styles.badge,
+            renderPath === "cv" ? styles.badgeCV : styles.badgeFallback,
+          ]}
+          pointerEvents="none"
+        >
+          <Text style={styles.badgeDot}>
+            {renderPath === "cv" ? "●" : "●"}
+          </Text>
+          <View style={styles.badgeTextBlock}>
+            <Text style={styles.badgeLabel}>
+              {renderPath === "cv" ? "CV PIPELINE" : "FALLBACK"}
+            </Text>
+            {renderPath === "cv" && cvState && cvState.inpaintedBytes > 0 && (
+              <Text style={styles.badgeSub}>
+                {`${Math.round(cvState.inpaintedBytes / 1024)} KB inpainted`}
+              </Text>
+            )}
+          </View>
+        </View>
+      )}
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  spinnerContainer: {
+    position: "absolute",
+    top: 6,
+    right: 8,
+    opacity: 0.6,
+  },
+  badge: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    gap: 5,
+    opacity: 0.92,
+  },
+  badgeCV: {
+    backgroundColor: "#0d2b1a",
+    borderWidth: 1,
+    borderColor: "#22c55e",
+  },
+  badgeFallback: {
+    backgroundColor: "#2b1000",
+    borderWidth: 1,
+    borderColor: "#f97316",
+  },
+  badgeDot: {
+    fontSize: 7,
+    color: "#ffffff",
+  },
+  badgeTextBlock: {
+    flexDirection: "column",
+  },
+  badgeLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#ffffff",
+    letterSpacing: 0.5,
+  },
+  badgeSub: {
+    fontSize: 8,
+    color: "#aaaaaa",
+    marginTop: 1,
+  },
+});
 
 export default memo(MangaPage);
