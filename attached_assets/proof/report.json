@@ -1,0 +1,211 @@
+{
+  "pageUrl": "https://cmdxd98sb0x3yprd.mangadex.network/data/d828fa5fffd26b264ad400b3b0fdffe8/A4-dd391d8eb86c963114927dafc5b6f7b7d2dba201b904442a1e1d8d3f58e75ee5.jpg",
+  "imageDimensions": {
+    "width": 1781,
+    "height": 1300
+  },
+  "totalMaskPixels": 335916,
+  "regions": [
+    {
+      "id": 0,
+      "type": "speech_bubble_candidate",
+      "ocrBbox": {
+        "x": 81,
+        "y": 1211,
+        "w": 110,
+        "h": 50
+      },
+      "maskPixels": 4960,
+      "darkPixelsBefore": 0,
+      "darkPixelsAfter": 0,
+      "removedPercent": 0
+    },
+    {
+      "id": 1,
+      "type": "speech_bubble_candidate",
+      "ocrBbox": {
+        "x": 325,
+        "y": 1187,
+        "w": 250,
+        "h": 84
+      },
+      "maskPixels": 14397,
+      "darkPixelsBefore": 4007,
+      "darkPixelsAfter": 1094,
+      "removedPercent": 72.7
+    },
+    {
+      "id": 2,
+      "type": "speech_bubble_candidate",
+      "ocrBbox": {
+        "x": 368,
+        "y": 1095,
+        "w": 79,
+        "h": 50
+      },
+      "maskPixels": 3536,
+      "darkPixelsBefore": 0,
+      "darkPixelsAfter": 0,
+      "removedPercent": 0
+    },
+    {
+      "id": 3,
+      "type": "speech_bubble_candidate",
+      "ocrBbox": {
+        "x": 624,
+        "y": 998,
+        "w": 79,
+        "h": 50
+      },
+      "maskPixels": 3663,
+      "darkPixelsBefore": 0,
+      "darkPixelsAfter": 0,
+      "removedPercent": 0
+    },
+    {
+      "id": 4,
+      "type": "speech_bubble_candidate",
+      "ocrBbox": {
+        "x": 908,
+        "y": 913,
+        "w": 150,
+        "h": 58
+      },
+      "maskPixels": 4808,
+      "darkPixelsBefore": 1950,
+      "darkPixelsAfter": 731,
+      "removedPercent": 62.5
+    },
+    {
+      "id": 5,
+      "type": "speech_bubble_candidate",
+      "ocrBbox": {
+        "x": 842,
+        "y": 913,
+        "w": 42,
+        "h": 57
+      },
+      "maskPixels": 1398,
+      "darkPixelsBefore": 339,
+      "darkPixelsAfter": 0,
+      "removedPercent": 100
+    },
+    {
+      "id": 6,
+      "type": "speech_bubble_candidate",
+      "ocrBbox": {
+        "x": 594,
+        "y": 839,
+        "w": 224,
+        "h": 132
+      },
+      "maskPixels": 17004,
+      "darkPixelsBefore": 5779,
+      "darkPixelsAfter": 851,
+      "removedPercent": 85.3
+    },
+    {
+      "id": 7,
+      "type": "speech_bubble_candidate",
+      "ocrBbox": {
+        "x": 302,
+        "y": 838,
+        "w": 283,
+        "h": 133
+      },
+      "maskPixels": 23731,
+      "darkPixelsBefore": 1782,
+      "darkPixelsAfter": 562,
+      "removedPercent": 68.5
+    },
+    {
+      "id": 8,
+      "type": "speech_bubble_candidate",
+      "ocrBbox": {
+        "x": 1081,
+        "y": 824,
+        "w": 345,
+        "h": 444
+      },
+      "maskPixels": 41799,
+      "darkPixelsBefore": 35428,
+      "darkPixelsAfter": 21690,
+      "removedPercent": 38.8
+    },
+    {
+      "id": 9,
+      "type": "speech_bubble_candidate",
+      "ocrBbox": {
+        "x": 623,
+        "y": 491,
+        "w": 162,
+        "h": 268
+      },
+      "maskPixels": 34405,
+      "darkPixelsBefore": 7724,
+      "darkPixelsAfter": 9470,
+      "removedPercent": -22.6
+    },
+    {
+      "id": 10,
+      "type": "speech_bubble_candidate",
+      "ocrBbox": {
+        "x": 585,
+        "y": 246,
+        "w": 61,
+        "h": 32
+      },
+      "maskPixels": 334,
+      "darkPixelsBefore": 60,
+      "darkPixelsAfter": 60,
+      "removedPercent": 0
+    },
+    {
+      "id": 11,
+      "type": "speech_bubble_candidate",
+      "ocrBbox": {
+        "x": 474,
+        "y": 228,
+        "w": 55,
+        "h": 52
+      },
+      "maskPixels": 246,
+      "darkPixelsBefore": 99,
+      "darkPixelsAfter": 99,
+      "removedPercent": 0
+    },
+    {
+      "id": 12,
+      "type": "speech_bubble_candidate",
+      "ocrBbox": {
+        "x": 1435,
+        "y": 26,
+        "w": 346,
+        "h": 1274
+      },
+      "maskPixels": 167020,
+      "darkPixelsBefore": 54996,
+      "darkPixelsAfter": 32049,
+      "removedPercent": 41.7
+    },
+    {
+      "id": 13,
+      "type": "speech_bubble_candidate",
+      "ocrBbox": {
+        "x": 0,
+        "y": 0,
+        "w": 1231,
+        "h": 169
+      },
+      "maskPixels": 18615,
+      "darkPixelsBefore": 7094,
+      "darkPixelsAfter": 4837,
+      "removedPercent": 31.8
+    }
+  ],
+  "summary": {
+    "totalDarkBefore": 119258,
+    "totalDarkAfter": 71443,
+    "overallRemovedPercent": 40.1
+  }
+}

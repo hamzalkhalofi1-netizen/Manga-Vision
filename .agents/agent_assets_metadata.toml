@@ -71,3 +71,27 @@ id = "rqLHEcO4Ls__ijpHuihwe"
 uri = "file://.local/state/pipeline-proof/5_cv_pipeline_apk_output.png"
 type = "image"
 title = "APK OUTPUT (/api/cv-pipeline) — EXACT image the APK receives: 649,654 → 486,188 dark px (25% ink removed)"
+
+[[outputs]]
+id = "_apJHb58S5RPb3L1rBW9M"
+uri = "file://attached_assets/proof/01_original.png"
+type = "image"
+title = "01 — Original page (Chainsaw Man Ch.1, page 4 — 1781×1300 px)"
+
+[[outputs]]
+id = "fmEwm0N2qR8taozPKyvUJ"
+uri = "file://attached_assets/proof/02_mask.png"
+type = "image"
+title = "02 — Segmentation mask (red = pixels flagged for inpainting — 339,808 px)"
+
+[[outputs]]
+id = "EaHz0ZqGBKBkWPd7EMG-z"
+uri = "file://attached_assets/proof/03_inpainted.png"
+type = "image"
+title = "03 — INPAINTED (English text removed, bubble background restored)"
+
+[[outputs]]
+id = "oqPsbOOKLVQkN0cZl65Mg"
+uri = "file://attached_assets/proof/04_annotated.png"
+type = "image"
+title = "04 — Annotated: dark-pixel counts before→after per detected region"
