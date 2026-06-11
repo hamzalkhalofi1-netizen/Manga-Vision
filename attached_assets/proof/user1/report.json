@@ -1,0 +1,81 @@
+{
+  "image": "Screenshot_20260611-095143_1781168978311.png",
+  "label": "Character scene (5 bubbles)",
+  "dimensions": {
+    "width": 648,
+    "height": 1476
+  },
+  "totalMaskPixels": 57059,
+  "inpaintTimeMs": 680,
+  "regions": [
+    {
+      "id": 0,
+      "type": "speech_bubble",
+      "ocrBbox": {
+        "x": 18,
+        "y": 726,
+        "w": 266,
+        "h": 354
+      },
+      "maskPixels": 40883,
+      "darkBefore": 28535,
+      "darkAfter": 20348,
+      "removedPercent": 28.7,
+      "originalText": "DAMN IT, I NEED TO ARRIVE WITHIN AT LEAST AN HOUR IF I WANT TO PICK UP THE REMAINS OF YOO JOONGHYUK.",
+      "translatedText": "يا إلهي، أحتاج إلى الوصول في غضون ساعة على الأقل إذا أردت استعادة رفات يو جونغهيوك."
+    },
+    {
+      "id": 1,
+      "type": "speech_bubble",
+      "ocrBbox": {
+        "x": 285,
+        "y": 917,
+        "w": 117,
+        "h": 144
+      },
+      "maskPixels": 6465,
+      "darkBefore": 4517,
+      "darkAfter": 2940,
+      "removedPercent": 34.9,
+      "originalText": "WHAT EXACTLY IS THE MATTER?",
+      "translatedText": "ما الأمر تحديداً؟"
+    },
+    {
+      "id": 2,
+      "type": "speech_bubble",
+      "ocrBbox": {
+        "x": 89,
+        "y": 1078,
+        "w": 218,
+        "h": 223
+      },
+      "maskPixels": 7177,
+      "darkBefore": 7586,
+      "darkAfter": 5849,
+      "removedPercent": 22.9,
+      "originalText": "YOU CAN'T BE MOVING AROUND LIKE THIS YET!",
+      "translatedText": "لا يمكنك التحرك هكذا بعد!"
+    },
+    {
+      "id": 3,
+      "type": "speech_bubble",
+      "ocrBbox": {
+        "x": 278,
+        "y": 1337,
+        "w": 243,
+        "h": 139
+      },
+      "maskPixels": 2534,
+      "darkBefore": 8905,
+      "darkAfter": 8293,
+      "removedPercent": 6.9,
+      "originalText": "SOMEONE IS ABOUT TO DIE.",
+      "translatedText": "شخص ما على وشك الموت."
+    }
+  ],
+  "summary": {
+    "totalDarkBefore": 49543,
+    "totalDarkAfter": 37430,
+    "overallRemovedPercent": 24.4
+  }
+}

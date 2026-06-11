@@ -1,0 +1,16 @@
+{
+  "image": "Screenshot_20260611-095136_1781169001313.png",
+  "label": "Industrial scene (2 bubbles)",
+  "dimensions": {
+    "width": 648,
+    "height": 1476
+  },
+  "totalMaskPixels": 0,
+  "inpaintTimeMs": 151,
+  "regions": [],
+  "summary": {
+    "totalDarkBefore": 0,
+    "totalDarkAfter": 0,
+    "overallRemovedPercent": null
+  }
+}
