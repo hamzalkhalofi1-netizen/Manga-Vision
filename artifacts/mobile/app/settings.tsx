@@ -20,6 +20,7 @@ import { useTokens, GeminiToken, maskKey } from "@/context/TokenContext";
 import { useColors } from "@/hooks/useColors";
 import { useInpaintServer } from "@/hooks/useInpaintServer";
 import { clearTranslationCache, getTranslationCacheSize } from "@/services/translationQueue";
+import { getCvDebugEntries, clearCvDebugEntries, subscribeCvDebug, type CvDebugEntry } from "@/services/cvDebugStore";
 
 type Language = { code: string; label: string };
 
@@ -140,6 +141,37 @@ function TokenRow({ token, isActive, onActivate, onRemove, onClearLimit }: {
   );
 }
 
+function DebugField({
+  label,
+  value,
+  colors,
+  highlight,
+  mono,
+}: {
+  label: string;
+  value: string;
+  colors: ReturnType<typeof useColors>;
+  highlight?: boolean;
+  mono?: boolean;
+}) {
+  return (
+    <View style={styles.debugFieldRow}>
+      <Text style={[styles.debugFieldLabel, { color: colors.mutedForeground }]}>{label}</Text>
+      <Text
+        style={[
+          styles.debugFieldValue,
+          { color: highlight ? "#f87171" : colors.foreground },
+          mono && { fontFamily: "monospace", fontSize: 10 },
+        ]}
+        numberOfLines={3}
+        selectable
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 function AddKeyPanel({ onAdd, colors }: {
   onAdd: (key: string, label: string) => Promise<void>;
   colors: ReturnType<typeof useColors>;
@@ -209,9 +241,15 @@ export default function SettingsScreen() {
   const [pingStatus, setPingStatus] = useState<"idle" | "checking" | "online" | "offline">("idle");
   const [cacheSize, setCacheSize] = useState(0);
   const [clearingCache, setClearingCache] = useState(false);
+  const [debugEntries, setDebugEntries] = useState<CvDebugEntry[]>(() => getCvDebugEntries());
 
   useEffect(() => {
     setCacheSize(getTranslationCacheSize());
+  }, []);
+
+  useEffect(() => {
+    const unsub = subscribeCvDebug(setDebugEntries);
+    return unsub;
   }, []);
 
   const handleCheckServer = async () => {
@@ -591,6 +629,79 @@ export default function SettingsScreen() {
           </Pressable>
         </View>
 
+        {/* Debug */}
+        <View style={styles.section}>
+          <SectionLabel title="Debug — CV Pipeline" />
+          <Text style={[styles.keysSubtitle, { color: colors.mutedForeground }]}>
+            Last {Math.min(debugEntries.length, 5)} CV pipeline events recorded from the manga reader. Open a translated chapter page to capture new events.
+          </Text>
+
+          {debugEntries.length === 0 ? (
+            <View style={[styles.debugEmpty, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name="pulse-outline" size={24} color={colors.mutedForeground} />
+              <Text style={[styles.debugEmptyText, { color: colors.mutedForeground }]}>
+                No events yet.{"\n"}Open a chapter with AI translation enabled.
+              </Text>
+            </View>
+          ) : (
+            debugEntries.map((entry) => {
+              const isSuccess = entry.status === "success";
+              const isPending = entry.status === "pending";
+              const isError = entry.status === "fallback_error";
+              const dotColor = isSuccess ? "#22c55e" : isPending ? colors.primary : "#ef4444";
+              const age = Math.round((Date.now() - entry.ts) / 1000);
+              const ageStr = age < 60 ? `${age}s ago` : `${Math.round(age / 60)}m ago`;
+
+              return (
+                <View
+                  key={entry.id}
+                  style={[styles.debugCard, { backgroundColor: colors.card, borderColor: isError ? "#ef444440" : colors.border }]}
+                >
+                  {/* Status header */}
+                  <View style={styles.debugRow}>
+                    <View style={[styles.debugDot, { backgroundColor: dotColor }]} />
+                    <Text style={[styles.debugStatus, { color: dotColor }]}>
+                      {entry.status === "success" ? "CV PIPELINE ✓" :
+                       entry.status === "pending" ? "PENDING…" :
+                       entry.status === "fallback_no_regions" ? "FALLBACK — no regions" :
+                       entry.status === "fallback_null" ? "FALLBACK — null result" :
+                       "FALLBACK — error"}
+                    </Text>
+                    <Text style={[styles.debugAge, { color: colors.mutedForeground }]}>{ageStr}</Text>
+                  </View>
+
+                  {/* Fields */}
+                  <View style={styles.debugFields}>
+                    <DebugField label="CV_PIPELINE_USED" value={String(entry.cvPipelineUsed)} colors={colors} />
+                    <DebugField label="FALLBACK_RENDERER_USED" value={String(entry.fallbackRendererUsed)} colors={colors} />
+                    <DebugField label="apiBase" value={entry.apiBase || "(empty — will cause Invalid URL on device)"} colors={colors} highlight={!entry.apiBase} />
+                    <DebugField label="INPAINTED_IMAGE_BYTES" value={entry.inpaintedImageBytes > 0 ? `${entry.inpaintedImageBytes.toLocaleString()} bytes` : "0"} colors={colors} />
+                    {entry.refinedRegions !== null && (
+                      <DebugField label="refinedRegions" value={String(entry.refinedRegions)} colors={colors} />
+                    )}
+                    {entry.error && (
+                      <DebugField label="error" value={entry.error} colors={colors} highlight />
+                    )}
+                    {entry.reason && (
+                      <DebugField label="reason" value={entry.reason} colors={colors} />
+                    )}
+                    <DebugField label="page" value={entry.page} colors={colors} mono />
+                  </View>
+                </View>
+              );
+            })
+          )}
+
+          {debugEntries.length > 0 && (
+            <Pressable
+              onPress={() => { clearCvDebugEntries(); setDebugEntries([]); }}
+              style={[styles.clearCacheBtn, { borderColor: colors.border, alignSelf: "flex-end" as const }]}
+            >
+              <Text style={{ color: colors.mutedForeground, fontSize: 12, fontWeight: "600" as const }}>Clear</Text>
+            </Pressable>
+          )}
+        </View>
+
         {/* About */}
         <View style={styles.section}>
           <SectionLabel title="About" />
@@ -750,4 +861,47 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   pingBadgeText: { fontSize: 12, fontWeight: "600" as const },
+  debugEmpty: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 24,
+    alignItems: "center" as const,
+    gap: 10,
+  },
+  debugEmptyText: { fontSize: 13, textAlign: "center" as const, lineHeight: 19 },
+  debugCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    overflow: "hidden" as const,
+    marginBottom: 8,
+  },
+  debugRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  debugDot: { width: 8, height: 8, borderRadius: 4 },
+  debugStatus: { fontSize: 12, fontWeight: "700" as const, flex: 1 },
+  debugAge: { fontSize: 11 },
+  debugFields: { paddingHorizontal: 12, paddingBottom: 12, gap: 6 },
+  debugFieldRow: {
+    flexDirection: "row" as const,
+    gap: 8,
+    alignItems: "flex-start" as const,
+  },
+  debugFieldLabel: {
+    fontSize: 10,
+    fontWeight: "700" as const,
+    width: 130,
+    flexShrink: 0,
+    paddingTop: 1,
+    letterSpacing: 0.3,
+  },
+  debugFieldValue: {
+    fontSize: 11,
+    flex: 1,
+    lineHeight: 16,
+  },
 });

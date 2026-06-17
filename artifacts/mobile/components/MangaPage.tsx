@@ -14,6 +14,7 @@ import { runCVPipelineWithRetry, type CvRefinedRegion, type CvRegionInput } from
 import { classifyRegion } from "./cv/TextClassificationEngine";
 import { getBasicImageHeaders } from "@/services/sourceImageHeaders";
 import { getApiBase } from "@/services/api";
+import { recordCvDebug } from "@/services/cvDebugStore";
 
 const SCREEN_W = Dimensions.get("window").width;
 const DEFAULT_ASPECT = 1.45;
@@ -123,7 +124,9 @@ function MangaPage({
     if (cvRegions.length === 0) {
       setCvLoading(false);
       setRenderPath("fallback");
-      console.log(`[MangaPage] CV_PIPELINE_USED=false  FALLBACK_RENDERER_USED=true  reason="no inpaintable regions"  page="${uri.slice(-50)}"`);
+      const _page = uri.slice(-60);
+      console.log(`[MangaPage] CV_PIPELINE_USED=false  FALLBACK_RENDERER_USED=true  reason="no inpaintable regions"  page="${_page}"`);
+      recordCvDebug({ status: "fallback_no_regions", cvPipelineUsed: false, fallbackRendererUsed: true, apiBase: "", inpaintedImageBytes: 0, error: null, reason: "no inpaintable regions", refinedRegions: null, page: _page });
       return;
     }
 
@@ -132,12 +135,14 @@ function MangaPage({
         ? "/api"
         : `${getApiBase()}`.replace(/\/$/, "") + "/api";
 
+    const _page = uri.slice(-60);
     console.log(
       `[MangaPage] CV_PIPELINE_USED=PENDING` +
       `  apiBase="${apiBase}"` +
       `  regions=${cvRegions.length}` +
-      `  page="${uri.slice(-50)}"`
+      `  page="${_page}"`
     );
+    recordCvDebug({ status: "pending", cvPipelineUsed: "pending", fallbackRendererUsed: false, apiBase, inpaintedImageBytes: 0, error: null, reason: null, refinedRegions: null, page: _page });
 
     runCVPipelineWithRetry(uri, cvRegions, apiBase)
       .then((result) => {
@@ -146,8 +151,9 @@ function MangaPage({
           console.warn(
             `[MangaPage] CV_PIPELINE_USED=false  FALLBACK_RENDERER_USED=true` +
             `  INPAINTED_IMAGE_BYTES=0  reason="null result"` +
-            `  page="${uri.slice(-50)}"`
+            `  page="${_page}"`
           );
+          recordCvDebug({ status: "fallback_null", cvPipelineUsed: false, fallbackRendererUsed: true, apiBase, inpaintedImageBytes: 0, error: null, reason: "null result (all retries failed)", refinedRegions: null, page: _page });
           return;
         }
         if (cvRunRef.current !== runKey) return;
@@ -158,8 +164,9 @@ function MangaPage({
           `  INPAINTED_IMAGE_BYTES=${inpBytes}` +
           `  refinedRegions=${result.refinedRegions?.length}` +
           `  apiBase="${apiBase}"` +
-          `  page="${uri.slice(-50)}"`
+          `  page="${_page}"`
         );
+        recordCvDebug({ status: "success", cvPipelineUsed: true, fallbackRendererUsed: false, apiBase, inpaintedImageBytes: inpBytes, error: null, reason: null, refinedRegions: result.refinedRegions?.length ?? 0, page: _page });
 
         const fullRefined: (CvRefinedRegion | null)[] = new Array(regions.length).fill(null);
         result.refinedRegions.forEach((refined, pipelineIdx) => {
@@ -184,8 +191,9 @@ function MangaPage({
           `  INPAINTED_IMAGE_BYTES=0` +
           `  error="${msg}"` +
           `  apiBase="${apiBase}"` +
-          `  page="${uri.slice(-50)}"`
+          `  page="${_page}"`
         );
+        recordCvDebug({ status: "fallback_error", cvPipelineUsed: false, fallbackRendererUsed: true, apiBase, inpaintedImageBytes: 0, error: msg, reason: null, refinedRegions: null, page: _page });
       })
       .finally(() => {
         if (cvRunRef.current === runKey) setCvLoading(false);
