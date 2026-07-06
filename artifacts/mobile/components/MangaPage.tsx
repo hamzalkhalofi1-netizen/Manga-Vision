@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Dimensions,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -15,6 +16,7 @@ import { classifyRegion } from "./cv/TextClassificationEngine";
 import { getBasicImageHeaders } from "@/services/sourceImageHeaders";
 import { getApiBase } from "@/services/api";
 import { recordCvDebug } from "@/services/cvDebugStore";
+import { useCachedPageImage } from "@/hooks/useCachedPageImage";
 
 const SCREEN_W = Dimensions.get("window").width;
 const DEFAULT_ASPECT = 1.45;
@@ -74,6 +76,16 @@ function MangaPage({
   const imageHeaders = sourceId ? getBasicImageHeaders(sourceId) : undefined;
   const [displayH, setDisplayH] = useState(Math.round(SCREEN_W * DEFAULT_ASPECT));
   const [nativeDims, setNativeDims] = useState({ w: 0, h: 0 });
+
+  // ── Cache-first page image loading ────────────────────────────────────────
+  // Resolves `uri` to a locally-cached file:// path (instant on revisit) or
+  // downloads it via the concurrency-limited, auto-persisting LRU disk cache.
+  const {
+    status: pageStatus,
+    localUri: pageLocalUri,
+    retry: retryPageImage,
+    reportRenderError,
+  } = useCachedPageImage(uri, imageHeaders);
 
   const [cvState, setCvState] = useState<CVState | null>(null);
   const [cvLoading, setCvLoading] = useState(false);
@@ -213,22 +225,54 @@ function MangaPage({
     [onHeightKnown]
   );
 
+  // On native, always prefer the locally-cached copy once resolved (instant
+  // on revisit, auto-saved on first download). On web (no disk cache), or
+  // before resolution finishes, fall back to the remote URL/headers as before.
+  const rawImageSource =
+    Platform.OS !== "web" && pageLocalUri
+      ? { uri: pageLocalUri }
+      : { uri, headers: imageHeaders };
+
   const imageSource = cvState?.inpaintedUri
     ? { uri: cvState.inpaintedUri }
-    : { uri, headers: imageHeaders };
+    : rawImageSource;
 
   const showBadge = showOverlay && regions.length > 0 && renderPath !== "idle";
 
+  // Per-page image readiness (independent of the CV overlay pipeline above).
+  const imageNotReady = Platform.OS !== "web" && !cvState?.inpaintedUri && pageStatus !== "ready";
+  const imageIsLoading = imageNotReady && (pageStatus === "checking" || pageStatus === "loading");
+  const imageFailed = imageNotReady && pageStatus === "error";
+
   return (
     <View style={{ width: SCREEN_W, height: displayH, backgroundColor: "#000", overflow: "hidden" }}>
-      <Image
-        source={imageSource}
-        style={{ width: SCREEN_W, height: displayH }}
-        contentFit="fill"
-        transition={100}
-        recyclingKey={cvState?.inpaintedUri ?? uri}
-        onLoad={handleLoad}
-      />
+      {!imageNotReady && (
+        <Image
+          source={imageSource}
+          style={{ width: SCREEN_W, height: displayH }}
+          contentFit="fill"
+          transition={100}
+          recyclingKey={cvState?.inpaintedUri ?? pageLocalUri ?? uri}
+          onLoad={handleLoad}
+          onError={reportRenderError}
+        />
+      )}
+
+      {/* ── Per-page loading placeholder ─────────────────────────────────── */}
+      {imageIsLoading && (
+        <View style={styles.pageLoadingContainer} pointerEvents="none">
+          <ActivityIndicator size="small" color="#7B96FF" />
+        </View>
+      )}
+
+      {/* ── Per-page retry (this page only, never the whole chapter) ───────── */}
+      {imageFailed && (
+        <View style={styles.pageLoadingContainer}>
+          <Pressable onPress={retryPageImage} style={styles.retryButton}>
+            <Text style={styles.retryButtonText}>⟳ Retry</Text>
+          </Pressable>
+        </View>
+      )}
 
       {showOverlay && cvState && regions.length > 0 && (
         <CVPipelineRenderer
@@ -295,6 +339,26 @@ const styles = StyleSheet.create({
     top: 6,
     right: 8,
     opacity: 0.6,
+  },
+  pageLoadingContainer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.25)",
+  },
+  retryButtonText: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "600" as const,
   },
   badge: {
     position: "absolute",

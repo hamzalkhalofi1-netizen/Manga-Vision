@@ -24,6 +24,7 @@
 import { getBasicImageHeaders } from "../sourceImageHeaders";
 import { ReaderCache } from "./ReaderCache";
 import { PageState, PageLifecycleManager } from "./PageLifecycleManager";
+import { ImageDiskCache } from "../cache/ImageDiskCache";
 
 export enum PreloadPriority {
   BEHIND = 0,
@@ -241,11 +242,20 @@ export class ReaderPreloader {
 
     const { index, url } = page;
 
-    // Cache hit — instant
+    // Session cache hit — instant (already resolved to a local path this session)
     const cached = ReaderCache.get(url);
     if (cached) {
       this.lifecycle.transitionTo(index, "ready");
       this.readyCallbacks.forEach((cb) => cb(index, cached));
+      return;
+    }
+
+    // Disk cache hit — persisted from a previous visit/app launch. Instant, no network.
+    const diskHit = await ImageDiskCache.getPath(url);
+    if (!this.disposed && diskHit) {
+      ReaderCache.set(url, diskHit);
+      this.lifecycle.transitionTo(index, "ready");
+      this.readyCallbacks.forEach((cb) => cb(index, diskHit));
       return;
     }
 
@@ -257,24 +267,19 @@ export class ReaderPreloader {
     this.activeControllers.add(controller);
 
     try {
-      // On React Native, expo-image handles caching internally.
-      // We pre-warm it by issuing a prefetch request, which loads
-      // the image into expo-image's disk + memory cache so it
-      // renders instantly when the MangaPage component mounts.
-      //
-      // We also store the URL in ReaderCache as a lightweight
-      // "this page is ready" marker so we don't re-prefetch.
-
+      // Download the page to our own on-disk LRU cache (ImageDiskCache), which
+      // persists across app launches and is what MangaPage reads from — this
+      // replaces the old expo-image-only prefetch so bytes are actually ours.
       const headers = getBasicImageHeaders(this.sourceId);
-      await this.prefetchImage(url, headers, controller.signal);
+      const localUri = await ImageDiskCache.download(url, headers, controller.signal);
 
       // Guard: if aborted while awaiting, treat as cancelled (not ready, not error)
       if (controller.signal.aborted) return;
 
       // Mark as ready in both our lifecycle and the in-memory URL cache
-      ReaderCache.set(url, url); // value = URI (passthrough; expo-image owns actual bytes)
+      ReaderCache.set(url, localUri);
       this.lifecycle.transitionTo(index, "ready");
-      this.readyCallbacks.forEach((cb) => cb(index, url));
+      this.readyCallbacks.forEach((cb) => cb(index, localUri));
     } catch (err) {
       // Abort is intentional (chapter switch / dispose) — exit silently, no retry
       if (
@@ -306,40 +311,4 @@ export class ReaderPreloader {
     }
   }
 
-  /**
-   * Prefetch an image URL into expo-image's cache.
-   * Falls back to a HEAD request on platforms where Image.prefetch isn't available.
-   * The provided signal is checked before/after the prefetch and is forwarded to
-   * the HEAD fallback so the network request is cancelled promptly on chapter switch.
-   */
-  private async prefetchImage(
-    url: string,
-    headers: Record<string, string>,
-    signal: AbortSignal,
-  ): Promise<void> {
-    if (signal.aborted) return;
-
-    // Use expo-image's prefetch API
-    try {
-      const { Image } = await import("expo-image");
-      if (typeof Image.prefetch === "function") {
-        // expo-image prefetch has no cancellation API; we check signal before
-        // and after so at least we don't fire callbacks on a dead chapter.
-        await Image.prefetch(url, { headers });
-        return;
-      }
-    } catch {}
-
-    // Fallback: HEAD request to warm CDN + connection pool.
-    // Combine external abort signal with our internal timeout signal.
-    const timeoutController = new AbortController();
-    const timer = setTimeout(() => timeoutController.abort(), this.timeoutMs);
-    // Forward external abort to the timeout controller so either cancels the fetch
-    signal.addEventListener("abort", () => timeoutController.abort(), { once: true });
-    try {
-      await fetch(url, { method: "HEAD", headers, signal: timeoutController.signal });
-    } finally {
-      clearTimeout(timer);
-    }
-  }
 }

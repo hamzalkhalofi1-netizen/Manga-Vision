@@ -15,3 +15,4 @@
 - [SkiaOverlayCanvas erase architecture](skia-overlay-erase.md) — text bed must be 100% opacity (not 92%) + cover full bubblePolygon; 92% lets black glyphs bleed through; SFX still uses tight OCR polygon
 - [Native CV pipeline URL](native-cv-pipeline-url.md) — runCVPipelineWithRetry default apiBase="/api" fails silently on native; MangaPage must detect Platform.OS and pass EXPO_PUBLIC_API_URL+"/api" on native
 - [MangaVerse port conflict](manga-verse-port-conflict.md) — artifact expo workflow grabs port 5001 before start.sh; start.sh must detect existing process and skip Metro start, just run proxy
+- [Reader image cache architecture](reader-image-cache-arch.md) — ImageDiskCache is the single source of truth for page bytes; ReaderPreloader and MangaPage both read/write through it to share one concurrency limit and avoid double downloads.
