@@ -17,3 +17,6 @@ router.get(/^\/source-proxy\/([^/]+)(?:\/(.*))?$/, async (req, res) => {
   // ...
 });
 ```
+
+## Debugging false "route doesn't work" reports
+If a route that looks syntactically correct (verified by testing the regex/handler in isolation) still 404s in the running app, restart the server workflow before concluding the route is broken. The dev script rebuilds (`pnpm run build && pnpm run start`) but a long-lived process from before a `pnpm install`/dependency bump can keep serving a stale bundle — always eliminate "stale running process" before debugging route-matching logic further.

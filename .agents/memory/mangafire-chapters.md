@@ -1,38 +1,23 @@
 ---
-name: MangaFire chapter structure (2025)
-description: Confirmed AJAX response format for chapters and image-loading flow
+name: MangaFire backend (2026 rewrite — JSON API)
+description: MangaFire migrated to a client-rendered SPA; use its first-party JSON REST API instead of HTML/AJAX scraping or Cloudflare WebView bypass
 ---
 
-## Chapter list AJAX endpoint
-`GET /ajax/manga/{mfId}/chapter/en` where `mfId` is the suffix of the full slug (e.g. slug `berserk.m2vv` → mfId `m2vv`).
+## Discovery (confirmed July 2026)
+mangafire.to migrated to a fully client-rendered SPA. Plain HTML fetches of `/filter`, `/manga/{slug}`, `/home`, etc. return only an empty JS-shell with no manga data — the old AJAX/HTML-scraping approach (`/ajax/manga/{id}/chapter/en`, `data-number` parsing, `/ajax/read/{token}/...`) described in earlier versions of this note is now dead and returns nothing useful.
 
-Response: `{"status":200,"result":"<ul class=\"scroll-sm\">..."}` — result is an HTML string.
+## Current approach: first-party JSON REST API
+The SPA's own frontend calls a JSON API at `${SITE_URL}/api/*` (axios baseURL `/api`, headers `Accept: application/json`, `X-Requested-With: XMLHttpRequest`). Confirmed via direct `curl` with **no cookies and no Cloudflare challenge** — no WebView bridge, no cf_clearance, no session/token dance needed at all.
 
-HTML structure (confirmed 2025):
-```html
-<li class="item" data-number="104">
-  <a href="/read/slug/en/chapter-104" title="Vol N - Chap N">
-    <span>Chapter 104: Title</span>
-    <span>May 02, 2025</span>
-  </a>
-</li>
-```
+Endpoints (reverse-engineered from the production JS bundle, `s.mfcdn.nl`):
+- `GET /api/titles?sort=...&page=...&keyword=...` → `{items:[...]}` (listing/search; sort values include `rank`, `chapter_updated_at:desc`, `relevance:desc`)
+- `GET /api/top-titles` → `{items:[...]}` (curated trending)
+- `GET /api/titles/{hid}` → `{data:{...}}` (manga details)
+- `GET /api/titles/{hid}/chapters?lang=en` → `{items:[...]}` (chapter list; omit `lang` to get all languages as a fallback when a title has no English chapters)
+- `GET /api/chapters/{chapterId}` → `{data:{pages:[{url}]}}` (chapter + page image URLs, used directly with no CDN rewriting)
 
-Key: `data-number` (NOT `data-id`), href uses `/read/slug/en/chapter-N` (NOT `/en/full/`).
-Chapter ID stored as the full reader path `/read/slug/en/chapter-104`.
+`hid` (MangaFire's short opaque id, e.g. `dkw` for One Piece) is used as the manga id. Chapter ids are MangaFire's numeric chapter row ids. CDN image URLs (`m3z.mfcdn3.xyz`, `static.mfcdn.nl`) load with no Referer required.
 
-## Chapter image flow
-1. Fetch reader page at `/read/slug/en/chapter-N` — extract `data-a="token"` attribute
-2. Token is session-wide (same for all chapters, e.g. `af266caa520a`) — NOT chapter-specific
-3. AJAX endpoint `/ajax/read/{token}/chapter/en` requires BOTH correct Referer AND cf_clearance
-4. Without both: returns `{"status":403,"message":"Request is invalid."}`
+**Why:** Scraping HTML for a client-rendered SPA is fundamentally broken (no server-rendered data to extract), and the WebView/Cloudflare-bypass machinery this source used to need is unnecessary once the underlying JSON API is used directly — it isn't behind Cloudflare's JS challenge.
 
-**Server proxy path (web):** Always returns 403 — proxy has no cf_clearance cookies. This is a fundamental limitation of the web platform for MangaFire.
-
-**Native path (correct fix):** `webViewBridge.fetchRendered("mangafire", fullReaderUrl, 7000)` — navigates the persistent WebView to the reader page (has cf_clearance), waits 7s for MangaFire's React reader to execute and render `<img>` elements, then extracts images from the fully-rendered DOM via `parseChapterImagesFromHtml`.
-
-**Referer requirement:** The AJAX endpoint determines which chapter to serve via the `Referer` header. The reader page URL (not site root) must be the Referer. On web this is sent via `x-proxy-referer` header to the server proxy, but the request still fails without cf_clearance.
-
-**Why:** MangaFire uses Cloudflare + a JS-computed session token. Server-side requests lack cf_clearance. The WebView naturally accumulates cf_clearance after first verification.
-
-**How to apply:** Chapter listing (AJAX `data-number` parsing) works without auth. Image loading on native uses fetchRendered(7s). On web, show "requires verification" error.
+**How to apply:** When re-touching MangaFire, always hit `/api/*` as JSON, never scrape `mangafire.to` HTML pages. `requiresVerification: false` — do not register it in `GlobalWebViewBridge`'s CF-protected source list.

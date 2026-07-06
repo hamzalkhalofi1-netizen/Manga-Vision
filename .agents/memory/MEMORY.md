@@ -1,6 +1,6 @@
 - [Source proxy architecture](source-proxy-arch.md) — directOnWeb flag bypasses server proxy for CORS APIs; scraping sources always proxy
 - [Express 5 routing](express5-routing.md) — wildcard routes need regex, not string `/:id/*` patterns
-- [MangaFire chapter structure](mangafire-chapters.md) — images need fetchRendered(12s) on native; web proxy always 403 (needs cf_clearance); token is session-wide not per-chapter
+- [MangaFire backend](mangafire-chapters.md) — as of 2026 it's a client-rendered SPA; use its first-party JSON REST API at /api/*, no Cloudflare/WebView needed at all
 - [APK production config](apk-production-config.md) — EAS builds need EXPO_PUBLIC_API_URL in eas.json env section; runtime override via Settings → API Server backed by AsyncStorage; loadApiBaseOverride() called at app startup.
 - [WebView render waits](webview-render-waits.md) — MangaFire 12s, Asura 12s, Bato.to 10s; lower values cause incomplete page lists on real devices vs dev machine.
 - [CDN Referer detection](cdn-referer.md) — translate-image.ts getCdnReferer(url) sends per-source Referer; hardcoded mangadex.org causes 403 on MangaFire/Asura CDNs when translating those sources.

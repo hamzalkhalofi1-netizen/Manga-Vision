@@ -27,6 +27,12 @@ This comes from `@react-native/debugger-shell` (part of RN 0.81+ DevTools). The 
 
 `EXPO_NO_DEVTOOLS=1` does not suppress this error (not a recognized Expo env var as of SDK 56), but is harmless to keep.
 
+## Exception: first-run "log in with Expo account?" prompt
+
+After a `pnpm install` that upgrades `expo`/`expo-router` versions, the first `expo start` on web can hang on an interactive prompt ("recommended to log in... Log in / Proceed anonymously") with no visible output in workflow logs — looks like a silent hang, not an error. This is a one-time first-run gate, distinct from the CI-mode tradeoffs above.
+
+**How to apply:** If a mobile/expo workflow appears stuck with no bundling output after a dependency upgrade, check for this prompt. Adding `CI=1` to the dev script unblocks it (auto-answers non-interactive prompts) but reintroduces the hot-reload/QR tradeoffs documented above — treat as a last resort for unblocking a stuck first run, and prefer removing it once the account choice has been made once (if the choice can persist another way).
+
 ## Working startup sequence
 
 1. Remove `--go` and `--web` from the `expo start` invocation — those call xdg-open which crashes immediately on headless servers

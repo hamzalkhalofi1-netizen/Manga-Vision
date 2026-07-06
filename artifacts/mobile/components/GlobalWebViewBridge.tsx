@@ -2,7 +2,7 @@
  * GlobalWebViewBridge
  *
  * Mounted ONCE in _layout.tsx. Owns one persistent hidden WebView per
- * CF-protected source (mangafire, asura). Source adapters request HTML/JSON
+ * CF-protected source (asura, bato). Source adapters request HTML/JSON
  * through webViewBridge.fetch() / fetchRendered(); this component fulfills
  * every request by injecting fetch() scripts into the appropriate WebView.
  *
@@ -33,7 +33,6 @@ import {
 // ── Bridge source registry ────────────────────────────────────────────────
 
 const BRIDGE_SOURCES = [
-  { id: "mangafire", baseUrl: "https://mangafire.to" },
   // asuracomic.net 301-redirects to asurascans.com as of 2025/2026.
   // Use the live domain directly so the WebView doesn't start with a redirect.
   { id: "asura", baseUrl: "https://asurascans.com" },
