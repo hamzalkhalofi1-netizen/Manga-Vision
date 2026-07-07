@@ -1,5 +1,5 @@
 import { Image } from "expo-image";
-import React, { memo, useCallback, useEffect, useRef, useState } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -73,7 +73,13 @@ function MangaPage({
   onHeightKnown,
   sourceId,
 }: MangaPageProps) {
-  const imageHeaders = sourceId ? getBasicImageHeaders(sourceId) : undefined;
+  // Memoised so the object reference is stable across re-renders — prevents
+  // useCachedPageImage's load useCallback from recreating every render.
+  const imageHeaders = useMemo(
+    () => (sourceId ? getBasicImageHeaders(sourceId) : undefined),
+    [sourceId]
+  );
+
   const [displayH, setDisplayH] = useState(Math.round(SCREEN_W * DEFAULT_ASPECT));
   const [nativeDims, setNativeDims] = useState({ w: 0, h: 0 });
 
