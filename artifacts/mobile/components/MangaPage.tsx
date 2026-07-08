@@ -9,6 +9,11 @@ import {
   Text,
   View,
 } from "react-native";
+
+// ── Diagnostic render counter ──────────────────────────────────────────────────
+// Logs every time MangaPage renders and whether the Image is visible or hidden.
+// Search for "[MangaPage]" in Metro/device logs to trace flickering.
+const _renderCounts = __DEV__ ? new Map<string, number>() : null;
 import PremiumOverlayRenderer from "./PremiumOverlayRenderer";
 import CVPipelineRenderer from "./CVPipelineRenderer";
 import { runCVPipelineWithRetry, type CvRefinedRegion, type CvRegionInput } from "./cv/InpaintingEngine";
@@ -224,24 +229,38 @@ function MangaPage({
       if (width > 0 && height > 0) {
         const h = Math.round(SCREEN_W * (height / width));
         setDisplayH(h);
-        setNativeDims({ w: width, h: height });
+        // Only update nativeDims if dimensions actually changed — prevents
+        // creating a new object reference on every load, which would cause
+        // an unnecessary re-render of MangaPage.
+        setNativeDims((prev) =>
+          prev.w === width && prev.h === height ? prev : { w: width, h: height }
+        );
         onHeightKnown?.(h);
       }
     },
     [onHeightKnown]
   );
 
-  // On native, always prefer the locally-cached copy once resolved (instant
-  // on revisit, auto-saved on first download). On web (no disk cache), or
-  // before resolution finishes, fall back to the remote URL/headers as before.
-  const rawImageSource =
-    Platform.OS !== "web" && pageLocalUri
-      ? { uri: pageLocalUri }
-      : { uri, headers: imageHeaders };
+  // Memoize rawImageSource so expo-image receives a stable object reference
+  // across re-renders. Without this, a new { uri: pageLocalUri } object is
+  // created on every render even when the URI hasn't changed, potentially
+  // causing expo-image to perform unnecessary reload work.
+  const rawImageSource = useMemo(
+    () =>
+      Platform.OS !== "web" && pageLocalUri
+        ? { uri: pageLocalUri }
+        : { uri, headers: imageHeaders },
+    [pageLocalUri, uri, imageHeaders]
+  );
 
-  const imageSource = cvState?.inpaintedUri
-    ? { uri: cvState.inpaintedUri }
-    : rawImageSource;
+  const imageSource = useMemo(
+    () =>
+      cvState?.inpaintedUri ? { uri: cvState.inpaintedUri } : rawImageSource,
+    [cvState, rawImageSource]
+  );
+
+  // Stable recycling key — only changes when the actual content source changes.
+  const recyclingKey = cvState?.inpaintedUri ?? pageLocalUri ?? uri;
 
   const showBadge = showOverlay && regions.length > 0 && renderPath !== "idle";
 
@@ -249,6 +268,23 @@ function MangaPage({
   const imageNotReady = Platform.OS !== "web" && !cvState?.inpaintedUri && pageStatus !== "ready";
   const imageIsLoading = imageNotReady && (pageStatus === "checking" || pageStatus === "loading");
   const imageFailed = imageNotReady && pageStatus === "error";
+
+  // ── Diagnostic render logging ────────────────────────────────────────────
+  if (__DEV__ && _renderCounts) {
+    const key = uri.slice(-40);
+    const count = (_renderCounts.get(key) ?? 0) + 1;
+    _renderCounts.set(key, count);
+    if (count <= 5 || count % 10 === 0) {
+      console.log(
+        `[MangaPage] render #${count}  page="${key}"` +
+        `  pageStatus=${pageStatus}  imageNotReady=${imageNotReady}` +
+        `  localUri=${pageLocalUri ? pageLocalUri.slice(-20) : "null"}`
+      );
+    }
+    if (count > 20) {
+      console.warn(`[MangaPage] EXCESSIVE RE-RENDERS (${count}) for page="${key}" — possible flicker loop!`);
+    }
+  }
 
   return (
     <View style={{ width: SCREEN_W, height: displayH, backgroundColor: "#000", overflow: "hidden" }}>
@@ -258,7 +294,7 @@ function MangaPage({
           style={{ width: SCREEN_W, height: displayH }}
           contentFit="fill"
           transition={100}
-          recyclingKey={cvState?.inpaintedUri ?? pageLocalUri ?? uri}
+          recyclingKey={recyclingKey}
           onLoad={handleLoad}
           onError={reportRenderError}
         />

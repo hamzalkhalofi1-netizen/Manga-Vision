@@ -25,6 +25,25 @@
  *   with the correct localUri — no spinner, no flash. The async disk verify
  *   still runs in the background; if the file was evicted it re-downloads
  *   without touching the visible UI until the new path is confirmed.
+ *
+ * BUG 3 — _inFlight AbortError propagation from ReaderPreloader:
+ *   ImageDiskCache._inFlight de-duplicates concurrent downloads of the same URL.
+ *   ReaderPreloader creates downloads WITH an AbortSignal; useCachedPageImage
+ *   joins those same _inFlight promises WITHOUT a signal. When the preloader
+ *   aborts (e.g. on chapter change / pages reference change), the AbortError
+ *   propagates to useCachedPageImage which has no AbortError guard — it was
+ *   setting status="error" even though the component never requested an abort.
+ *   Fix: detect AbortError in the catch block and retry with a fresh independent
+ *   download (no signal) instead of transitioning to "error" state.
+ *
+ * BUG 4 — background verify calls setStatus("loading"), hiding visible image:
+ *   When the disk verify finds a file has been evicted, the code called
+ *   setStatus("loading") before starting the re-download. imageNotReady is
+ *   true whenever pageStatus !== "ready", so this UNMOUNTS the Image component
+ *   causing a visible flash — contrary to the comment that said "won't flash".
+ *   Fix: keep showing the current (stale) localUri while re-downloading silently;
+ *   only swap to the new localUri once the fresh download completes. The status
+ *   stays "ready" throughout, so the Image component remains mounted.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -51,6 +70,18 @@ interface UseCachedPageImageResult {
 // This is intentionally NOT persisted across app launches (that is the job of
 // ImageDiskCache); it is just a React-render-cycle shortcut.
 const _resolvedPaths = new Map<string, string>();
+
+// ── Diagnostic logging ────────────────────────────────────────────────────────
+// Logs status transitions and the reason, keyed by the last 50 chars of URI.
+// Search for "[useCachedPageImage]" in the Metro/device logs to trace flicker.
+const LOG_ENABLED = __DEV__;
+
+function logTransition(uri: string, event: string, detail?: string): void {
+  if (!LOG_ENABLED) return;
+  const key = uri.slice(-50);
+  const msg = detail ? `${event} | ${detail}` : event;
+  console.log(`[useCachedPageImage] ${key} → ${msg}`);
+}
 
 export function useCachedPageImage(
   uri: string,
@@ -100,30 +131,49 @@ export function useCachedPageImage(
         if (memPath) {
           setLocalUri(memPath);
           setStatus("ready");
-          // Background verify — won't flash the UI (we already showed the image).
+          logTransition(uri, "fast-path ready", `memPath=${memPath.slice(-30)}`);
+          // BUG 4 FIX: Background verify — keep image VISIBLE throughout.
+          // If the file was evicted, re-download silently and swap the URI
+          // only after the new file is confirmed. Status stays "ready" so
+          // the Image component is never unmounted during the re-download.
           (async () => {
             const verified = await ImageDiskCache.getPath(uri);
             if (runIdRef.current !== runId) return;
             if (!verified) {
-              // File was evicted from disk — re-download silently.
+              logTransition(uri, "bg-verify MISS — silent redownload (image stays visible)");
+              // File evicted — delete stale mem entry and re-download.
+              // DO NOT call setStatus("loading") here — that would unmount
+              // the Image component (imageNotReady becomes true). Instead,
+              // keep showing the old localUri while the new file is fetched,
+              // and silently swap the URI only when the new file is confirmed.
               _resolvedPaths.delete(uri);
-              setStatus("loading");
               try {
-                const downloaded = await ImageDiskCache.download(uri, headers);
+                // BUG 3 FIX: use forceIndependent=true so this download is NOT
+                // registered in _inFlight and cannot be aborted by a preloader
+                // signal. We guarantee our own non-abortable download.
+                const downloaded = await ImageDiskCache.download(uri, headers, undefined, true);
                 if (runIdRef.current !== runId) return;
                 _resolvedPaths.set(uri, downloaded);
                 setLocalUri(downloaded);
-                setStatus("ready");
+                // status stays "ready" — Image component never unmounted
+                logTransition(uri, "bg-redownload done", `path=${downloaded.slice(-30)}`);
               } catch (err) {
                 if (runIdRef.current !== runId) return;
-                _resolvedPaths.delete(uri);
-                setErrorMessage(err instanceof Error ? err.message : String(err));
-                setStatus("error");
+                const msg = err instanceof Error ? err.message : String(err);
+                logTransition(uri, "bg-redownload FAILED (non-fatal — keeping image visible)", msg);
+                // Background verify failure is NON-FATAL: we already have a rendered
+                // image (old localUri). DO NOT set status="error" — the user would
+                // see the image disappear for a network/CDN failure they didn't cause.
+                // Leave status="ready" and the old localUri in place. The next mount
+                // cycle will retry the full load from scratch.
               }
             } else if (verified !== memPath) {
               // Path changed (shouldn't happen normally, but stay correct).
+              logTransition(uri, "bg-verify path changed", `${memPath.slice(-20)} → ${verified.slice(-20)}`);
               _resolvedPaths.set(uri, verified);
               setLocalUri(verified);
+            } else {
+              logTransition(uri, "bg-verify OK");
             }
           })();
           return;
@@ -131,6 +181,7 @@ export function useCachedPageImage(
       }
 
       // Slow path — no memory cache hit (first visit, or forced redownload).
+      logTransition(uri, forceRedownload ? "force-redownload" : "slow-path (disk check)");
       setStatus(forceRedownload ? "loading" : "checking");
       if (!forceRedownload) setLocalUri(null);
 
@@ -143,16 +194,39 @@ export function useCachedPageImage(
             const cached = await ImageDiskCache.getPath(uri);
             if (runIdRef.current !== runId) return;
             if (cached) {
+              logTransition(uri, "disk-hit", `path=${cached.slice(-30)}`);
               _resolvedPaths.set(uri, cached);
               setLocalUri(cached);
               setStatus("ready");
               return;
             }
+            logTransition(uri, "disk-miss — downloading");
             setStatus("loading");
           }
 
-          const downloaded = await ImageDiskCache.download(uri, headers);
+          // BUG 3 FIX: If download throws AbortError (from a shared _inFlight
+          // promise owned by the ReaderPreloader's AbortController), we must
+          // NOT propagate it to "error" state — this component never requested
+          // an abort. Retry with forceIndependent=true so the retry:
+          //   (a) is not registered in _inFlight and cannot be aborted by
+          //       any preloader abort signal, and
+          //   (b) does not overwrite an active preloader _inFlight entry.
+          let downloaded: string;
+          try {
+            downloaded = await ImageDiskCache.download(uri, headers);
+          } catch (dlErr) {
+            if (runIdRef.current !== runId) return;
+            if (dlErr instanceof Error && dlErr.name === "AbortError") {
+              logTransition(uri, "download got AbortError (from preloader) — retrying independently");
+              // forceIndependent=true: own download, not shareable, not abortable.
+              downloaded = await ImageDiskCache.download(uri, headers, undefined, true);
+            } else {
+              throw dlErr;
+            }
+          }
+
           if (runIdRef.current !== runId) return;
+          logTransition(uri, "download done", `path=${downloaded.slice(-30)}`);
           _resolvedPaths.set(uri, downloaded);
           setLocalUri(downloaded);
           setStatus("ready");
@@ -160,6 +234,7 @@ export function useCachedPageImage(
           if (runIdRef.current !== runId) return;
           _resolvedPaths.delete(uri);
           const msg = err instanceof Error ? err.message : String(err);
+          logTransition(uri, "FAILED", msg);
           setErrorMessage(msg);
           setStatus("error");
         }
@@ -169,8 +244,10 @@ export function useCachedPageImage(
   );
 
   useEffect(() => {
+    logTransition(uri, `effect mount — knownPath=${_resolvedPaths.has(uri)}`);
     load(false);
     return () => {
+      logTransition(uri, "effect cleanup (unmount or uri change)");
       runIdRef.current++;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -184,10 +261,14 @@ export function useCachedPageImage(
   }, [load]);
 
   const reportRenderError = useCallback(() => {
-    if (renderErrorHandledRef.current) return; // BUG 1 FIX: guard now holds
+    if (renderErrorHandledRef.current) {
+      logTransition(uri, "reportRenderError BLOCKED by guard (already handled)");
+      return; // BUG 1 FIX: guard now holds
+    }
+    logTransition(uri, "reportRenderError — force redownload");
     renderErrorHandledRef.current = true;
     load(true);
-  }, [load]);
+  }, [load, uri]);
 
   return { status, localUri, errorMessage, retry, reportRenderError };
 }

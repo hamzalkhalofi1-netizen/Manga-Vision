@@ -203,16 +203,25 @@ export const ImageDiskCache = {
    * Download `url` (honouring the global concurrency limit) and persist it
    * to disk, returning the local `file://` URI. Concurrent calls for the
    * same URL share a single in-flight download.
+   *
+   * @param forceIndependent — When true, bypass the _inFlight de-duplication and
+   *   start a completely independent download. Use this when a previous download
+   *   attached to the shared _inFlight promise was aborted by someone else's
+   *   AbortSignal (e.g. ReaderPreloader aborting its own download) and we need
+   *   a guaranteed non-abortable retry. Default is false.
    */
   async download(
     url: string,
     headers?: Record<string, string>,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    forceIndependent = false
   ): Promise<string> {
     if (!isNative()) throw new Error("ImageDiskCache is unavailable on web");
 
-    const existing = _inFlight.get(url);
-    if (existing) return existing;
+    if (!forceIndependent) {
+      const existing = _inFlight.get(url);
+      if (existing) return existing;
+    }
 
     const task = (async () => {
       await acquireSlot();
@@ -296,12 +305,18 @@ export const ImageDiskCache = {
       }
     })();
 
-    _inFlight.set(url, task);
-    try {
-      return await task;
-    } finally {
-      _inFlight.delete(url);
+    // Only register in _inFlight when this is a normal shared download
+    // (not a forceIndependent retry). If forceIndependent, we must NOT
+    // overwrite an active preloader task already in the map.
+    if (!forceIndependent) {
+      _inFlight.set(url, task);
+      try {
+        return await task;
+      } finally {
+        _inFlight.delete(url);
+      }
     }
+    return task;
   },
 
   /** Total size of all cached image bytes. */
