@@ -4,7 +4,7 @@ import { comickSource } from "./comick";
 import { mangaplusSource } from "./mangaplus";
 import { naverSource } from "./naver";
 import { mangafireSource } from "./mangafire";
-import { asuraSource } from "./asura";
+import { asuraSource } from "./asura/index";
 import { batoSource } from "./bato";
 import { kakalotSource } from "./kakalot";
 import { manganeloSource } from "./manganelo";
@@ -73,10 +73,11 @@ SourceRegistry.registerAll([
     meta: {
       language: "en",
       nsfw: false,
-      requiresVerification: true,
+      // The new adapter uses the REST API + SSR HTML — no WebView / CF challenge needed.
+      requiresVerification: false,
       isEnabled: true,
-      tags: ["scraper", "cloudflare", "manhwa"],
-      websiteUrl: "https://asuracomic.net",
+      tags: ["api", "manhwa"],
+      websiteUrl: "https://asurascans.com",
     },
   },
   {

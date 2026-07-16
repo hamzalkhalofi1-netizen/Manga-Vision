@@ -528,6 +528,7 @@ export default function ReaderScreen() {
       <Pressable onPress={handleTap} style={{ width: SCREEN_W }}>
         <MangaPage
           uri={uri}
+          pageNumber={index + 1}
           regions={pageTranslations[index]}
           showOverlay={overlayVisible}
           isRTL={isRTL}

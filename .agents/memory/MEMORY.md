@@ -17,3 +17,4 @@
 - [MangaVerse port conflict](manga-verse-port-conflict.md) — artifact expo workflow grabs port 5001 before start.sh; start.sh must detect existing process and skip Metro start, just run proxy
 - [Reader image cache architecture](reader-image-cache-arch.md) — ImageDiskCache is the single source of truth for page bytes; ReaderPreloader and MangaPage both read/write through it to share one concurrency limit and avoid double downloads.
 - [_inFlight AbortError propagation](inFlight-abort-propagation.md) — preloader AbortSignal propagates to useCachedPageImage via shared _inFlight map; use forceIndependent=true to get own non-abortable download
+- [Asura WebView bridge source bug](asura-bridge-sources-bug.md) — listing a source in BRIDGE_SOURCES without it using the WebView bridge causes hidden WebView noise, JS thread interruptions every 1.5 s, and double BridgeContext re-renders

@@ -32,10 +32,13 @@ import {
 
 // ── Bridge source registry ────────────────────────────────────────────────
 
+// NOTE: Only include sources that actually USE the WebView bridge
+// (requiresVerification=true / webViewBridge.fetch|fetchRendered calls).
+// AsuraAdapter uses direct HTTP (EngineHttpClient) with requiresVerification=false
+// and NEVER calls webViewBridge — keeping it here only wastes network,
+// saturates HTTP connections, fires SESSION_JS every 1.5 s on the JS thread,
+// and causes double BridgeContext re-renders on every page load.
 const BRIDGE_SOURCES = [
-  // asuracomic.net 301-redirects to asurascans.com as of 2025/2026.
-  // Use the live domain directly so the WebView doesn't start with a redirect.
-  { id: "asura", baseUrl: "https://asurascans.com" },
   // Bato.to: Next.js SSR + Cloudflare. Chapter images need an active CF session.
   { id: "bato", baseUrl: "https://bato.to" },
 ] as const;
@@ -165,8 +168,13 @@ export default function GlobalWebViewBridge({
   // ── Status helper ─────────────────────────────────────────────────────────
 
   const setSourceStatus = useCallback((sid: string, status: BridgeSourceStatus) => {
+    // Guard: skip if the service already holds this status — avoids creating
+    // a new BridgeContext value object (and re-rendering every consumer)
+    // when the status hasn't actually changed (e.g. handleLoadEnd → processNext
+    // both setting "idle" for the same source in the same tick).
+    if (webViewBridge.getStatus(sid) === status) return;
     webViewBridge.setStatus(sid, status);
-    setStatuses((prev) => ({ ...prev, [sid]: status }));
+    setStatuses((prev) => (prev[sid] === status ? prev : { ...prev, [sid]: status }));
   }, []);
 
   // ── Queue processor ───────────────────────────────────────────────────────

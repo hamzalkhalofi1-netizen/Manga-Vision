@@ -50,12 +50,28 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Platform } from "react-native";
 import { ImageDiskCache } from "@/services/cache/ImageDiskCache";
 
-export type CachedImageStatus = "checking" | "loading" | "ready" | "error";
+export type CachedImageStatus =
+  | "checking"
+  | "loading"
+  | "retrying"
+  | "ready"
+  | "error";
+
+const MAX_AUTO_RETRIES = 5;
+// Exponential backoff: 1s, 2s, 4s, 8s, 16s between attempts.
+const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 16000];
 
 interface UseCachedPageImageResult {
   status: CachedImageStatus;
   localUri: string | null;
   errorMessage: string | null;
+  /** Download progress 0-1 for the in-progress attempt, or null when unknown
+   *  (e.g. server didn't report Content-Length) — render an indeterminate
+   *  spinner in that case instead of a stalled progress ring. */
+  progress: number | null;
+  /** 1-based attempt number while status === "retrying" (2..MAX_AUTO_RETRIES+1). */
+  retryAttempt: number;
+  retryMax: number;
   retry: () => void;
   /** Call when the resolved local file fails to actually render (corruption
    *  that slipped past the size check) — invalidates + re-downloads once. */
@@ -101,11 +117,61 @@ export function useCachedPageImage(
     return knownPath;
   });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [retryAttempt, setRetryAttempt] = useState(0);
 
   const runIdRef = useRef(0);
   // FIX for BUG 1: this ref must NOT be reset inside load(true) — only on a
   // fresh URI load — so the "one auto-retry" guarantee actually holds.
   const renderErrorHandledRef = useRef(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Auto-retry with exponential backoff (1s/2s/4s/8s/16s), up to
+  // MAX_AUTO_RETRIES attempts, before finally surfacing "error" with a
+  // manual retry button. Only this single page is affected — never blocks
+  // or re-triggers neighbouring pages.
+  const downloadWithAutoRetry = useCallback(
+    async (
+      runId: number,
+      forceIndependent: boolean
+    ): Promise<string> => {
+      let lastErr: unknown;
+      for (let attempt = 0; attempt <= MAX_AUTO_RETRIES; attempt++) {
+        if (runIdRef.current !== runId) throw new Error("stale run");
+        if (attempt > 0) {
+          setStatus("retrying");
+          setRetryAttempt(attempt + 1);
+          logTransition(uri, `auto-retry wait`, `attempt=${attempt + 1}/${MAX_AUTO_RETRIES + 1}`);
+          await new Promise((resolve) =>
+            setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1] ?? 16000)
+          );
+          if (runIdRef.current !== runId) throw new Error("stale run");
+        }
+        setProgress(null);
+        try {
+          return await ImageDiskCache.download(
+            uri,
+            headers,
+            undefined,
+            forceIndependent || attempt > 0,
+            (fraction) => {
+              if (runIdRef.current === runId) setProgress(fraction);
+            }
+          );
+        } catch (err) {
+          lastErr = err;
+          if (err instanceof Error && err.name === "AbortError" && attempt === 0) {
+            // Let the caller's existing AbortError handling (retry via
+            // forceIndependent) take over on the very first attempt only.
+            throw err;
+          }
+          logTransition(uri, `attempt ${attempt + 1} failed`, err instanceof Error ? err.message : String(err));
+        }
+      }
+      throw lastErr instanceof Error ? lastErr : new Error("Download failed after retries");
+    },
+    [uri, headers]
+  );
 
   const load = useCallback(
     (forceRedownload: boolean) => {
@@ -116,12 +182,18 @@ export function useCachedPageImage(
       }
 
       const runId = ++runIdRef.current;
+      if (retryTimerRef.current) {
+        clearTimeout(retryTimerRef.current);
+        retryTimerRef.current = null;
+      }
       // BUG 1 FIX: only reset the render-error guard on a fresh load, not on
       // a force-redownload (which is itself triggered by reportRenderError).
       if (!forceRedownload) {
         renderErrorHandledRef.current = false;
       }
       setErrorMessage(null);
+      setProgress(null);
+      setRetryAttempt(0);
 
       if (!forceRedownload) {
         // BUG 2 FIX fast path: if the URI is already in the resolved-path map,
@@ -211,15 +283,18 @@ export function useCachedPageImage(
           //   (a) is not registered in _inFlight and cannot be aborted by
           //       any preloader abort signal, and
           //   (b) does not overwrite an active preloader _inFlight entry.
+          // Beyond that first AbortError hop, downloadWithAutoRetry owns up to
+          // MAX_AUTO_RETRIES further attempts with exponential backoff before
+          // this page (and only this page) is marked "error".
           let downloaded: string;
           try {
-            downloaded = await ImageDiskCache.download(uri, headers);
+            downloaded = await downloadWithAutoRetry(runId, false);
           } catch (dlErr) {
             if (runIdRef.current !== runId) return;
             if (dlErr instanceof Error && dlErr.name === "AbortError") {
               logTransition(uri, "download got AbortError (from preloader) — retrying independently");
               // forceIndependent=true: own download, not shareable, not abortable.
-              downloaded = await ImageDiskCache.download(uri, headers, undefined, true);
+              downloaded = await downloadWithAutoRetry(runId, true);
             } else {
               throw dlErr;
             }
@@ -229,18 +304,21 @@ export function useCachedPageImage(
           logTransition(uri, "download done", `path=${downloaded.slice(-30)}`);
           _resolvedPaths.set(uri, downloaded);
           setLocalUri(downloaded);
+          setProgress(null);
+          setRetryAttempt(0);
           setStatus("ready");
         } catch (err) {
           if (runIdRef.current !== runId) return;
           _resolvedPaths.delete(uri);
           const msg = err instanceof Error ? err.message : String(err);
-          logTransition(uri, "FAILED", msg);
+          logTransition(uri, "FAILED (after auto-retries)", msg);
           setErrorMessage(msg);
+          setProgress(null);
           setStatus("error");
         }
       })();
     },
-    [uri, headers]
+    [uri, headers, downloadWithAutoRetry]
   );
 
   useEffect(() => {
@@ -257,6 +335,7 @@ export function useCachedPageImage(
     // User-initiated retry: reset the render-error guard so reportRenderError
     // can fire once more if the newly downloaded file also fails to decode.
     renderErrorHandledRef.current = false;
+    setRetryAttempt(0);
     load(true);
   }, [load]);
 
@@ -270,5 +349,14 @@ export function useCachedPageImage(
     load(true);
   }, [load, uri]);
 
-  return { status, localUri, errorMessage, retry, reportRenderError };
+  return {
+    status,
+    localUri,
+    errorMessage,
+    progress,
+    retryAttempt,
+    retryMax: MAX_AUTO_RETRIES,
+    retry,
+    reportRenderError,
+  };
 }

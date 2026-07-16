@@ -20,6 +20,12 @@ const SOURCE_REGISTRY: Record<string, string> = {
   "mangafire-cdn": "https://cdn.mangafire.to",
   // asurascans.com is the live domain (asuracomic.net 301-redirects here)
   "asura": "https://asurascans.com",
+  // First-party JSON REST API — separate subdomain, needs its own proxy entry so
+  // the server can add the correct Origin / Referer headers for CORS compliance.
+  "asura-api": "https://api.asurascans.com",
+  // CDN for chapter page images — separate subdomain, proxy adds Referer to bypass
+  // Cloudflare's hotlink-protection rules.
+  "asura-cdn": "https://cdn.asurascans.com",
   "bato": "https://bato.to",
   // MangaKakalot family — chapmanganato.to (kakalot + manganato) and readmanganelo.com
   "kakalot": "https://chapmanganato.to",
@@ -42,6 +48,8 @@ const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> =
   "mangafire":    { referer: "https://mangafire.to/",                origin: "https://mangafire.to" },
   "mangafire-cdn":{ referer: "https://mangafire.to/",               origin: "https://mangafire.to" },
   "asura":        { referer: "https://asurascans.com/",              origin: "https://asurascans.com" },
+  "asura-api":    { referer: "https://asurascans.com/",              origin: "https://asurascans.com" },
+  "asura-cdn":    { referer: "https://asurascans.com/",              origin: "https://asurascans.com" },
   "bato":         { referer: "https://bato.to/",                    origin: "https://bato.to" },
   "kakalot":      { referer: "https://chapmanganato.to/",           origin: "https://chapmanganato.to" },
   "manganato":    { referer: "https://chapmanganato.to/",           origin: "https://chapmanganato.to" },
@@ -146,7 +154,26 @@ router.get(/^\/([^/]+)(?:\/(.*))?$/, async (req: Request, res: Response) => {
     // whose response depends on the Referer header.  Caching a 403 response
     // would permanently block chapter image loading until the browser cache expires.
     const isAjax = subpath.startsWith("ajax/") || refererOverride;
-    res.setHeader("Cache-Control", isAjax ? "no-store" : "public, max-age=120");
+    // Scraped HTML/JSON is freshness-sensitive: chapter pages embed time-limited
+    // signed CDN URLs and adapters re-parse the *whole* body on every fetch —
+    // there is no partial-update path. If a client's HTTP cache (browser disk
+    // cache, RN networking layer) revisits this exact URL and Express's own
+    // res.send() auto-ETag freshness check matches, it silently downgrades the
+    // response to an EMPTY 304 body, which zeroes out page/image extraction
+    // with no error surfaced. Binary CDN images are exempt: their URLs already
+    // carry a cache-busting token, so conditional caching there is safe and
+    // saves bandwidth.
+    const isScrapedContent = contentType.includes("text/html") || contentType.includes("application/json");
+    if (isAjax || isScrapedContent) {
+      res.setHeader("Cache-Control", "no-store");
+      // Strip incoming conditional-GET headers so Express's built-in ETag
+      // freshness check (inside res.send()) can never convert this response
+      // into a bare 304 with a stripped body.
+      delete req.headers["if-none-match"];
+      delete req.headers["if-modified-since"];
+    } else {
+      res.setHeader("Cache-Control", "public, max-age=120");
+    }
     res.setHeader("Access-Control-Allow-Origin", "*");
     const buffer = await upstream.arrayBuffer();
     res.send(Buffer.from(buffer));

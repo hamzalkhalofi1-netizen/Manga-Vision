@@ -16,7 +16,7 @@ const BROWSER_UA =
 
 const SOURCE_REFERERS: Record<string, string> = {
   mangafire: "https://mangafire.to/",
-  asura: "https://asuracomic.net/",
+  asura: "https://asurascans.com/",
   comick: "https://comick.io/",
   mangadex: "https://mangadex.org/",
   mangaplus: "https://mangaplus.shueisha.co.jp/",

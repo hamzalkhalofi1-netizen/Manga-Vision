@@ -63,6 +63,8 @@ interface CVState {
 
 interface MangaPageProps {
   uri: string;
+  /** 1-based page number shown in the loading placeholder. */
+  pageNumber?: number;
   regions?: TextRegion[];
   showOverlay: boolean;
   isRTL?: boolean;
@@ -72,6 +74,7 @@ interface MangaPageProps {
 
 function MangaPage({
   uri,
+  pageNumber,
   regions = [],
   showOverlay,
   isRTL = false,
@@ -96,6 +99,9 @@ function MangaPage({
     localUri: pageLocalUri,
     retry: retryPageImage,
     reportRenderError,
+    progress: pageProgress,
+    retryAttempt,
+    retryMax,
   } = useCachedPageImage(uri, imageHeaders);
 
   const [cvState, setCvState] = useState<CVState | null>(null);
@@ -266,8 +272,8 @@ function MangaPage({
 
   // Per-page image readiness (independent of the CV overlay pipeline above).
   const imageNotReady = Platform.OS !== "web" && !cvState?.inpaintedUri && pageStatus !== "ready";
-  const imageIsLoading = imageNotReady && (pageStatus === "checking" || pageStatus === "loading");
-  const imageFailed = imageNotReady && pageStatus === "error";
+  const imageIsLoading = imageNotReady && (pageStatus === "checking" || pageStatus === "loading" || pageStatus === "retrying");
+  const imageFailed    = imageNotReady && pageStatus === "error";
 
   // ── Diagnostic render logging ────────────────────────────────────────────
   if (__DEV__ && _renderCounts) {
@@ -303,13 +309,35 @@ function MangaPage({
       {/* ── Per-page loading placeholder ─────────────────────────────────── */}
       {imageIsLoading && (
         <View style={styles.pageLoadingContainer} pointerEvents="none">
-          <ActivityIndicator size="small" color="#7B96FF" />
+          {pageNumber != null && (
+            <Text style={styles.pageLabel}>Page {pageNumber}</Text>
+          )}
+          {pageStatus === "retrying" ? (
+            <>
+              <ActivityIndicator size="small" color="#7B96FF" style={{ marginBottom: 8 }} />
+              <Text style={styles.retryingText}>
+                Retrying… (Attempt {retryAttempt}/{retryMax + 1})
+              </Text>
+            </>
+          ) : pageProgress != null ? (
+            <>
+              <Text style={styles.progressText}>{Math.round(pageProgress * 100)}%</Text>
+              <View style={styles.progressTrack}>
+                <View style={[styles.progressFill, { width: `${Math.round(pageProgress * 100)}%` }]} />
+              </View>
+            </>
+          ) : (
+            <ActivityIndicator size="small" color="#7B96FF" />
+          )}
         </View>
       )}
 
-      {/* ── Per-page retry (this page only, never the whole chapter) ───────── */}
+      {/* ── Per-page retry (shown only after all auto-retries are exhausted) ─ */}
       {imageFailed && (
         <View style={styles.pageLoadingContainer}>
+          {pageNumber != null && (
+            <Text style={styles.pageLabel}>Page {pageNumber}</Text>
+          )}
           <Pressable onPress={retryPageImage} style={styles.retryButton}>
             <Text style={styles.retryButtonText}>⟳ Retry</Text>
           </Pressable>
@@ -386,6 +414,35 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: "center",
     justifyContent: "center",
+    gap: 8,
+  },
+  pageLabel: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.5)",
+    letterSpacing: 0.3,
+    marginBottom: 2,
+  },
+  progressText: {
+    fontSize: 22,
+    fontWeight: "700" as const,
+    color: "#7B96FF",
+  },
+  progressTrack: {
+    width: 80,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 2,
+    backgroundColor: "#7B96FF",
+  },
+  retryingText: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.6)",
+    textAlign: "center",
   },
   retryButton: {
     flexDirection: "row",

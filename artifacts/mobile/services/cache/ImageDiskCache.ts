@@ -214,10 +214,14 @@ export const ImageDiskCache = {
     url: string,
     headers?: Record<string, string>,
     signal?: AbortSignal,
-    forceIndependent = false
+    forceIndependent = false,
+    onProgress?: (fraction: number) => void
   ): Promise<string> {
     if (!isNative()) throw new Error("ImageDiskCache is unavailable on web");
 
+    // onProgress is only meaningful for a caller-owned, non-shared download —
+    // if we're joining someone else's in-flight promise, we can't report
+    // progress from a download we didn't call ourselves.
     if (!forceIndependent) {
       const existing = _inFlight.get(url);
       if (existing) return existing;
@@ -238,9 +242,19 @@ export const ImageDiskCache = {
         const tmpFile = `${CACHE_DIR}${key}.tmp${ext}`;
         const finalFile = `${CACHE_DIR}${key}${ext}`;
 
-        const resumable = FileSystem.createDownloadResumable(url, tmpFile, {
-          headers,
-        });
+        const resumable = FileSystem.createDownloadResumable(
+          url,
+          tmpFile,
+          { headers },
+          onProgress
+            ? (p) => {
+                const total = p.totalBytesExpectedToWrite;
+                if (total > 0) {
+                  onProgress(Math.min(1, p.totalBytesWritten / total));
+                }
+              }
+            : undefined
+        );
 
         let aborted = false;
         const onAbort = () => {
