@@ -27,12 +27,15 @@ const SOURCE_REGISTRY: Record<string, string> = {
   // Cloudflare's hotlink-protection rules.
   "asura-cdn": "https://cdn.asurascans.com",
   "bato": "https://bato.to",
-  // MangaKakalot family — chapmanganato.to (kakalot + manganato) and readmanganelo.com
+  // MangaKakalot family — chapmanganato.to (kakalot + manganato)
+  // NOTE: readmanganelo.com, manganato.com, chapmanganato.to are all dead/squatted.
+  // The "manganelo" source adapter now targets mangagg.com (WordPress/Madara theme).
   "kakalot": "https://chapmanganato.to",
   "manganato": "https://chapmanganato.to",
-  // readmanganelo.com may be down; manganelo falls back to chapmanganato.to via kakalot
-  "manganelo": "https://readmanganelo.com",
-  "manganelo-fallback": "https://chapmanganato.to",
+  // mangagg.com — live WP-Manga site replacing the defunct Manganelo/Kakalot family
+  "mangagg": "https://mangagg.com",
+  // CDN for chapter page images (hosted on s4.mangagg.com)
+  "mangagg-cdn": "https://s4.mangagg.com",
   // Naver Webtoon / WEBTOON
   "naver": "https://www.webtoons.com",
   "webtoon": "https://www.webtoons.com",
@@ -53,10 +56,10 @@ const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> =
   "bato":         { referer: "https://bato.to/",                    origin: "https://bato.to" },
   "kakalot":      { referer: "https://chapmanganato.to/",           origin: "https://chapmanganato.to" },
   "manganato":    { referer: "https://chapmanganato.to/",           origin: "https://chapmanganato.to" },
-  // manganelo pages are on readmanganelo.com but CDN images are served from chapmanganato.to CDN;
-  // using chapmanganato.to as referer satisfies the CDN anti-hotlink check on web proxy paths.
-  "manganelo":          { referer: "https://chapmanganato.to/",      origin: "https://chapmanganato.to" },
-  "manganelo-fallback": { referer: "https://chapmanganato.to/",      origin: "https://chapmanganato.to" },
+  // mangagg.com — WP-Manga/Madara site; chapter images on s4.mangagg.com need
+  // the main site as Referer to satisfy hotlink-protection rules.
+  "mangagg":      { referer: "https://mangagg.com/",                origin: "https://mangagg.com" },
+  "mangagg-cdn":  { referer: "https://mangagg.com/",                origin: "https://mangagg.com" },
   "naver":              { referer: "https://www.webtoons.com/",      origin: "https://www.webtoons.com" },
   "webtoon":            { referer: "https://www.webtoons.com/",      origin: "https://www.webtoons.com" },
 };

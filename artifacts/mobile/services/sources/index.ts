@@ -109,8 +109,8 @@ SourceRegistry.registerAll([
       nsfw: false,
       requiresVerification: false,
       isEnabled: true,
-      tags: ["scraper", "kakalot-family"],
-      websiteUrl: "https://readmanganelo.com",
+      tags: ["scraper", "wp-manga"],
+      websiteUrl: "https://mangagg.com",
     },
   },
   {
