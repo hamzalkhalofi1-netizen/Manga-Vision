@@ -1,0 +1,117 @@
+Implement the MangaKakalot adapter using the existing Source Engine architecture.
+
+IMPORTANT
+
+Do NOT create a new source system.
+
+Do NOT duplicate any shared logic.
+
+Reuse the existing Source Engine exactly as MangaFire, Asura Scans, and Manganelo do.
+
+The adapter must only contain MangaKakalot-specific logic.
+
+--------------------------------------------------
+
+The adapter must implement:
+
+• Popular manga
+• Latest updates
+• Search
+• Manga details
+• Chapter list
+• Chapter pages
+• Full-resolution page images
+
+--------------------------------------------------
+
+Reuse the existing Source Engine for:
+
+• HTTP requests
+• Cookie Manager
+• Session Manager
+• Retry Manager
+• Memory Cache
+• Disk Cache
+• Progressive Image Loading
+• Image Loader
+• Error Handling
+• Logging
+• Shared Models
+• Shared HTML parser
+• Shared JSON parser
+• Verification Manager
+• Cloudflare handling (if required)
+
+Do not reimplement any of these.
+
+--------------------------------------------------
+
+Configure only MangaKakalot-specific data:
+
+• Base URL
+• Search URL
+• Popular URL
+• Latest URL
+• Manga details parser
+• Chapter list parser
+• Chapter page parser
+• Image URL extraction
+• Required headers (if any)
+• Required cookies (if any)
+• Referer (if required)
+• Origin (if required)
+• User-Agent (if required)
+
+--------------------------------------------------
+
+Reader requirements
+
+Every chapter must:
+
+• Display every page.
+• Never miss pages.
+• Never flicker.
+• Never reload continuously.
+• Retry failed image requests automatically.
+• Cache images in memory.
+• Cache images on disk.
+• Cancel pending requests when leaving the chapter.
+
+--------------------------------------------------
+
+Performance requirements
+
+• No UI blocking.
+• No duplicate network requests.
+• No unnecessary React renders.
+• No memory leaks.
+• Cancel all pending requests immediately when the user exits the chapter.
+
+--------------------------------------------------
+
+Validation
+
+Test:
+
+✓ Popular
+✓ Latest
+✓ Search
+✓ Manga details
+✓ Chapter list
+✓ At least 5 manga
+✓ At least 3 chapters
+✓ Every chapter page
+✓ Image cache
+✓ Retry system
+
+--------------------------------------------------
+
+Output
+
+Provide:
+
+1. Files created.
+2. Files modified.
+3. Validation results.
+4. Performance results.
+5. Any remaining limitations.
