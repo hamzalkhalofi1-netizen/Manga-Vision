@@ -27,11 +27,14 @@ const SOURCE_REGISTRY: Record<string, string> = {
   // Cloudflare's hotlink-protection rules.
   "asura-cdn": "https://cdn.asurascans.com",
   "bato": "https://bato.to",
-  // MangaKakalot family — chapmanganato.to (kakalot + manganato)
-  // NOTE: readmanganelo.com, manganato.com, chapmanganato.to are all dead/squatted.
-  // The "manganelo" source adapter now targets mangagg.com (WordPress/Madara theme).
-  "kakalot": "https://chapmanganato.to",
-  "manganato": "https://chapmanganato.to",
+  // MangaKakalot / Manganato family — migrated to natomanga.com (same HTML structure)
+  // chapmanganato.to, readmanganelo.com, manganato.com are all dead/squatted (as of 2026).
+  // The "manganelo" source adapter targets mangagg.com (WordPress/Madara theme).
+  "kakalot": "https://www.natomanga.com",
+  "manganato": "https://www.natomanga.com",
+  // natomanga CDN — chapter images live on img-r1.2xstorage.com (primary) / imgs-2.2xstorage.com (fallback)
+  "natomanga-cdn":  "https://img-r1.2xstorage.com",
+  "natomanga-cdn2": "https://imgs-2.2xstorage.com",
   // mangagg.com — live WP-Manga site replacing the defunct Manganelo/Kakalot family
   "mangagg": "https://mangagg.com",
   // CDN for chapter page images (hosted on s4.mangagg.com)
@@ -54,8 +57,10 @@ const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> =
   "asura-api":    { referer: "https://asurascans.com/",              origin: "https://asurascans.com" },
   "asura-cdn":    { referer: "https://asurascans.com/",              origin: "https://asurascans.com" },
   "bato":         { referer: "https://bato.to/",                    origin: "https://bato.to" },
-  "kakalot":      { referer: "https://chapmanganato.to/",           origin: "https://chapmanganato.to" },
-  "manganato":    { referer: "https://chapmanganato.to/",           origin: "https://chapmanganato.to" },
+  "kakalot":      { referer: "https://www.natomanga.com/",          origin: "https://www.natomanga.com" },
+  "manganato":    { referer: "https://www.natomanga.com/",          origin: "https://www.natomanga.com" },
+  "natomanga-cdn": { referer: "https://www.natomanga.com/",          origin: "https://www.natomanga.com" },
+  "natomanga-cdn2":{ referer: "https://www.natomanga.com/",          origin: "https://www.natomanga.com" },
   // mangagg.com — WP-Manga/Madara site; chapter images on s4.mangagg.com need
   // the main site as Referer to satisfy hotlink-protection rules.
   "mangagg":      { referer: "https://mangagg.com/",                origin: "https://mangagg.com" },

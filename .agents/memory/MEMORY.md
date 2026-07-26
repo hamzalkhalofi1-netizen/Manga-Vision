@@ -1,20 +1,2 @@
-- [Source proxy architecture](source-proxy-arch.md) — directOnWeb flag bypasses server proxy for CORS APIs; scraping sources always proxy
-- [Express 5 routing](express5-routing.md) — wildcard routes need regex, not string `/:id/*` patterns
-- [MangaFire backend](mangafire-chapters.md) — as of 2026 it's a client-rendered SPA; use its first-party JSON REST API at /api/*, no Cloudflare/WebView needed at all
-- [APK production config](apk-production-config.md) — EAS builds need EXPO_PUBLIC_API_URL in eas.json env section; runtime override via Settings → API Server backed by AsyncStorage; loadApiBaseOverride() called at app startup.
-- [WebView render waits](webview-render-waits.md) — MangaFire 12s, Asura 12s, Bato.to 10s; lower values cause incomplete page lists on real devices vs dev machine.
-- [CDN Referer detection](cdn-referer.md) — translate-image.ts getCdnReferer(url) sends per-source Referer; hardcoded mangadex.org causes 403 on MangaFire/Asura CDNs when translating those sources.
-- [Asura domain](asura-domain.md) — proxy must stay on asuracomic.net (redirect→home SSR); SITE_URL=asurascans.com for native WebView; web listing works, detail/chapters need native
-- [WebView bridge architecture](webview-bridge-arch.md) — Mihon-grade networking: persistent hidden WebViews for CF sources; no popup loops; verify once per session
-- [Overlay rendering architecture](overlay-rendering-arch.md) — BUBBLE_LAYOUT_SCALE=1.35 separates mask geometry (glyph-tight) from text layout (bubble-estimated); three-layer feather mask; safe zone 91%
-- [Expo startup env vars](expo-startup-env.md) — CI=1 kills hot reload; EXPO_UNSTABLE_HEADLESS=1 hides QR/URL; only safe suppression is EXPO_NO_DEVTOOLS=1 + no --go/--web flags
-- [WebView bridge back-nav race](webview-bridge-backnav.md) — processNext must debounce back-navigation (400ms) so AJAX fetches queued after fetchRendered inherit correct Referer
-- [CV pipeline OpenCV loading](cv-pipeline-opencv.md) — dynamic import() of @techstark/opencv-js hangs in compiled ESM; must use createRequire for synchronous CJS load + pre-warm at import time
-- [CV WASM memory bug](cv-wasm-memory-bug.md) — Buffer.from(mat.data.buffer, offset, len) is a zero-copy view into freed WASM heap; always Buffer.from(mat.data) to copy before mat.delete()
-- [Gemini thinkingBudget OCR](gemini-thinking-budget.md) — gemini-2.5-flash needs thinkingBudget:0 for manga OCR; free tier = 20 req/day; without it ~80% pages return 0 regions
-- [SkiaOverlayCanvas erase architecture](skia-overlay-erase.md) — text bed must be 100% opacity (not 92%) + cover full bubblePolygon; 92% lets black glyphs bleed through; SFX still uses tight OCR polygon
-- [Native CV pipeline URL](native-cv-pipeline-url.md) — runCVPipelineWithRetry default apiBase="/api" fails silently on native; MangaPage must detect Platform.OS and pass EXPO_PUBLIC_API_URL+"/api" on native
-- [MangaVerse port conflict](manga-verse-port-conflict.md) — artifact expo workflow grabs port 5001 before start.sh; start.sh must detect existing process and skip Metro start, just run proxy
-- [Reader image cache architecture](reader-image-cache-arch.md) — ImageDiskCache is the single source of truth for page bytes; ReaderPreloader and MangaPage both read/write through it to share one concurrency limit and avoid double downloads.
-- [_inFlight AbortError propagation](inFlight-abort-propagation.md) — preloader AbortSignal propagates to useCachedPageImage via shared _inFlight map; use forceIndependent=true to get own non-abortable download
-- [Asura WebView bridge source bug](asura-bridge-sources-bug.md) — listing a source in BRIDGE_SOURCES without it using the WebView bridge causes hidden WebView noise, JS thread interruptions every 1.5 s, and double BridgeContext re-renders
+- [natomanga-migration](natomanga-migration.md) — chapmanganato.to/manganato.com squatted 2026; live successor is www.natomanga.com with different URL structure
+- [manganelo-mangagg](manganelo-mangagg.md) — manganelo adapter targets mangagg.com (WP-Manga/Madara), NOT the dead readmanganelo.com

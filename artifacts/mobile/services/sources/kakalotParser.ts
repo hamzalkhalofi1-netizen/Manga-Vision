@@ -1,12 +1,20 @@
 /**
- * kakalotParser — Shared HTML parser for the MangaKakalot/Manganelo/Manganato family.
+ * kakalotParser — Shared HTML parser for natomanga.com (MangaKakalot / Manganato family).
  *
- * These sites (chapmanganato.to, readmanganelo.com) share nearly identical HTML:
- *   - Listing: <div class="list-truyen-item-wrap"> or <div class="genres-item"> cards
- *   - Detail:  <div class="story-info-right"> + <ul class="row-content-chapter">
- *   - Reader:  <div class="container-chapter-reader"> with <img> elements
+ * natomanga.com is the live successor to chapmanganato.to / manganato.com (both dead as of 2026).
+ * HTML structure differs from the old chapmanganato.to template:
  *
- * All chapter images need Referer: https://chapmanganato.to/ to avoid 403.
+ *   Listing:  <div class="item"> cards with img[alt] + a[href=/manga/{slug}][title]
+ *   Detail:   <span itemprop="name">, inline author/status/genres, JSON-LD cover
+ *             Chapter range extracted from "Start Reading" + "Newest Chapter" links
+ *             (full chapter list is AJAX-only; adapter synthesises the range)
+ *   Reader:   var chapterImages = [...] JS array (relative paths) OR
+ *             <div class="container-chapter-reader"> <img src="https://img-r1.2xstorage.com/...">
+ *
+ * Chapter images require Referer: https://www.natomanga.com/ to pass hotlink protection.
+ *
+ * Manga ID   = slug         e.g.  "emperor-of-solo-play"
+ * Chapter ID = slug/chapter-N    e.g.  "emperor-of-solo-play/chapter-1"
  */
 
 import { Chapter, Manga, MangaStatus } from "./types";
@@ -39,109 +47,117 @@ export function parseMangaStatus(raw: string): MangaStatus | undefined {
 }
 
 /**
- * Extract the manga slug-ID from a chapmanganato/readmanganelo URL or path.
- * Returned value is always "manga-{slug}" (the path segment), used as the
- * canonical manga ID across all three adapters.
+ * Extract the manga slug from a natomanga.com URL or path.
  *
  * Examples:
- *   "https://chapmanganato.to/manga-ud484"  → "manga-ud484"
- *   "https://readmanganelo.com/manga-aab124" → "manga-aab124"
- *   "/manga-ud484"                          → "manga-ud484"
+ *   "https://www.natomanga.com/manga/emperor-of-solo-play"  → "emperor-of-solo-play"
+ *   "/manga/solo-leveling"                                   → "solo-leveling"
+ *   "emperor-of-solo-play/chapter-1"                        → "emperor-of-solo-play"
  */
 export function extractMangaId(url: string): string {
-  const m = url.match(/\/manga-([\w-]+)/);
-  return m ? `manga-${m[1]}` : "";
+  const m = url.match(/\/manga\/([^/?#\s]+)/);
+  return m ? m[1] : "";
 }
 
 // ── Listing page parser ───────────────────────────────────────────────────
 
 /**
- * Parse manga cards from a listing/search/genre HTML page.
+ * Parse manga cards from a listing/genre/search HTML page.
  *
- * Strategy 1: <div class="list-truyen-item-wrap"> — original card format
- *   Inside: <h3><a href="…manga-{id}" title="{title}">
- *            nearby <img src="{cover}">
+ * natomanga.com card structure:
+ *   <div class="item">
+ *     <img src="https://img-r2.2xstorage.com/thumb/{slug}.webp" alt="{Title}">
+ *     <a href="https://www.natomanga.com/manga/{slug}" title="{Title}">
+ *       ...
+ *     </a>
+ *     <a href="https://www.natomanga.com/manga/{slug}/chapter-N">
+ *       ...
+ *     </a>
+ *   </div>
  *
- * Strategy 2: <div class="genres-item"> — browse/genre pages newer format
- *   Inside: <a href="…manga-{id}" class="…"><img src="{cover}" alt="{title}">
- *
- * Strategy 3: <div class="item"> — search result format
- *   Inside: <a href="…manga-{id}"><img src="{cover}">…<h3>…<a title="{title}">
- *
- * Strategy 4: Bare href fallback
+ * Also handles the sidebar "xem-nhieu-item" cards (most popular list).
  */
 export function parseListPage(html: string, sourceId: string): Manga[] {
   const results: Manga[] = [];
   const seen = new Set<string>();
   let m: RegExpExecArray | null;
 
-  // ── Strategy 1: list-truyen-item-wrap ─────────────────────────────────────
-  const wrapRe = /<div[^>]+class="[^"]*list-truyen-item-wrap[^"]*"[^>]*>([\s\S]{0,800}?)<\/div>/g;
-  while ((m = wrapRe.exec(html)) !== null) {
-    const block = m[1];
-    const urlM = block.match(/href="([^"]+\/manga-[\w-]+)[^"]*"/);
-    const titleM = block.match(/title="([^"]{2,150})"/);
-    const coverM = block.match(/<img[^>]+src="([^"]+)"/);
-    if (!urlM || !titleM) continue;
-    const id = extractMangaId(urlM[1]);
+  // ── Strategy 1: <div class="item"> cards ────────────────────────────────
+  // Split on <div class="item"> boundaries to isolate per-card blocks.
+  const itemBlocks = html.split(/<div[^>]+class="[^"]*\bitem\b[^"]*"[^>]*>/);
+  for (let i = 1; i < itemBlocks.length; i++) {
+    const block = itemBlocks[i].slice(0, 1500);
+
+    // Cover image: first img with src from CDN or thumb
+    const imgM = block.match(/<img[^>]+src="(https?:\/\/[^"]{10,400}\.(?:webp|jpg|jpeg|png)[^"]*)"/i);
+    const coverUrl = imgM?.[1] ?? "";
+
+    // Title from alt attribute on the img, or title attribute on anchor
+    const altM = block.match(/<img[^>]+alt="([^"]{2,200})"/i);
+    const titleM = block.match(/href="[^"]*\/manga\/[^"]+"\s+title="([^"]{2,200})"/);
+    const rawTitle = altM?.[1] ?? titleM?.[1] ?? "";
+    if (!rawTitle) continue;
+
+    // Manga URL: href with /manga/{slug} pattern (exclude chapter links)
+    const urlM = block.match(/href="([^"]+\/manga\/([^/"?#\s]{2,200}))"(?![^<]*chapter)/);
+    if (!urlM) continue;
+    const id = urlM[2];
     if (!id || seen.has(id)) continue;
     seen.add(id);
+
     results.push({
       id,
-      title: decodeEntities(titleM[1].trim()),
+      title: decodeEntities(rawTitle.trim()),
+      coverUrl,
+      sourceId,
+    });
+  }
+
+  if (results.length > 0) {
+    console.log(`[${sourceId}] parseListPage s1 (item cards) → ${results.length}`);
+    return results;
+  }
+
+  // ── Strategy 2: any /manga/{slug} anchor with title attribute ───────────
+  const anchorRe = /href="([^"]+\/manga\/([^/"?#\s]{2,200}))"[^>]*title="([^"]{2,200})"/g;
+  while ((m = anchorRe.exec(html)) !== null) {
+    const [, , slug, title] = m;
+    if (!slug || seen.has(slug) || slug.includes("chapter")) continue;
+    const ctx = html.slice(Math.max(0, m.index - 600), m.index + 200);
+    const coverM = ctx.match(/<img[^>]+src="(https?:\/\/[^"]{10,400}\.(?:webp|jpg|jpeg|png)[^"]*)"/i);
+    seen.add(slug);
+    results.push({
+      id: slug,
+      title: decodeEntities(title.trim()),
       coverUrl: coverM?.[1] ?? "",
       sourceId,
     });
   }
+
   if (results.length > 0) {
-    console.log(`[${sourceId}] parseListPage s1 (list-truyen-item-wrap) → ${results.length}`);
+    console.log(`[${sourceId}] parseListPage s2 (anchor-title) → ${results.length}`);
     return results;
   }
 
-  // ── Strategy 2: genres-item / story_item ──────────────────────────────────
-  // Matches: <a href="…/manga-xxx" …><img src="…" alt="{title}">
-  const genreRe = /<a[^>]+href="([^"]+\/manga-[\w-]+)[^"]*"[^>]*>[\s\S]{0,300}?<img[^>]+src="([^"]+)"[^>]+alt="([^"]{2,150})"/g;
-  while ((m = genreRe.exec(html)) !== null) {
-    const [, url, cover, title] = m;
-    const id = extractMangaId(url);
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    results.push({ id, title: decodeEntities(title.trim()), coverUrl: cover, sourceId });
-  }
-  if (results.length > 0) {
-    console.log(`[${sourceId}] parseListPage s2 (genres-item/img-alt) → ${results.length}`);
-    return results;
-  }
-
-  // ── Strategy 3: item-title links with nearby cover ────────────────────────
-  const titleLinkRe = /class="[^"]*(?:item-title|story-name|story_name)[^"]*"[^>]*href="([^"]+\/manga-[\w-]+)[^"]*"[^>]*>([^<]{2,150})/g;
-  while ((m = titleLinkRe.exec(html)) !== null) {
-    const [, url, title] = m;
-    const id = extractMangaId(url);
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    const ctx = html.slice(Math.max(0, m.index - 500), m.index + 200);
-    const coverM = ctx.match(/<img[^>]+src="([^"]+)"/);
-    results.push({ id, title: decodeEntities(title.trim()), coverUrl: coverM?.[1] ?? "", sourceId });
-  }
-  if (results.length > 0) {
-    console.log(`[${sourceId}] parseListPage s3 (item-title links) → ${results.length}`);
-    return results;
-  }
-
-  // ── Strategy 4: any /manga-{id} anchor with alt text ─────────────────────
-  const hrefRe = /href="([^"]+\/manga-([\w-]+))[^"]*"[^>]*(?:title="([^"]{2,150})")?/g;
+  // ── Strategy 3: any /manga/{slug} anchor ───────────────────────────────
+  const hrefRe = /href="([^"]+\/manga\/([^/"?#\s]{2,200}))"/g;
   while ((m = hrefRe.exec(html)) !== null) {
-    const [, url, , title] = m;
-    const id = extractMangaId(url);
-    if (!id || seen.has(id)) continue;
-    const ctx = html.slice(m.index, m.index + 500);
-    const coverM = ctx.match(/<img[^>]+src="([^"]+)"/);
-    const t = title ?? id.replace(/^manga-/, "").replace(/-/g, " ");
-    seen.add(id);
-    results.push({ id, title: decodeEntities(t.trim()), coverUrl: coverM?.[1] ?? "", sourceId });
+    const [, , slug] = m;
+    if (!slug || seen.has(slug) || slug.includes("chapter")) continue;
+    const ctx = html.slice(m.index, m.index + 600);
+    const coverM = ctx.match(/<img[^>]+src="(https?:\/\/[^"]{10,400}\.(?:webp|jpg|jpeg|png)[^"]*)"/i);
+    const altM = ctx.match(/<img[^>]+alt="([^"]{2,200})"/i);
+    const t = altM?.[1] ?? slug.replace(/-/g, " ");
+    seen.add(slug);
+    results.push({
+      id: slug,
+      title: decodeEntities(t.trim()),
+      coverUrl: coverM?.[1] ?? "",
+      sourceId,
+    });
   }
-  console.log(`[${sourceId}] parseListPage s4 (href fallback) → ${results.length}`);
+
+  console.log(`[${sourceId}] parseListPage s3 (href fallback) → ${results.length}`);
   return results;
 }
 
@@ -157,73 +173,74 @@ export interface KakalotMangaDetail {
 }
 
 /**
- * Parse manga detail from a /manga-{id} page.
+ * Parse manga detail from a /manga/{slug} page.
  *
- * Structure:
- *   <div class="story-info-right">
- *     <h1 itemprop="name">Title</h1>
- *     <table class="variations-tableInfo">
- *       <tr><td class="table-label">Author(s) :</td><td><a>Name</a></td></tr>
- *       <tr><td class="table-label">Status :</td><td>Ongoing</td></tr>
- *       <tr><td class="table-label">Genres :</td><td><a>Genre</a>, ...</td></tr>
- *     </table>
- *   </div>
- *   <div class="panel-story-info-description">
- *     <h3>Way of summary:</h3>
- *     Description text here...
- *   </div>
+ * natomanga.com detail structure:
+ *   <span itemprop="name">Title</span>               (preferred)
+ *   <h1>Title</h1>                                   (fallback)
+ *   <li>Author(s) : Name</li>
+ *   <li>Status : Ongoing</li>
+ *   <li class="genres">Genres : <a>Genre</a>, ...</li>
+ *   og:image meta or JSON-LD "image" field for cover
  */
 export function parseMangaDetail(html: string): KakalotMangaDetail {
-  // Title
-  const titleM =
-    html.match(/<h1[^>]+itemprop="name"[^>]*>([^<]{1,200})<\/h1>/) ??
-    html.match(/<h1[^>]+class="[^"]*story[^"]*"[^>]*>([^<]{1,200})<\/h1>/) ??
-    html.match(/<title>([^<|–-]{1,150})/);
-  const title = titleM ? decodeEntities(titleM[1].trim()) : "";
+  // ── Title ──────────────────────────────────────────────────────────────
+  // itemprop="name" appears twice on natomanga (site name + manga name)
+  // The manga title is always the last one before the chapter list.
+  const nameMatches = [...html.matchAll(/<span[^>]+itemprop="name"[^>]*>([^<]{1,200})<\/span>/g)];
+  let title = "";
+  for (const nm of nameMatches) {
+    const candidate = decodeEntities(nm[1].trim());
+    if (candidate && candidate !== "Manga Online") {
+      title = candidate;
+    }
+  }
+  if (!title) {
+    const h1M = html.match(/<h1[^>]*>([^<]{1,200})<\/h1>/);
+    title = h1M ? decodeEntities(h1M[1].trim()) : "";
+  }
 
-  // Cover
-  const coverM = html.match(/<div[^>]+class="[^"]*info-image[^"]*"[^>]*>[\s\S]{0,300}?<img[^>]+src="([^"]+)"/) ??
-                 html.match(/<img[^>]+itemprop="image"[^>]+src="([^"]+)"/) ??
-                 html.match(/<img[^>]+class="[^"]*info-cover[^"]*"[^>]+src="([^"]+)"/);
-  const coverUrl = coverM?.[1] ?? "";
+  // ── Cover ──────────────────────────────────────────────────────────────
+  // Prefer OG image (reliable thumbnail), then JSON-LD, then any thumb CDN image.
+  const ogM = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/);
+  const jsonM = html.match(/"image"\s*:\s*"([^"]+storage\.waitst\.com[^"]+)"/);
+  const thumbM = html.match(/src="(https?:\/\/[^"]+(?:storage\.waitst\.com|2xstorage\.com)\/thumb\/[^"]+)"/i);
+  const coverUrl = (ogM?.[1] ?? jsonM?.[1] ?? thumbM?.[1] ?? "").trim();
 
-  // Info table rows
-  const tableM = html.match(/<table[^>]+class="[^"]*variations-tableInfo[^"]*"[^>]*>([\s\S]{0,2000}?)<\/table>/);
+  // ── Author, Status, Genres from <li> elements ──────────────────────────
   let author: string | undefined;
   let status: MangaStatus | undefined;
   const genres: string[] = [];
 
-  if (tableM) {
-    const table = tableM[1];
-    // Each row: <tr><td class="table-label">Label :</td><td class="table-value">Value</td></tr>
-    const rowRe = /<tr[^>]*>([\s\S]{0,500}?)<\/tr>/g;
-    let rm: RegExpExecArray | null;
-    while ((rm = rowRe.exec(table)) !== null) {
-      const row = rm[1];
-      const labelM = row.match(/<td[^>]*class="[^"]*table-label[^"]*"[^>]*>([^<]{1,100})<\/td>/);
-      const valueM = row.match(/<td[^>]*class="[^"]*table-value[^"]*"[^>]*>([\s\S]{0,500}?)<\/td>/);
-      if (!labelM || !valueM) continue;
-      const label = labelM[1].toLowerCase();
-      const value = valueM[1];
-      if (label.includes("author")) {
-        author = stripTags(value).trim() || undefined;
-      } else if (label.includes("status")) {
-        status = parseMangaStatus(stripTags(value));
-      } else if (label.includes("genre")) {
-        const genreRe = /<a[^>]+>([^<]{1,80})<\/a>/g;
-        let gm: RegExpExecArray | null;
-        while ((gm = genreRe.exec(value)) !== null) genres.push(gm[1].trim());
+  // Pattern: <li>Author(s) : Name</li>  or  <li>Status : Ongoing</li>
+  const liRe = /<li[^>]*>([\s\S]{0,600}?)<\/li>/g;
+  let lm: RegExpExecArray | null;
+  while ((lm = liRe.exec(html)) !== null) {
+    const text = lm[1];
+    const plain = stripTags(decodeEntities(text)).trim();
+
+    if (/author/i.test(plain)) {
+      const val = plain.replace(/^Author\s*\(s\)\s*:/i, "").trim();
+      if (val && val.length < 200) author = val;
+    } else if (/^status\s*:/i.test(plain)) {
+      status = parseMangaStatus(plain.replace(/^status\s*:/i, "").trim());
+    } else if (/genres?/i.test(text) && text.includes("<a")) {
+      const gRe = /<a[^>]*>([^<]{1,80})<\/a>/g;
+      let gm: RegExpExecArray | null;
+      while ((gm = gRe.exec(text)) !== null) {
+        const g = decodeEntities(gm[1].trim());
+        if (g && !genres.includes(g)) genres.push(g);
       }
     }
   }
 
-  // Description
-  const descM = html.match(
-    /<div[^>]+(?:id="panel-story-info-description-more"|class="[^"]*panel-story-info-description[^"]*")[^>]*>([\s\S]{0,3000}?)<\/div>/,
-  );
+  // ── Description ────────────────────────────────────────────────────────
+  // Try panel-story-info-description, then description div, then og:description
+  const descM =
+    html.match(/<div[^>]+class="[^"]*(?:description|synopsis|summary)[^"]*"[^>]*>([\s\S]{0,5000}?)<\/div>/i) ??
+    html.match(/<meta[^>]+name="description"[^>]+content="([^"]{10,1000})"/);
   let description = "";
   if (descM) {
-    // Remove inner h3/h4 headers (e.g. "Way of summary:")
     const inner = descM[1].replace(/<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>/g, "");
     description = decodeEntities(stripTags(inner)).trim();
   }
@@ -231,110 +248,123 @@ export function parseMangaDetail(html: string): KakalotMangaDetail {
   return { title, description, coverUrl, author, status, genres };
 }
 
-// ── Chapter list parser ───────────────────────────────────────────────────
+// ── Chapter list builder ──────────────────────────────────────────────────
 
 /**
- * Parse chapter list from a manga detail page.
+ * Extract first and last chapter numbers from a manga detail page.
  *
- * Structure:
- *   <ul class="row-content-chapter">
- *     <li class="a-h">
- *       <a class="chapter-name" href="https://...to/manga-xxx/chapter-N" title="Chapter N: Title">
- *         Chapter N: Title
- *       </a>
- *       <span class="chapter-time text-nowrap" title="{full_date}">{display_date}</span>
- *     </li>
- *   </ul>
+ * natomanga.com only renders the chapter range server-side:
+ *   <a href=".../manga/{slug}/chapter-1" ...>Start Reading</a>
+ *   <a href=".../manga/{slug}/chapter-77" ...>Newest Chapter</a>
+ *
+ * Returns an array of all integer chapter numbers from max down to min.
  */
-export function parseChapterList(html: string): Chapter[] {
-  const chapters: Chapter[] = [];
+export function parseChapterList(html: string, mangaId?: string): Chapter[] {
   const seen = new Set<string>();
+  const chapters: Chapter[] = [];
+
+  // Try to extract chapter numbers from all /manga/{mangaId}/chapter-N links
+  // that belong to THIS manga (filter by mangaId if provided).
+  const chRe = mangaId
+    ? new RegExp(`href="[^"]+/manga/${mangaId}/chapter-([\\d.]+)[^"]*"`, "g")
+    : /href="[^"]+\/manga\/[^"]+\/chapter-([\d.]+)[^"]*"/g;
+
+  const nums: number[] = [];
   let m: RegExpExecArray | null;
-
-  // Primary: row-content-chapter list items
-  const ulM = html.match(/<ul[^>]+class="[^"]*row-content-chapter[^"]*"[^>]*>([\s\S]{0,50000}?)<\/ul>/);
-  const source = ulM ? ulM[1] : html;
-
-  const liRe = /<li[^>]*>([\s\S]{0,600}?)<\/li>/g;
-  while ((m = liRe.exec(source)) !== null) {
-    const li = m[1];
-    const linkM = li.match(/href="([^"]+\/manga-[\w-]+\/(chapter-[\d.]+)[^"]*)"/);
-    if (!linkM) continue;
-    const [, url, chapterSlug] = linkM;
-
-    // Chapter ID: relative path "manga-xxx/chapter-N"
-    const pathM = url.match(/\/manga-([\w-]+)\/(chapter-[\d.]+)/);
-    if (!pathM) continue;
-    const id = `manga-${pathM[1]}/${pathM[2]}`;
-    if (seen.has(id)) continue;
-    seen.add(id);
-
-    // Number from slug: chapter-42.5 → "42.5"
-    const numM = chapterSlug.match(/chapter-([\d.]+)/);
-    const number = numM?.[1] ?? chapterSlug;
-
-    // Title from anchor text
-    const titleM = li.match(/<a[^>]+class="[^"]*chapter-name[^"]*"[^>]*>([^<]{1,200})<\/a>/);
-    const rawTitle = titleM ? decodeEntities(titleM[1].trim()) : "";
-    // Remove "Chapter N:" prefix to get clean title
-    const cleanTitle = rawTitle.replace(/^Chapter\s*[\d.]+\s*[:\s-]*/i, "").trim() || undefined;
-
-    // Date from span title attribute (prefer full date) or text
-    const dateM =
-      li.match(/<span[^>]+class="[^"]*chapter-time[^"]*"[^>]+title="([^"]+)"/) ??
-      li.match(/<span[^>]+class="[^"]*chapter-time[^"]*"[^>]*>([^<]{4,30})<\/span>/);
-    const publishedAt = dateM?.[1]?.trim() ?? "";
-
-    chapters.push({ id, number, title: cleanTitle, publishedAt });
-  }
-
-  if (chapters.length > 0) {
-    console.log(`parseChapterList: ${chapters.length} chapters from row-content-chapter`);
-    return chapters;
-  }
-
-  // Fallback: any /manga-xxx/chapter-N href
-  const chRe = /href="([^"]+\/manga-([\w-]+)\/(chapter-([\d.]+))[^"]*)"/g;
   while ((m = chRe.exec(html)) !== null) {
-    const [, , , , num] = m;
-    const pathM2 = m[1].match(/\/manga-([\w-]+)\/(chapter-[\d.]+)/);
-    if (!pathM2) continue;
-    const id = `manga-${pathM2[1]}/${pathM2[2]}`;
+    const n = parseFloat(m[1]);
+    if (!isNaN(n) && n >= 0) nums.push(n);
+  }
+
+  if (nums.length === 0) {
+    console.log(`parseChapterList[${mangaId ?? "?"}]: no chapter links found`);
+    return [];
+  }
+
+  const maxChap = Math.ceil(Math.max(...nums));
+  const minChap = Math.floor(Math.min(...nums));
+
+  for (let n = maxChap; n >= minChap; n--) {
+    const id = mangaId ? `${mangaId}/chapter-${n}` : `chapter-${n}`;
     if (seen.has(id)) continue;
     seen.add(id);
-    chapters.push({ id, number: num, publishedAt: "" });
+    chapters.push({
+      id,
+      number: String(n),
+      title: `Chapter ${n}`,
+      publishedAt: "",
+    });
   }
-  console.log(`parseChapterList fallback: ${chapters.length} chapters`);
+
+  console.log(`parseChapterList[${mangaId ?? "?"}]: ${chapters.length} chapters (${minChap}–${maxChap})`);
   return chapters;
 }
 
 // ── Chapter image parser ──────────────────────────────────────────────────
 
+const IMG_CDN_BASE = "https://img-r1.2xstorage.com";
+
 /**
- * Parse chapter images from the reader page.
+ * Parse chapter page image URLs from the reader page.
  *
- * Structure:
- *   <div class="container-chapter-reader">
- *     <img src="https://s1.mkklcdn.com/…" alt="…" title="…">
- *     …
- *   </div>
+ * Strategy 1: Parse the JavaScript array injected server-side:
+ *   var chapterImages = ["slug\/1\/0.webp", "slug\/1\/1.webp", ...];
+ *   Paths are relative → prepend https://img-r1.2xstorage.com/
  *
- * All images need Referer: https://chapmanganato.to/ (or readmanganelo.com).
+ * Strategy 2: Parse <div class="container-chapter-reader"> img[src]:
+ *   <img src='https://img-r1.2xstorage.com/{slug}/{chapter}/{page}.webp' ...>
+ *
+ * Strategy 3: Any CDN image URL in the HTML.
+ *
+ * All images require Referer: https://www.natomanga.com/
  */
 export function parseChapterImages(html: string): string[] {
   const urls: string[] = [];
   const seen = new Set<string>();
-  let m: RegExpExecArray | null;
 
-  // Primary: images inside .container-chapter-reader
+  // ── Strategy 1: var chapterImages = [...] JS array ────────────────────
+  const jsM = html.match(/var\s+chapterImages\s*=\s*(\[[\s\S]{1,200000}?\])\s*;/);
+  if (jsM) {
+    try {
+      // The array contains escaped strings like "slug\/1\/0.webp"
+      const raw = jsM[1].replace(/\\"/g, '"').replace(/\\'/g, "'");
+      const paths: string[] = JSON.parse(raw);
+      for (const p of paths) {
+        const cleaned = p.replace(/\\\//g, "/").trim();
+        if (!cleaned) continue;
+        const url = cleaned.startsWith("http") ? cleaned : `${IMG_CDN_BASE}/${cleaned}`;
+        if (!seen.has(url)) {
+          seen.add(url);
+          urls.push(url);
+        }
+      }
+      if (urls.length > 0) {
+        console.log(`parseChapterImages s1 (JS array) → ${urls.length}`);
+        return urls;
+      }
+    } catch {
+      // Fall through to HTML parsing
+    }
+  }
+
+  // ── Strategy 2: container-chapter-reader imgs ─────────────────────────
   const containerM = html.match(
-    /<div[^>]+class="[^"]*container-chapter-reader[^"]*"[^>]*>([\s\S]{0,200000}?)<\/div>/,
+    /<div[^>]+class="[^"]*container-chapter-reader[^"]*"[^>]*>([\s\S]{0,500000}?)<\/div>/,
   );
   const source = containerM ? containerM[1] : html;
 
-  const imgRe = /<img[^>]+src="(https?:\/\/[^"]{10,400}\.(?:jpg|jpeg|png|webp|gif)[^"]*)"/gi;
+  const imgRe = /<img[^>]+src='(https?:\/\/[^']{10,400}\.(?:webp|jpg|jpeg|png)[^']*)'/gi;
+  let m: RegExpExecArray | null;
   while ((m = imgRe.exec(source)) !== null) {
-    const u = m[1];
+    const u = m[1].trim();
+    if (!seen.has(u)) {
+      seen.add(u);
+      urls.push(u);
+    }
+  }
+  const imgRe2 = /<img[^>]+src="(https?:\/\/[^"]{10,400}\.(?:webp|jpg|jpeg|png)[^"]*)"/gi;
+  while ((m = imgRe2.exec(source)) !== null) {
+    const u = m[1].trim();
     if (!seen.has(u)) {
       seen.add(u);
       urls.push(u);
@@ -342,26 +372,20 @@ export function parseChapterImages(html: string): string[] {
   }
 
   if (urls.length > 0) {
-    console.log(`parseChapterImages: ${urls.length} images from container-chapter-reader`);
+    console.log(`parseChapterImages s2 (container-reader) → ${urls.length}`);
     return urls;
   }
 
-  // Fallback: CDN URLs anywhere in the page (mkklcdn, mkkikm, etc.)
-  const cdnRe = /(https?:\/\/[^"'\s]+(?:mkklcdn|mkkikm|s\d+\.mkklcdnv2|s\d+\.mkklcnd)[^"'\s]*\.(?:jpg|jpeg|png|webp)(?:\?[^"'\s]*)?)/gi;
+  // ── Strategy 3: CDN URLs anywhere in page ────────────────────────────
+  const cdnRe = /(https?:\/\/(?:img-r\d+\.2xstorage\.com|imgs-\d+\.2xstorage\.com)[^"'\s]+\.(?:webp|jpg|jpeg|png)(?:\?[^"'\s]*)?)/gi;
   while ((m = cdnRe.exec(html)) !== null) {
     const u = m[1];
-    if (!seen.has(u)) { seen.add(u); urls.push(u); }
-  }
-
-  // Fallback 2: data-src / src on page-chapter images
-  const pageImgRe = /<img[^>]+(?:data-src|src)="(https?:\/\/[^"]{10,400}\.(?:jpg|jpeg|png|webp)[^"]*)"/gi;
-  while ((m = pageImgRe.exec(html)) !== null) {
-    const u = m[1];
-    if (!seen.has(u) && !u.includes("logo") && !u.includes("icon") && !u.includes("avatar")) {
-      seen.add(u); urls.push(u);
+    if (!seen.has(u)) {
+      seen.add(u);
+      urls.push(u);
     }
   }
 
-  console.log(`parseChapterImages fallback: ${urls.length} images`);
+  console.log(`parseChapterImages s3 (CDN fallback) → ${urls.length}`);
   return urls;
 }
