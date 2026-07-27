@@ -9,6 +9,7 @@ import Animated, {
 } from "react-native-reanimated";
 import { useColors } from "@/hooks/useColors";
 import { Manga } from "@/services/sources/types";
+import { ImageLoader } from "@/services/engine";
 
 interface Props {
   manga: Manga;
@@ -63,7 +64,7 @@ export function MangaCard({ manga, onPress, size = "medium", showStatus = true }
         ]}
       >
         <Image
-          source={{ uri: manga.coverUrl }}
+          source={{ uri: ImageLoader.maybeProxyUrl(manga.coverUrl ?? "") }}
           style={[StyleSheet.absoluteFill, { borderRadius: colors.radius }]}
           contentFit="cover"
           transition={300}

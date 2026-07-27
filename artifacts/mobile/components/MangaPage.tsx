@@ -19,6 +19,7 @@ import CVPipelineRenderer from "./CVPipelineRenderer";
 import { runCVPipelineWithRetry, type CvRefinedRegion, type CvRegionInput } from "./cv/InpaintingEngine";
 import { classifyRegion } from "./cv/TextClassificationEngine";
 import { getBasicImageHeaders } from "@/services/sourceImageHeaders";
+import { ImageLoader } from "@/services/engine";
 import { getApiBase } from "@/services/api";
 import { recordCvDebug } from "@/services/cvDebugStore";
 import { useCachedPageImage } from "@/hooks/useCachedPageImage";
@@ -88,6 +89,14 @@ function MangaPage({
     [sourceId]
   );
 
+  // On web, rewrite CDN URLs through the server proxy so the proxy injects the
+  // correct Referer/Origin headers that the CDN requires for hotlink protection.
+  // On native, the URL is unchanged — ImageDiskCache sends headers directly.
+  const proxyUri = useMemo(
+    () => ImageLoader.maybeProxyUrl(uri),
+    [uri]
+  );
+
   const [displayH, setDisplayH] = useState(Math.round(SCREEN_W * DEFAULT_ASPECT));
   const [nativeDims, setNativeDims] = useState({ w: 0, h: 0 });
 
@@ -102,7 +111,7 @@ function MangaPage({
     progress: pageProgress,
     retryAttempt,
     retryMax,
-  } = useCachedPageImage(uri, imageHeaders);
+  } = useCachedPageImage(proxyUri, imageHeaders);
 
   const [cvState, setCvState] = useState<CVState | null>(null);
   const [cvLoading, setCvLoading] = useState(false);
@@ -251,12 +260,21 @@ function MangaPage({
   // across re-renders. Without this, a new { uri: pageLocalUri } object is
   // created on every render even when the URI hasn't changed, potentially
   // causing expo-image to perform unnecessary reload work.
+  //
+  // On native: use the locally-cached file:// path (no headers needed).
+  // On web: use the proxied URL (same-origin /api/source-proxy/…) — no
+  //   headers required because the proxy adds Referer/Origin server-side.
+  //   Passing headers to expo-image on web causes it to use the Fetch API
+  //   with Referer/User-Agent (forbidden browser headers), which silently
+  //   fails or triggers CORS issues on CDNs without CORS support.
   const rawImageSource = useMemo(
     () =>
       Platform.OS !== "web" && pageLocalUri
         ? { uri: pageLocalUri }
-        : { uri, headers: imageHeaders },
-    [pageLocalUri, uri, imageHeaders]
+        : Platform.OS === "web"
+          ? { uri: proxyUri }
+          : { uri, headers: imageHeaders },
+    [pageLocalUri, proxyUri, uri, imageHeaders]
   );
 
   const imageSource = useMemo(

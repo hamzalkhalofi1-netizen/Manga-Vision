@@ -33,8 +33,12 @@ const SOURCE_REGISTRY: Record<string, string> = {
   "kakalot": "https://www.natomanga.com",
   "manganato": "https://www.natomanga.com",
   // natomanga CDN — chapter images live on img-r1.2xstorage.com (primary) / imgs-2.2xstorage.com (fallback)
-  "natomanga-cdn":  "https://img-r1.2xstorage.com",
-  "natomanga-cdn2": "https://imgs-2.2xstorage.com",
+  "natomanga-cdn":       "https://img-r1.2xstorage.com",
+  "natomanga-cdn2":      "https://imgs-2.2xstorage.com",
+  // natomanga listing thumbnails (img-r2 subdomain — separate from chapter CDN)
+  "natomanga-cdn-thumb": "https://img-r2.2xstorage.com",
+  // natomanga detail-page cover CDN (og:image uses storage.waitst.com)
+  "natomanga-cover":     "https://storage.waitst.com",
   // mangagg.com — live WP-Manga site replacing the defunct Manganelo/Kakalot family
   "mangagg": "https://mangagg.com",
   // CDN for chapter page images (hosted on s4.mangagg.com)
@@ -59,8 +63,10 @@ const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> =
   "bato":         { referer: "https://bato.to/",                    origin: "https://bato.to" },
   "kakalot":      { referer: "https://www.natomanga.com/",          origin: "https://www.natomanga.com" },
   "manganato":    { referer: "https://www.natomanga.com/",          origin: "https://www.natomanga.com" },
-  "natomanga-cdn": { referer: "https://www.natomanga.com/",          origin: "https://www.natomanga.com" },
-  "natomanga-cdn2":{ referer: "https://www.natomanga.com/",          origin: "https://www.natomanga.com" },
+  "natomanga-cdn":       { referer: "https://www.natomanga.com/", origin: "https://www.natomanga.com" },
+  "natomanga-cdn2":      { referer: "https://www.natomanga.com/", origin: "https://www.natomanga.com" },
+  "natomanga-cdn-thumb": { referer: "https://www.natomanga.com/", origin: "https://www.natomanga.com" },
+  "natomanga-cover":     { referer: "https://www.natomanga.com/", origin: "https://www.natomanga.com" },
   // mangagg.com — WP-Manga/Madara site; chapter images on s4.mangagg.com need
   // the main site as Referer to satisfy hotlink-protection rules.
   "mangagg":      { referer: "https://mangagg.com/",                origin: "https://mangagg.com" },

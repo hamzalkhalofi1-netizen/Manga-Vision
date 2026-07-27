@@ -18,33 +18,51 @@ import { ENGINE_BROWSER_UA } from "./httpClient";
  * Must match what the CDN's anti-hotlink rules expect.
  */
 const SOURCE_REFERERS: Record<string, string> = {
-  mangadex: "https://mangadex.org/",
-  mangafire: "https://mangafire.to/",
-  asura: "https://asurascans.com/",
-  bato: "https://bato.to/",
-  comick: "https://comick.io/",
-  mangaplus: "https://mangaplus.shueisha.co.jp/",
-  naver: "https://www.webtoons.com/",
-  kakalot: "https://chapmanganato.to/",
-  manganato: "https://chapmanganato.to/",
-  manganelo: "https://chapmanganato.to/",
+  mangadex:   "https://mangadex.org/",
+  mangafire:  "https://mangafire.to/",
+  asura:      "https://asurascans.com/",
+  bato:       "https://bato.to/",
+  comick:     "https://comick.io/",
+  mangaplus:  "https://mangaplus.shueisha.co.jp/",
+  naver:      "https://www.webtoons.com/",
+  // MangaKakalot / Manganato — migrated to natomanga.com (chapmanganato.to is squatted)
+  kakalot:    "https://www.natomanga.com/",
+  manganato:  "https://www.natomanga.com/",
+  // Manganelo — now targets mangagg.com (readmanganelo.com is dead)
+  manganelo:  "https://mangagg.com/",
 };
 
 /** Fallback Referer when no source-specific entry exists. */
 const DEFAULT_REFERER = "https://mangadex.org/";
 
-// ── Proxy entry map ──────────────────────────────────────────────────────────
+// ── CDN host → proxy ID map ──────────────────────────────────────────────────
 
 /**
- * Source proxy IDs for CDN domains on the web platform.
- * When a source's images need Referer headers the browser won't send,
- * the image URL must be rewritten through the server proxy.
+ * Maps a CDN hostname directly to the server-proxy registry ID.
+ *
+ * Hostname-based detection means adapters never need to call maybeProxyUrl()
+ * themselves — any URL from any supported CDN is automatically rewritten on
+ * the web platform, regardless of which source produced it.
+ *
+ * IMPORTANT: keep in sync with SOURCE_REGISTRY in source-proxy.ts.
  */
-const CDN_PROXY_IDS: Record<string, string> = {
-  asura: "asura-cdn",
-  mangafire: "mangafire-cdn",
-  mangadex: "mangadex-cdn",
-  comick: "comick-cdn",
+const CDN_HOST_PROXY_MAP: Record<string, string> = {
+  // natomanga.com chapter-image CDN (kakalot / manganato)
+  "img-r1.2xstorage.com":   "natomanga-cdn",
+  "imgs-2.2xstorage.com":   "natomanga-cdn2",
+  // natomanga.com listing thumbnail CDN (img-r2 subdomain)
+  "img-r2.2xstorage.com":   "natomanga-cdn-thumb",
+  // natomanga.com detail-page cover CDN (og:image)
+  "storage.waitst.com":     "natomanga-cover",
+  // mangagg.com main site (covers live at /wp-content/…)
+  "mangagg.com":            "mangagg",
+  // mangagg.com chapter-image CDN
+  "s4.mangagg.com":         "mangagg-cdn",
+  // Other sources (existing)
+  "cdn.asurascans.com":     "asura-cdn",
+  "cdn.mangafire.to":       "mangafire-cdn",
+  "uploads.mangadex.org":   "mangadex-cdn",
+  "meo.comick.pictures":    "comick-cdn",
 };
 
 const PROXY_BASE = "/api/source-proxy";
@@ -98,17 +116,25 @@ export const ImageLoader = {
 
   /**
    * On web, rewrite a CDN image URL through the server proxy so the proxy
-   * can add the correct Referer header. On native, returns the URL unchanged.
+   * can inject the correct Referer/Origin headers required by the CDN's
+   * hotlink-protection rules. On native, the URL is returned unchanged
+   * (headers are injected directly by ImageDiskCache / expo-file-system).
    *
-   * Only rewrites when a CDN proxy entry exists for the source.
+   * Detection is hostname-based: CDN_HOST_PROXY_MAP maps each supported CDN
+   * domain to its server-proxy registry ID. No sourceId parameter is needed,
+   * so callers do not need to know which source produced the URL.
+   *
+   * Returns the original URL when:
+   *   - running on native (non-web) platform, or
+   *   - the hostname is not in CDN_HOST_PROXY_MAP (URL passes through as-is).
    */
-  maybeProxyUrl(imageUrl: string, sourceId: string): string {
+  maybeProxyUrl(imageUrl: string): string {
     if (!isWeb) return imageUrl;
-    const proxyId = CDN_PROXY_IDS[sourceId];
-    if (!proxyId) return imageUrl;
-
+    if (!imageUrl) return imageUrl;
     try {
       const parsed = new URL(imageUrl);
+      const proxyId = CDN_HOST_PROXY_MAP[parsed.hostname];
+      if (!proxyId) return imageUrl;
       const cleanPath = parsed.pathname.startsWith("/")
         ? parsed.pathname.slice(1)
         : parsed.pathname;

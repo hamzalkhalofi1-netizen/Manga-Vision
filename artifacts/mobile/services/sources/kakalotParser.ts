@@ -201,11 +201,14 @@ export function parseMangaDetail(html: string): KakalotMangaDetail {
   }
 
   // ── Cover ──────────────────────────────────────────────────────────────
-  // Prefer OG image (reliable thumbnail), then JSON-LD, then any thumb CDN image.
+  // Prefer an inline <img> on the 2xstorage.com CDN (proxy-friendly, no
+  // rate-limit issues). Fall back to og:image only when no inline CDN img
+  // is found — og:image uses storage.waitst.com which is Cloudflare-rate-
+  // limited from server IPs (the API proxy cannot reliably fetch it).
+  const thumbM = html.match(/src="(https?:\/\/[^"]+2xstorage\.com\/thumb\/[^"]+)"/i);
   const ogM = html.match(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/);
-  const jsonM = html.match(/"image"\s*:\s*"([^"]+storage\.waitst\.com[^"]+)"/);
-  const thumbM = html.match(/src="(https?:\/\/[^"]+(?:storage\.waitst\.com|2xstorage\.com)\/thumb\/[^"]+)"/i);
-  const coverUrl = (ogM?.[1] ?? jsonM?.[1] ?? thumbM?.[1] ?? "").trim();
+  const jsonM = html.match(/"image"\s*:\s*"([^"]+(?:storage\.waitst\.com|2xstorage\.com)[^"]+)"/);
+  const coverUrl = (thumbM?.[1] ?? ogM?.[1] ?? jsonM?.[1] ?? "").trim();
 
   // ── Author, Status, Genres from <li> elements ──────────────────────────
   let author: string | undefined;
