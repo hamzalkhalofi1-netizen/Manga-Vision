@@ -5,9 +5,9 @@ A React Native/Expo manga reading app with AI translation (Arabic/English), sour
 ## Run & Operate
 
 - **Primary workflow**: `MangaVerse` — runs `start.sh` which starts both:
-  - Dev proxy on port 5000 (webview) — routes `/api/*` → API server (port 3000), `*` → Expo dev server (port 5001)
+  - Dev proxy on port 5000 (webview) — routes `/api/*` → API server (port 8080), `*` → Expo dev server (port 5001)
   - Expo dev server on port 5001 (Metro bundler)
-- **API server**: `API Server` workflow — `PORT=3000 pnpm --filter @workspace/api-server run dev`
+- **API server**: `artifacts/api-server: API Server` workflow — managed by Replit, runs on port 8080
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 
@@ -15,7 +15,7 @@ A React Native/Expo manga reading app with AI translation (Arabic/English), sour
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
 - **Mobile**: Expo SDK 54, React Native 0.81, expo-router v3
-- **API**: Express 5, port 3000
+- **API**: Express 5, port 8080 (managed artifact default)
 - **DB**: PostgreSQL + Drizzle ORM
 - **AI**: Google Gemini (manga page OCR + translation)
 - **Proxy**: Zero-dependency Node.js proxy (`artifacts/mobile/server/proxy.js`)
@@ -35,7 +35,7 @@ A React Native/Expo manga reading app with AI translation (Arabic/English), sour
 
 ## Architecture decisions
 
-- **Single-origin dev proxy**: Browser makes relative `/api/...` calls → proxy on port 5000 routes to API server on port 3000. Solves CORS without modifying production domains. Expo serves web app on port 5001, proxied through port 5000.
+- **Single-origin dev proxy**: Browser makes relative `/api/...` calls → proxy on port 5000 routes to API server on port 8080. Solves CORS without modifying production domains. Expo serves web app on port 5001, proxied through port 5000.
 - **`DANGEROUSLY_DISABLE_HOST_CHECK=true`** is mandatory in `start.sh` and the `dev` npm script. Without it, Metro rejects requests where the `Host` header is the Replit external domain (not `localhost`), causing an endless reload loop.
 - **Proxy host override**: The proxy explicitly sets `host: localhost:{targetPort}` on all forwarded requests as belt-and-suspenders against Metro's host check.
 - **GlobalWebViewBridge**: Persistent hidden WebViews (native only) accumulate CF cookies for Cloudflare-protected sources. On web, bridge returns "idle" immediately via `useState` lazy initializer + `useEffect` (never in render body).
@@ -59,6 +59,7 @@ _Populate as you build._
 - **Always keep `DANGEROUSLY_DISABLE_HOST_CHECK=true`** in both `start.sh` and the `dev` npm script. Removing it breaks the Replit webview (Metro rejects the Replit domain Host header → endless reconnect loop).
 - **Port 5001 is not a Replit workflow-supported port**. Never configure `artifacts/mobile: expo` as a standalone workflow with `waitForPort: 5001`. Run Expo as a subprocess inside `MangaVerse` via `start.sh` instead.
 - The `artifacts/mobile: expo` artifact workflow will show "failed" in the Replit dashboard — this is expected and harmless. `MangaVerse` is the actual running workflow.
+- **API server runs on port 8080** (Replit managed artifact default). The `MangaVerse` workflow uses `EXPO_API_PORT=8080` to route `/api/*` to it. Do not set `PORT=3000` — Replit overrides it for managed artifact workflows.
 - `pnpm --filter @workspace/db run push` requires `DATABASE_URL` env var set.
 
 ## Pointers
