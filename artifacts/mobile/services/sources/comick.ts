@@ -2,6 +2,7 @@ import { Chapter, Manga, MangaSource } from "./types";
 import { proxiedFetch, SourceError } from "./fetchClient";
 import { InFlightDedup } from "../network/InFlightDedup";
 import { SourceDiagnosticsLogger } from "./SourceDiagnosticsLogger";
+import { EngineMemoryCache } from "../engine/memoryCache";
 
 const SITE_URL = "https://comick.io";
 // ComicK migrated API domain from comick.io → comick.fun in 2024/2025.
@@ -16,12 +17,24 @@ const FETCH_OPTS = {
   timeoutMs: 18000,
 };
 
-// Module-level diagnostics logger and dedup instances
+// Module-level diagnostics logger, dedup, and cache instances.
+// Dedup: coalesces concurrent identical requests.
+// Cache: TTL-based memory cache so back-navigation doesn't re-fetch.
 const log = new SourceDiagnosticsLogger("comick");
 const dedupManga = new InFlightDedup<Manga[]>();
 const dedupDetails = new InFlightDedup<Manga>();
 const dedupChapters = new InFlightDedup<Chapter[]>();
 const dedupPages = new InFlightDedup<string[]>();
+const cache = new EngineMemoryCache(120, 90_000); // 120 entries, 90s TTL
+
+// TTLs (ms) per endpoint — match fetch cadence expectations.
+const TTL = {
+  trending: 120_000,   // popular lists change slowly
+  latest: 60_000,      // latest updates: refresh every minute
+  search: 300_000,     // search results: 5 min
+  details: 300_000,    // manga details: 5 min
+  chapters: 180_000,   // chapter list: 3 min
+} as const;
 
 // Max pagination pages (safety cap against infinite loops on bad API responses)
 const MAX_CHAPTER_PAGES = 50;
@@ -316,11 +329,15 @@ export const comickSource: MangaSource = {
   isEnabled: true,
 
   async search(query: string, page = 0): Promise<Manga[]> {
+    const cacheKey = `search:${query}:${page}`;
+    const cached = cache.get<Manga[]>(cacheKey);
+    if (cached) return cached;
+
     const qs = new URLSearchParams({
       q: query, limit: "20", page: String(page + 1), type: "comic",
     }).toString();
     const t = log.start();
-    return dedupManga.get(`search:${query}:${page}`, async () => {
+    return dedupManga.get(cacheKey, async () => {
       const data = await comickFetch("/v1.0/search", `?${qs}`);
       const items = requireArray(data, `search("${query}")`);
       const results = items.map((d) => parseComic(d)).filter((m): m is Manga => m !== null);
@@ -328,58 +345,93 @@ export const comickSource: MangaSource = {
         log.log(`PARSER DIAGNOSTIC: items present but 0 parsed. First item keys: ${Object.keys(items[0] ?? {}).slice(0, 8).join(",")}`);
       }
       log.logParsed(`search("${query}")`, results.length, t);
+      cache.set(cacheKey, results, TTL.search);
       return results;
     });
   },
 
   async getTrending(page = 0): Promise<Manga[]> {
+    const cacheKey = `trending:${page}`;
+    const cached = cache.get<Manga[]>(cacheKey);
+    if (cached) return cached;
+
     const qs = new URLSearchParams({
       sort: "follow", limit: "20", page: String(page + 1), type: "comic",
     }).toString();
     const t = log.start();
-    return dedupManga.get(`trending:${page}`, async () => {
+    return dedupManga.get(cacheKey, async () => {
       const data = await comickFetch("/v1.0/search", `?${qs}`);
       const items = requireArray(data, "getTrending");
       const results = items.map((d) => parseComic(d)).filter((m): m is Manga => m !== null);
       if (results.length === 0) log.log("PARSER DIAGNOSTIC: getTrending returned 0 manga.");
       log.logParsed("trending", results.length, t);
+      cache.set(cacheKey, results, TTL.trending);
       return results;
     });
   },
 
   async getLatestUpdates(page = 0): Promise<Manga[]> {
+    const cacheKey = `latest:${page}`;
+    const cached = cache.get<Manga[]>(cacheKey);
+    if (cached) return cached;
+
     const qs = new URLSearchParams({
       sort: "uploaded", limit: "20", page: String(page + 1), type: "comic",
     }).toString();
     const t = log.start();
-    return dedupManga.get(`latest:${page}`, async () => {
+    return dedupManga.get(cacheKey, async () => {
       const data = await comickFetch("/v1.0/search", `?${qs}`);
       const items = requireArray(data, "getLatestUpdates");
       const results = items.map((d) => parseComic(d)).filter((m): m is Manga => m !== null);
       if (results.length === 0) log.log("PARSER DIAGNOSTIC: getLatestUpdates returned 0 manga.");
       log.logParsed("latest", results.length, t);
+      cache.set(cacheKey, results, TTL.latest);
       return results;
     });
   },
 
   async getMangaDetails(id: string): Promise<Manga> {
+    const cacheKey = `details:${id}`;
+    const cached = cache.get<Manga>(cacheKey);
+    if (cached) return cached;
+
     const t = log.start();
-    return dedupDetails.get(`details:${id}`, async () => {
+    return dedupDetails.get(cacheKey, async () => {
       const data = await comickFetch(`/comic/${id}`) as Record<string, unknown>;
+
+      // The detail endpoint returns { comic: {...}, genres: [...], ... }.
+      // Genres are at the TOP level of data, not nested inside data.comic.
+      // We merge them into the comic object before parsing so parseComic
+      // picks them up correctly via item.genres.
       const comic = (data.comic ?? data) as Record<string, unknown>;
-      const parsed = parseComic(comic);
+      const topLevelGenres = (data.genres as Array<Record<string, unknown>>) ?? [];
+      const mergedComic: Record<string, unknown> = {
+        ...comic,
+        // Top-level genres win over any stale genres inside comic (usually empty)
+        genres: topLevelGenres.length > 0 ? topLevelGenres : ((comic.genres as unknown[]) ?? []),
+      };
+
+      const parsed = parseComic(mergedComic);
       if (!parsed) {
         log.log(`PARSER DIAGNOSTIC: getMangaDetails(${id}) failed to parse. keys: ${Object.keys(comic).slice(0, 8).join(",")}`);
         throw new SourceError(`ComicK: could not parse manga details for ${id}`, "upstream", undefined, "comick");
       }
       log.logParsed(`manga-detail`, 1, t);
+      cache.set(cacheKey, parsed, TTL.details);
       return parsed;
     });
   },
 
   async getChapters(mangaId: string, signal?: AbortSignal): Promise<Chapter[]> {
+    const cacheKey = `chapters:${mangaId}`;
+    const cached = cache.get<Chapter[]>(cacheKey);
+    if (cached) return cached;
+
     const t = log.start();
-    return dedupChapters.get(`chapters:${mangaId}`, async () => {
+    // Pass signal as BOTH the 3rd arg (per-caller abort — this caller can cancel
+    // their wait without killing the shared factory request) AND inside the
+    // factory (so the pagination loop itself respects abort signals).
+    return dedupChapters.get(cacheKey, async () => {
       const rawChapters = await fetchAllChapters(mangaId, signal);
 
       if (rawChapters.length === 0) return [];
@@ -402,14 +454,22 @@ export const comickSource: MangaSource = {
       })).filter((c) => c.id);
 
       log.logParsed(`chapters(${mangaId})`, chapters.length, t);
+      cache.set(cacheKey, chapters, TTL.chapters);
       return chapters;
-    });
+    }, signal);
   },
 
   async getChapterPages(chapterId: string, signal?: AbortSignal): Promise<string[]> {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+    const cacheKey = `pages:${chapterId}`;
+    const cached = cache.get<string[]>(cacheKey);
+    if (cached) return cached;
+
     const t = log.start();
-    return dedupPages.get(`pages:${chapterId}`, async () => {
+    // Pass signal as 3rd arg (per-caller abort) so one reader leaving the screen
+    // doesn't kill a shared in-flight request another screen is waiting on.
+    return dedupPages.get(cacheKey, async () => {
       const data = await comickFetch(`/chapter/${chapterId}`, "", signal) as Record<string, unknown>;
 
       const chapterObj = (data.chapter ?? data) as Record<string, unknown>;
@@ -433,7 +493,8 @@ export const comickSource: MangaSource = {
       log.log(`chapter images: b2key=${b2Count} gpurl=${gpCount} url=${urlCount} name=${nameCount}`);
 
       log.logParsed(`pages(${chapterId})`, urls.length, t);
+      cache.set(cacheKey, urls, TTL.chapters);
       return urls;
-    });
+    }, signal);
   },
 };
