@@ -46,6 +46,9 @@ const SOURCE_REGISTRY: Record<string, string> = {
   // Naver Webtoon / WEBTOON
   "naver": "https://www.webtoons.com",
   "webtoon": "https://www.webtoons.com",
+  // Naver Webtoon image CDN — serves episode panel images (webtoon-phinf.pstatic.net).
+  // Requires Referer: https://www.webtoons.com/ to bypass hotlink protection.
+  "naver-cdn": "https://webtoon-phinf.pstatic.net",
 };
 
 const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> = {
@@ -73,6 +76,7 @@ const SOURCE_SITE_HEADERS: Record<string, { referer: string; origin: string }> =
   "mangagg-cdn":  { referer: "https://mangagg.com/",                origin: "https://mangagg.com" },
   "naver":              { referer: "https://www.webtoons.com/",      origin: "https://www.webtoons.com" },
   "webtoon":            { referer: "https://www.webtoons.com/",      origin: "https://www.webtoons.com" },
+  "naver-cdn":          { referer: "https://www.webtoons.com/",      origin: "https://www.webtoons.com" },
 };
 
 function buildQueryString(query: Record<string, string | string[]>): string {

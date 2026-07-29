@@ -1,0 +1,138 @@
+Implement the Naver Webtoon adapter using the existing Source Engine architecture.
+
+IMPORTANT
+
+Do NOT redesign the application.
+
+Do NOT redesign the Source Engine.
+
+Do NOT duplicate any shared logic.
+
+Reuse the existing Source Engine exactly as MangaFire, Asura Scans, Manganelo, Manganato, and MangaKakalot.
+
+The adapter must contain ONLY Naver Webtoon specific logic.
+
+--------------------------------------------------
+
+Implement:
+
+1. Popular Webtoons
+2. Latest updates
+3. Search
+4. Webtoon details
+5. Episode list
+6. Episode pages
+7. Full-resolution page images
+
+--------------------------------------------------
+
+Reuse the shared Source Engine for:
+
+- HTTP Client
+- Cookie Manager
+- Session Manager
+- Retry Manager
+- Memory Cache
+- Disk Cache
+- Progressive Image Loading
+- Image Loader
+- Logging
+- Error Handling
+- Shared Models
+- Shared HTML Parser
+- Shared JSON Parser
+- Verification Manager
+- Cloudflare handling (if required)
+
+Do NOT reimplement any of these.
+
+--------------------------------------------------
+
+The adapter should only define:
+
+- Base URL
+- Popular endpoint
+- Latest endpoint
+- Search endpoint
+- Webtoon details parser
+- Episode list parser
+- Episode page parser
+- Image URL extraction
+- Required headers
+- Required cookies
+- Referer
+- Origin
+- User-Agent
+
+--------------------------------------------------
+
+Reader requirements
+
+Every episode must:
+
+- Display every page.
+- Never miss pages.
+- Never flicker.
+- Never continuously reload.
+- Retry failed downloads automatically.
+- Cache images in memory.
+- Cache images on disk.
+- Cancel pending requests when leaving the reader.
+
+--------------------------------------------------
+
+Performance requirements
+
+- No UI freezes.
+- No unnecessary React renders.
+- No duplicate HTTP requests.
+- No memory leaks.
+- Cancel all pending requests immediately when leaving an episode.
+- Keep scrolling smooth.
+
+--------------------------------------------------
+
+Validation
+
+Test:
+
+✓ Popular
+✓ Latest
+✓ Search
+✓ Webtoon details
+✓ Episode list
+✓ At least 5 different webtoons
+✓ At least 3 episodes
+✓ Every episode image
+✓ Memory cache
+✓ Disk cache
+✓ Retry
+✓ Progressive loading
+
+--------------------------------------------------
+
+If Naver Webtoon requires:
+
+- Region selection
+- Age verification
+- Login
+- Cookies
+- Different API responses
+- Different image formats
+
+Implement support inside the adapter while still using the shared Source Engine.
+
+--------------------------------------------------
+
+Output
+
+Provide:
+
+1. Files created.
+2. Files modified.
+3. Extraction method used.
+4. Test results.
+5. Performance results.
+6. Remaining limitations.
+
+Do not finish until every tested episode loads all images correctly.

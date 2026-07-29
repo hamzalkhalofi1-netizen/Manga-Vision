@@ -58,6 +58,8 @@ const CDN_HOST_PROXY_MAP: Record<string, string> = {
   "mangagg.com":            "mangagg",
   // mangagg.com chapter-image CDN
   "s4.mangagg.com":         "mangagg-cdn",
+  // Naver Webtoon episode panel images
+  "webtoon-phinf.pstatic.net": "naver-cdn",
   // Other sources (existing)
   "cdn.asurascans.com":     "asura-cdn",
   "cdn.mangafire.to":       "mangafire-cdn",
