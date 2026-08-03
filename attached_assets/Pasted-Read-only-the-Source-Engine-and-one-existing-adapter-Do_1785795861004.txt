@@ -1,0 +1,152 @@
+Read only the Source Engine and one existing adapter. Do not scan the entire project unless absolutely necessary. Reuse existing code whenever possible.
+Implement a dedicated ComickAdapter using the existing Source Engine.
+
+IMPORTANT
+
+Do NOT redesign the application.
+
+Do NOT redesign the Source Engine.
+
+Do NOT copy another adapter.
+
+First analyze how Comick actually works, then implement only the adapter.
+
+Reuse all existing infrastructure.
+
+--------------------------------------------------
+
+The adapter must support:
+
+• Popular
+• Latest
+• Search
+• Manga details
+• Chapter list
+• Chapter pages
+• Full-resolution page images
+
+--------------------------------------------------
+
+Reuse the existing Source Engine for:
+
+- HTTP Client
+- Cookie Manager
+- Session Manager
+- Retry Manager
+- Request Queue
+- Memory Cache
+- Disk Cache
+- Progressive Image Loading
+- Image Loader
+- Shared HTML Parser
+- Shared JSON Parser
+- Shared Models
+- Error Handling
+- Logging
+- Verification Manager
+- WebView verification
+- Cloudflare handling (if required)
+
+Do NOT reimplement any of these.
+
+--------------------------------------------------
+
+Before writing code:
+
+Inspect Comick.
+
+Determine whether it uses:
+
+- HTML
+- JSON API
+- GraphQL
+- Mixed API
+
+Use the method actually used by Comick.
+
+Do not assume.
+
+--------------------------------------------------
+
+The adapter should contain ONLY:
+
+- Base URL
+- Popular parser
+- Latest parser
+- Search parser
+- Manga details parser
+- Chapter list parser
+- Chapter page parser
+- Page image extraction
+- Required headers
+- Required cookies
+- Referer
+- Origin
+- User-Agent
+
+Nothing else.
+
+--------------------------------------------------
+
+Reader requirements
+
+Every chapter must:
+
+- Load every page.
+- Never miss pages.
+- Never flicker.
+- Never reload continuously.
+- Retry failed downloads automatically.
+- Cache images in memory.
+- Cache images on disk.
+- Cancel pending requests when leaving the reader.
+
+--------------------------------------------------
+
+Performance requirements
+
+- No UI freezes.
+- No duplicate HTTP requests.
+- No duplicate image downloads.
+- No unnecessary React renders.
+- Cancel all pending work immediately when leaving the chapter.
+
+--------------------------------------------------
+
+Validation
+
+Test:
+
+✓ Popular
+
+✓ Latest
+
+✓ Search
+
+✓ Manga details
+
+✓ Chapter list
+
+✓ At least 5 manga
+
+✓ At least 3 chapters
+
+✓ Every page image
+
+✓ Cache
+
+✓ Retry
+
+--------------------------------------------------
+
+Do not finish until all chapter images display correctly.
+
+--------------------------------------------------
+
+Finally provide:
+
+1. Files created.
+2. Files modified.
+3. Parsing method used (HTML/API/GraphQL).
+4. Test results.
+5. Remaining limitations.
