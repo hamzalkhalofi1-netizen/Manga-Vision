@@ -6,10 +6,12 @@ import React, {
   useEffect,
   useState,
 } from "react";
+import type { GeminiModel } from "@/services/geminiKeyTest";
 
 export type ReadingMode = "vertical" | "horizontal";
 export type TargetLanguage = "en" | "es" | "pt" | "fr" | "de" | "ja" | "ko" | "zh" | "ar";
 export type ThemeMode = "auto" | "light" | "dark";
+export type { GeminiModel };
 
 export interface ReaderSettings {
   readingMode: ReadingMode;
@@ -25,9 +27,10 @@ interface SettingsContextType {
   setActiveSourceId: (id: string) => void;
   translationCount: number;
   incrementTranslationCount: () => void;
-  // Theme
   themeMode: ThemeMode;
   setThemeMode: (mode: ThemeMode) => void;
+  geminiModel: GeminiModel;
+  setGeminiModel: (model: GeminiModel) => void;
 }
 
 const DEFAULT_SETTINGS: ReaderSettings = {
@@ -37,10 +40,17 @@ const DEFAULT_SETTINGS: ReaderSettings = {
   showPageNumber: true,
 };
 
-const SETTINGS_KEY        = "mangaverse_settings";
-const SOURCE_KEY          = "mangaverse_source";
+const SETTINGS_KEY          = "mangaverse_settings";
+const SOURCE_KEY            = "mangaverse_source";
 const TRANSLATION_COUNT_KEY = "mangaverse_translations";
-const THEME_KEY           = "mangaverse_theme";
+const THEME_KEY             = "mangaverse_theme";
+const GEMINI_MODEL_KEY      = "mangaverse_gemini_model";
+
+const VALID_GEMINI_MODELS: GeminiModel[] = [
+  "gemini-2.5-flash",
+  "gemini-2.5-pro",
+  "gemini-2.0-flash-lite",
+];
 
 export const SettingsContext = createContext<SettingsContextType | null>(null);
 
@@ -49,21 +59,26 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [activeSourceId, setActiveSourceIdState] = useState("mangadex");
   const [translationCount, setTranslationCount] = useState(0);
   const [themeMode, setThemeModeState] = useState<ThemeMode>("auto");
+  const [geminiModel, setGeminiModelState] = useState<GeminiModel>("gemini-2.5-flash");
 
   useEffect(() => {
     async function load() {
       try {
-        const [settingsRaw, sourceRaw, countRaw, themeRaw] = await Promise.all([
+        const [settingsRaw, sourceRaw, countRaw, themeRaw, modelRaw] = await Promise.all([
           AsyncStorage.getItem(SETTINGS_KEY),
           AsyncStorage.getItem(SOURCE_KEY),
           AsyncStorage.getItem(TRANSLATION_COUNT_KEY),
           AsyncStorage.getItem(THEME_KEY),
+          AsyncStorage.getItem(GEMINI_MODEL_KEY),
         ]);
         if (settingsRaw) setReaderSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(settingsRaw) });
         if (sourceRaw) setActiveSourceIdState(sourceRaw);
         if (countRaw) setTranslationCount(parseInt(countRaw, 10) || 0);
         if (themeRaw && ["auto", "light", "dark"].includes(themeRaw)) {
           setThemeModeState(themeRaw as ThemeMode);
+        }
+        if (modelRaw && VALID_GEMINI_MODELS.includes(modelRaw as GeminiModel)) {
+          setGeminiModelState(modelRaw as GeminiModel);
         }
       } catch {}
     }
@@ -96,6 +111,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.setItem(THEME_KEY, mode);
   }, []);
 
+  const setGeminiModel = useCallback((model: GeminiModel) => {
+    setGeminiModelState(model);
+    AsyncStorage.setItem(GEMINI_MODEL_KEY, model);
+  }, []);
+
   return (
     <SettingsContext.Provider
       value={{
@@ -107,6 +127,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         incrementTranslationCount,
         themeMode,
         setThemeMode,
+        geminiModel,
+        setGeminiModel,
       }}
     >
       {children}
