@@ -1,0 +1,468 @@
+Implement the complete advanced Settings system for MangaVerse using the new Settings architecture already created in Phase 1.
+
+IMPORTANT
+
+- Do NOT redesign the Settings navigation.
+- Reuse the existing Settings pages.
+- Keep the current visual identity.
+- Follow Material Design 3.
+- Smooth animations.
+- Mobile-first.
+- Dark mode optimized.
+- Reusable components only.
+- No duplicated code.
+
+==================================================
+
+1. AI TRANSLATION
+   ==================================================
+
+Create a complete AI Translation page.
+
+Support:
+
+- Gemini
+- Future-ready provider architecture
+
+Gemini features:
+
+- Up to 10 API Keys
+- Add key
+- Edit key
+- Rename key
+- Copy key
+- Delete key
+- Test key
+- Activate manually
+- Automatic key rotation
+- Automatic fallback
+- Automatic validation
+
+Accept ANY valid Gemini API Key.
+
+Do not reject keys based on prefix.
+
+Instead:
+
+- Validate by making a lightweight API request.
+
+Display for every key:
+
+- Active status
+- Nickname
+- Last used
+- Last successful request
+- Last error
+- Remaining quota (estimated)
+- Cooldown timer
+- Average response time
+- Success rate
+- Current model
+
+Allow selecting AI model:
+
+- Gemini 2.5 Flash
+- Gemini 2.5 Pro
+- Gemini Flash Lite
+
+Highlight:
+
+⭐ Recommended for Free Users
+
+Translation settings:
+
+- Translation language
+- Translation style
+- Literal
+- Natural
+- Professional
+- Anime Style
+- Custom
+
+Options:
+
+- Translate SFX
+- Translate Narration
+- Translate Credits
+- Keep Original Text
+- Retry automatically
+- Maximum retries
+- Translation timeout
+
+AI Dashboard:
+
+Show:
+
+Today's translations
+
+Total translated pages
+
+Average latency
+
+Average success rate
+
+Estimated remaining quota
+
+Current queue
+
+Current active key
+
+Current model
+
+==================================================
+2. READER
+
+Create a dedicated Reader page.
+
+Support:
+
+Reading direction
+
+Vertical
+
+Horizontal
+
+RTL
+
+LTR
+
+Page transition
+
+Scroll
+
+Swipe
+
+Page animation
+
+Keep screen awake
+
+Hide system bars
+
+Remember last page
+
+Brightness slider
+
+Double tap zoom
+
+Pinch zoom
+
+Fit width
+
+Fit height
+
+Reading progress
+
+Page indicator
+
+Preload next pages
+
+==================================================
+3. FONTS
+
+Create a complete Font & Text page.
+
+Features:
+
+Built-in font selector
+
+Import custom font
+
+Preview font
+
+Live preview
+
+Font size
+
+Font weight
+
+Line spacing
+
+Letter spacing
+
+Text alignment
+
+RTL preview
+
+Outline thickness
+
+Outline color
+
+Text color
+
+Background color
+
+Background opacity
+
+Bubble border radius
+
+Bubble padding
+
+Shadow
+
+Text rendering quality
+
+Reset to default
+
+==================================================
+4. SOURCES
+
+Create a Sources Management page.
+
+Support:
+
+Enable / Disable source
+
+Source priority
+
+Source information
+
+Cookies status
+
+Verification status
+
+Refresh cookies
+
+Clear cookies
+
+Clear cache
+
+Clear downloaded images
+
+Reload adapter
+
+Test adapter
+
+Source statistics
+
+Requests today
+
+Average response time
+
+Failures
+
+Retries
+
+Last successful request
+
+Last failed request
+
+Cloudflare verification manager
+
+Embedded verification page
+
+Cookie persistence
+
+==================================================
+5. NETWORK
+
+Network page.
+
+Support:
+
+Wi-Fi only
+
+Mobile Data
+
+Timeout
+
+Retry count
+
+Parallel downloads
+
+Maximum connections
+
+Prefetch pages
+
+HTTP/2
+
+DNS cache
+
+Proxy support
+
+Request logs
+
+==================================================
+6. STORAGE
+
+Storage page.
+
+Display:
+
+Images cache
+
+Translation cache
+
+Cookies
+
+Database
+
+Temporary files
+
+Memory cache
+
+Disk cache
+
+Buttons:
+
+Clear images
+
+Clear translations
+
+Clear cookies
+
+Optimize database
+
+Clear everything
+
+Display storage usage.
+
+==================================================
+7. BACKUP
+
+Backup page.
+
+Support:
+
+Export settings
+
+Import settings
+
+Export sources
+
+Export AI Keys
+
+Export library
+
+Restore backup
+
+Automatic backup
+
+Google Drive ready architecture
+
+==================================================
+8. PROFILE
+
+Improve Profile page.
+
+Display:
+
+Avatar
+
+Library
+
+Favorites
+
+Reading
+
+Completed
+
+Translations
+
+Storage used
+
+Current language
+
+Current AI model
+
+Current active key
+
+Current version
+
+==================================================
+9. ABOUT
+
+About page.
+
+Display:
+
+Version
+
+Build number
+
+Open-source licenses
+
+Privacy
+
+Terms
+
+Developer
+
+Release notes
+
+==================================================
+10. UX
+
+Use:
+
+Bottom sheets
+
+Dialogs
+
+Search inside settings
+
+Animated switches
+
+Modern sliders
+
+Segmented buttons
+
+Beautiful loading indicators
+
+Skeleton loading
+
+Pull to refresh
+
+Smooth transitions
+
+==================================================
+11. PERFORMANCE
+
+Optimize rendering.
+
+Lazy load pages.
+
+Avoid unnecessary re-renders.
+
+Memoize expensive components.
+
+Keep animations at 60 FPS.
+
+==================================================
+12. CODE QUALITY
+
+Do not duplicate components.
+
+Use reusable SettingsItem.
+
+Reusable Card.
+
+Reusable Slider.
+
+Reusable Switch.
+
+Reusable OptionSelector.
+
+Reusable Dialog.
+
+Reusable BottomSheet.
+
+Reusable Section.
+
+==================================================
+13. FINAL
+
+Test every page.
+
+Remove dead code.
+
+Ensure mobile responsiveness.
+
+Ensure dark theme consistency.
+
+Provide:
+
+- Files created
+- Files modified
+- Components created
+- Performance improvements
+- Final feature checklist
