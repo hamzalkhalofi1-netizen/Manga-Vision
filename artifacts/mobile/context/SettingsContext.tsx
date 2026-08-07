@@ -208,6 +208,14 @@ interface SettingsContextType {
   // Translation config
   translationSettings: TranslationSettings;
   updateTranslationSettings: (settings: Partial<TranslationSettings>) => void;
+  restoreSettings: (settings: Partial<{
+    readerSettings: ReaderSettings;
+    fontSettings: FontSettings;
+    networkSettings: NetworkSettings;
+    translationSettings: TranslationSettings;
+    themeMode: ThemeMode;
+    geminiModel: GeminiModel;
+  }>) => Promise<void>;
 }
 
 export const SettingsContext = createContext<SettingsContextType | null>(null);
@@ -315,6 +323,33 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const restoreSettings = useCallback(async (settings: Partial<{
+    readerSettings: ReaderSettings;
+    fontSettings: FontSettings;
+    networkSettings: NetworkSettings;
+    translationSettings: TranslationSettings;
+    themeMode: ThemeMode;
+    geminiModel: GeminiModel;
+  }>) => {
+    if (settings.readerSettings) updateReaderSettings({ ...settings.readerSettings });
+    if (settings.fontSettings) updateFontSettings({ ...settings.fontSettings });
+    if (settings.networkSettings) updateNetworkSettings({ ...settings.networkSettings });
+    if (settings.translationSettings) updateTranslationSettings({ ...settings.translationSettings });
+    if (settings.themeMode && ["auto", "light", "dark"].includes(settings.themeMode)) {
+      setThemeMode(settings.themeMode);
+    }
+    if (settings.geminiModel && VALID_GEMINI_MODELS.includes(settings.geminiModel)) {
+      setGeminiModel(settings.geminiModel);
+    }
+  }, [
+    setGeminiModel,
+    setThemeMode,
+    updateFontSettings,
+    updateNetworkSettings,
+    updateReaderSettings,
+    updateTranslationSettings,
+  ]);
+
   return (
     <SettingsContext.Provider
       value={{
@@ -326,6 +361,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         fontSettings, updateFontSettings, resetFontSettings,
         networkSettings, updateNetworkSettings,
         translationSettings, updateTranslationSettings,
+        restoreSettings,
       }}
     >
       {children}

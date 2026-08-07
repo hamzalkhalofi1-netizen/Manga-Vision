@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { callInpaintServer } from "./inpaintClient";
 import { translateImage, TranslatedRegion } from "./geminiTranslate";
+import type { TranslationOptions } from "./geminiTranslate";
 
 export type TextRegion = TranslatedRegion;
 
@@ -33,6 +34,11 @@ interface QueueParams {
   onComplete: (stats: { completed: number; failed: number }) => void;
   onRateLimited?: () => void;
   onPageError?: (pageIndex: number, errorMessage: string) => void;
+  translationOptions?: TranslationOptions;
+  parallelBatchSize?: number;
+  timeoutMs?: number;
+  maxRetries?: number;
+  onRequestUsage?: (latencyMs: number) => void;
 }
 
 /**
@@ -159,6 +165,11 @@ class TranslationQueueManager {
       onComplete,
       onRateLimited,
       onPageError,
+      translationOptions = {},
+      parallelBatchSize = PARALLEL_BATCH_SIZE,
+      timeoutMs = PAGE_TIMEOUT_MS,
+      maxRetries = MAX_RETRIES,
+      onRequestUsage,
     } = params;
 
     let completed = 0;
@@ -210,14 +221,14 @@ class TranslationQueueManager {
     for (
       let batchStart = 0;
       batchStart < pendingIndices.length;
-      batchStart += PARALLEL_BATCH_SIZE
+      batchStart += Math.max(1, parallelBatchSize)
     ) {
       if (this.abortController.signal.aborted) break;
 
-      const batch = pendingIndices.slice(batchStart, batchStart + PARALLEL_BATCH_SIZE);
+       const batch = pendingIndices.slice(batchStart, batchStart + Math.max(1, parallelBatchSize));
 
       console.log(
-        `[TranslationQueue] Batch ${Math.floor(batchStart / PARALLEL_BATCH_SIZE) + 1}` +
+        `[TranslationQueue] Batch ${Math.floor(batchStart / Math.max(1, parallelBatchSize)) + 1}` +
         ` — pages [${batch.join(", ")}]`
       );
 
@@ -230,14 +241,14 @@ class TranslationQueueManager {
           const pageUrl = pages[pageIdx];
           const key     = cacheKey(pageUrl, targetLanguage);
 
-          for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+           for (let attempt = 0; attempt < Math.max(1, maxRetries); attempt++) {
             if (this.abortController!.signal.aborted) return;
 
             try {
               // ── Inpaint server path ─────────────────────────────────────
               if (inpaintServerUrl) {
                 const result = await callInpaintServer(
-                  inpaintServerUrl, pageUrl, [], PAGE_TIMEOUT_MS
+                   inpaintServerUrl, pageUrl, [], timeoutMs
                 );
                 pageCache.set(key, { regions: result.regions, summary: result.summary });
                 scheduleSave();
@@ -261,10 +272,12 @@ class TranslationQueueManager {
                 `[TranslationQueue] Page ${pageIdx} — Gemini direct (attempt ${attempt + 1})`
               );
 
-              const result = await withTimeout(
-                translateImage(pageUrl, targetLanguage, userApiKey, sourceId),
-                PAGE_TIMEOUT_MS
-              );
+               const requestStarted = Date.now();
+               const result = await withTimeout(
+                 translateImage(pageUrl, targetLanguage, userApiKey, sourceId, translationOptions),
+                 timeoutMs
+               );
+               onRequestUsage?.(Date.now() - requestStarted);
 
               pageCache.set(key, { regions: result.regions, summary: result.summary });
               scheduleSave();
@@ -272,7 +285,7 @@ class TranslationQueueManager {
               completed++;
 
               console.log(
-                `[TranslationQueue] Page ${pageIdx} — success regions=${result.regions.length}`
+                 `[TranslationQueue] Page ${pageIdx} — success regions=${result.regions.length}`
               );
               return;
             } catch (err) {
@@ -296,7 +309,7 @@ class TranslationQueueManager {
                 return;
               }
 
-              if (attempt < MAX_RETRIES - 1) {
+               if (attempt < Math.max(1, maxRetries) - 1) {
                 await sleep(1500 * (attempt + 1));
               } else {
                 failed++;
@@ -309,7 +322,7 @@ class TranslationQueueManager {
 
       // Small delay between batches — courteous to API rate limits
       if (
-        batchStart + PARALLEL_BATCH_SIZE < pendingIndices.length &&
+        batchStart + Math.max(1, parallelBatchSize) < pendingIndices.length &&
         !this.abortController.signal.aborted
       ) {
         await sleep(BATCH_DELAY_MS);

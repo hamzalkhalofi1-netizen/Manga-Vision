@@ -22,6 +22,7 @@ interface LibraryContextType {
   isInLibrary: (mangaId: string) => boolean;
   getEntry: (mangaId: string) => LibraryEntry | undefined;
   totalChaptersRead: number;
+  mergeImportedLibrary: (importedEntries: LibraryEntry[]) => Promise<void>;
 }
 
 const LibraryContext = createContext<LibraryContextType | null>(null);
@@ -118,6 +119,22 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  const mergeImportedLibrary = useCallback(async (importedEntries: LibraryEntry[]) => {
+    setEntries((prev) => {
+      const byId = new Map(prev.map((entry) => [entry.manga.id, entry]));
+      for (const entry of importedEntries) {
+        if (!entry?.manga?.id || !entry.manga.title) continue;
+        const existing = byId.get(entry.manga.id);
+        byId.set(entry.manga.id, existing
+          ? { ...existing, ...entry, manga: { ...existing.manga, ...entry.manga } }
+          : entry);
+      }
+      const next = [...byId.values()].sort((a, b) => b.addedAt - a.addedAt);
+      AsyncStorage.setItem(LIBRARY_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const getProgress = useCallback(
     (mangaId: string) => progress[mangaId],
     [progress]
@@ -148,6 +165,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         isInLibrary,
         getEntry,
         totalChaptersRead,
+        mergeImportedLibrary,
       }}
     >
       {children}

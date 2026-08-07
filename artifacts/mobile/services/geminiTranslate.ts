@@ -12,6 +12,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { getBasicImageHeaders } from "./sourceImageHeaders";
+import type { GeminiModel } from "./geminiKeyTest";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -186,9 +187,33 @@ function validateBubblePolygon(raw: unknown): [number, number][] | null {
 
 // ── Gemini prompt ──────────────────────────────────────────────────────────────
 
-function buildPrompt(targetLanguage: string): string {
+export interface TranslationOptions {
+  model?: GeminiModel;
+  style?: "literal" | "natural" | "professional" | "anime" | "custom";
+  customStyle?: string;
+  translateSFX?: boolean;
+  translateNarration?: boolean;
+  translateCredits?: boolean;
+  keepOriginal?: boolean;
+}
+
+function buildPrompt(targetLanguage: string, options: TranslationOptions = {}): string {
   const langName = LANGUAGE_NAMES[targetLanguage] ?? targetLanguage;
   const isRTL = targetLanguage === "ar";
+  const styleInstruction = options.style === "custom"
+    ? options.customStyle?.trim() || "natural and idiomatic"
+    : options.style === "literal"
+      ? "close to the source wording while remaining grammatical"
+      : options.style === "professional"
+        ? "polished and faithful to an official localization"
+        : options.style === "anime"
+          ? "emotionally vivid, characterful, and consistent with anime localization"
+          : "natural and idiomatic";
+  const typeInstruction = [
+    options.translateSFX === false ? "Do not translate sound effects; omit SFX regions." : "",
+    options.translateNarration === false ? "Do not translate narration boxes; omit narration regions." : "",
+    options.translateCredits === false ? "Do not translate credits or metadata; omit credits regions." : "",
+  ].filter(Boolean).join("\n");
 
   return `You are a professional manga/manhwa OCR and translation engine.
 
@@ -217,7 +242,9 @@ TASK: Analyze this manga/manhwa page. For EVERY visible piece of text — dialog
 4. TRANSLATE to ${langName}:
    ${isRTL
     ? "- Natural, emotionally vivid Arabic — manga-localized, NOT robotic. Proper MSA with character voice and emotional flair.\n   - Sound effects: Arabic SFX equivalents or creative transliteration\n   - Preserve exclamations, ellipses, emphasis"
-    : `- Natural, idiomatic ${langName} — emotionally faithful, not literal\n   - Sound effects: equivalent ${langName} SFX or transliteration\n   - Preserve exclamations, ellipses, emphasis`}
+   : `- ${styleInstruction} ${langName} — emotionally faithful\n   - Sound effects: equivalent ${langName} SFX or transliteration\n   - Preserve exclamations, ellipses, emphasis`}
+
+${typeInstruction}
 
 Return ONLY valid JSON — no markdown, no backticks, no commentary:
 {
@@ -248,7 +275,6 @@ RULES:
 - If no text found: { "found": false, "regions": [], "summary": "No text on this page" }`;
 }
 
-const MODEL = "gemini-2.5-flash";
 const MAX_ATTEMPTS = 4;
 
 /**
@@ -275,7 +301,8 @@ export async function translateText(
   text: string,
   targetLanguage: string,
   userApiKey: string,
-  context?: string
+  context?: string,
+  options: TranslationOptions = {}
 ): Promise<string> {
   if (!userApiKey) {
     throw new Error("No Gemini API key. Open Settings → Gemini API Keys and add your key.");
@@ -307,7 +334,7 @@ Return ONLY the translated text with no preamble, no explanations, no quotes aro
   const client = new GoogleGenAI({ apiKey: userApiKey });
 
   const response = await client.models.generateContent({
-    model: MODEL,
+    model: options.model ?? "gemini-2.5-flash",
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: { maxOutputTokens: 8192 },
   });
@@ -333,7 +360,8 @@ export async function translateImage(
   imageUrl: string,
   targetLanguage: string,
   userApiKey: string,
-  sourceId: string = "mangadex"
+  sourceId: string = "mangadex",
+  options: TranslationOptions = {}
 ): Promise<TranslateResult> {
   if (!userApiKey) {
     throw new Error("No Gemini API key. Open Settings → Gemini API Keys and add your key.");
@@ -342,7 +370,7 @@ export async function translateImage(
   console.log(`[geminiTranslate] Starting OCR+translate — lang=${targetLanguage} source=${sourceId}`);
 
   const { data: imageData, mimeType } = await fetchImageAsBase64(imageUrl, sourceId);
-  const prompt = buildPrompt(targetLanguage);
+  const prompt = buildPrompt(targetLanguage, options);
   const resolvedMime = mimeType as "image/jpeg" | "image/png" | "image/webp";
 
   const client = new GoogleGenAI({ apiKey: userApiKey });
@@ -352,7 +380,7 @@ export async function translateImage(
       console.log(`[geminiTranslate] Gemini request — attempt ${attempt}/${MAX_ATTEMPTS}`);
 
       const response = await client.models.generateContent({
-        model: MODEL,
+        model: options.model ?? "gemini-2.5-flash",
         contents: [
           {
             role: "user",
@@ -403,8 +431,11 @@ export async function translateImage(
           : { found: false, regions: [], summary: "No parseable response" };
       }
 
-      const processedRegions: TranslatedRegion[] = (parsed.regions ?? [])
+       const processedRegions: TranslatedRegion[] = (parsed.regions ?? [])
         .filter((r) => r && typeof r.x === "number" && typeof r.y === "number")
+         .filter((r) => options.translateSFX !== false || r.type !== "sfx")
+         .filter((r) => options.translateNarration !== false || r.type !== "narration")
+         .filter((r) => options.translateCredits !== false || !["credits", "watermark"].includes(r.type))
         .map((r) => {
           const cx = Math.max(0, Math.min(0.99, r.x));
           const cy = Math.max(0, Math.min(0.99, r.y));
@@ -418,7 +449,9 @@ export async function translateImage(
 
           return {
             original: r.original ?? "",
-            translated: r.translated ?? "",
+             translated: options.keepOriginal && r.original
+               ? `${r.translated ?? ""}\n${r.original}`
+               : r.translated ?? "",
             x: cx,
             y: cy,
             w: cw,

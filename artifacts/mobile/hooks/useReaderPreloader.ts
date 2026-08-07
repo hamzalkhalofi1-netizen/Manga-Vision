@@ -18,6 +18,9 @@ interface UseReaderPreloaderOptions {
   sourceId: string;
   currentPage: number;
   enabled?: boolean;
+  ahead?: number;
+  behind?: number;
+  concurrency?: number;
 }
 
 export function useReaderPreloader({
@@ -25,6 +28,9 @@ export function useReaderPreloader({
   sourceId,
   currentPage,
   enabled = true,
+  ahead = 2,
+  behind = 1,
+  concurrency = 3,
 }: UseReaderPreloaderOptions) {
   const preloaderRef = useRef<ReaderPreloader | null>(null);
 
@@ -33,7 +39,7 @@ export function useReaderPreloader({
     if (!enabled || pages.length === 0) return;
 
     // Create fresh preloader for each chapter
-    const preloader = new ReaderPreloader({ ahead: 4, behind: 2, concurrency: 3 });
+    const preloader = new ReaderPreloader({ ahead, behind, concurrency });
     preloaderRef.current = preloader;
 
     preloader.setPages(pages, sourceId);
@@ -44,7 +50,7 @@ export function useReaderPreloader({
       ReaderCache.clear();
       preloaderRef.current = null;
     };
-  }, [pages, sourceId, enabled]);
+  }, [pages, sourceId, enabled, ahead, behind, concurrency]);
 
   // Notify preloader when viewport changes
   useEffect(() => {
