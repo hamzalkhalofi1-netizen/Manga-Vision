@@ -11,8 +11,11 @@
  */
 
 import { GoogleGenAI } from "@google/genai";
+import * as FileSystem from "expo-file-system/legacy";
+import { Platform } from "react-native";
 import { getBasicImageHeaders } from "./sourceImageHeaders";
 import { ImageLoader } from "./engine/imageLoader";
+import { ImageDiskCache } from "./cache/ImageDiskCache";
 import type { GeminiModel } from "./geminiKeyTest";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -71,6 +74,43 @@ async function fetchImageAsBase64(
   sourceId: string
 ): Promise<{ data: string; mimeType: string }> {
   const headers = getBasicImageHeaders(sourceId);
+  const startedAt = Date.now();
+
+  // Native reader pages are already downloaded by ImageDiskCache. Reuse those
+  // exact bytes instead of issuing a second JS fetch to the CDN. This matters
+  // on Android: the reader's native FileSystem request can succeed even when a
+  // JavaScript fetch to the same hotlink-protected URL fails with "Failed to
+  // fetch".
+  if (Platform.OS !== "web") {
+    try {
+      const localUri =
+        (await ImageDiskCache.getPath(imageUrl)) ??
+        (await ImageDiskCache.download(imageUrl, headers));
+      const info = await FileSystem.getInfoAsync(localUri, { size: true } as any);
+      const sizeBytes = (info as FileSystem.FileInfo & { size?: number }).size ?? 0;
+      if (!info.exists || sizeBytes === 0) {
+        throw new Error("Downloaded image is empty or corrupted");
+      }
+
+      const data = await FileSystem.readAsStringAsync(localUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      if (!data) throw new Error("FileSystem returned empty base64");
+
+      const mimeType = inferImageMimeType(imageUrl);
+      console.log(
+        `[TRANSLATION DEBUG] source=${sourceId} imageFetch=success imageSource=native-cache imageBytes=${sizeBytes} duration=${Date.now() - startedAt}ms`
+      );
+      return { data, mimeType };
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[TRANSLATION DEBUG] source=${sourceId} imageFetch=failure imageSource=native-cache duration=${Date.now() - startedAt}ms errorCategory=IMAGE_FETCH_FAILED message=${message.slice(0, 180)}`
+      );
+      throw new Error(`IMAGE_FETCH_FAILED: Could not acquire the manga image (${message.slice(0, 180)}).`);
+    }
+  }
+
   // MangaPage already uses this existing proxy rewrite on web. Reuse it here
   // so the translation request sees the same CORS/hotlink-safe image URL as
   // the reader; native keeps the original URL and headers.
@@ -84,38 +124,38 @@ async function fetchImageAsBase64(
   })();
 
   console.log(
-    `[TRANSLATION IMAGE START] source=${sourceId} host=${requestHost} proxied=${requestUrl !== imageUrl}`
+    `[TRANSLATION DEBUG] source=${sourceId} imageFetch=started imageSource=web-fetch host=${requestHost} proxied=${requestUrl !== imageUrl}`
   );
 
   let response: Response;
-  const startedAt = Date.now();
+  const webFetchStartedAt = Date.now();
   try {
     response = await fetch(requestUrl, { headers });
   } catch (err: unknown) {
     const name = err instanceof Error ? err.name : "UnknownError";
     const message = err instanceof Error ? err.message : String(err);
     console.error(
-      `[TRANSLATION IMAGE NETWORK ERROR] name=${name} message=${message.slice(0, 160)} elapsed=${Date.now() - startedAt}ms`
+      `[TRANSLATION DEBUG] source=${sourceId} imageFetch=failure imageSource=web-fetch duration=${Date.now() - webFetchStartedAt}ms errorCategory=IMAGE_FETCH_FAILED name=${name} message=${message.slice(0, 160)}`
     );
     throw new Error(
       name === "AbortError"
-        ? "IMAGE_REQUEST_TIMED_OUT: The manga image request timed out."
-        : `IMAGE_NETWORK_ERROR: Could not load the manga image (${message.slice(0, 160)}).`
+        ? "IMAGE_FETCH_TIMEOUT: The manga image request timed out."
+        : `IMAGE_FETCH_FAILED: Could not load the manga image (${message.slice(0, 160)}).`
     );
   }
 
   if (!response.ok) {
     console.error(
-      `[TRANSLATION IMAGE RESPONSE] status=${response.status} contentType=${response.headers.get("content-type") ?? "unknown"} elapsed=${Date.now() - startedAt}ms`
+      `[TRANSLATION DEBUG] source=${sourceId} imageFetch=failure imageSource=web-fetch status=${response.status} contentType=${response.headers.get("content-type") ?? "unknown"} duration=${Date.now() - webFetchStartedAt}ms errorCategory=IMAGE_FETCH_FAILED`
     );
-    throw new Error(`IMAGE_REQUEST_REJECTED: Manga image request returned HTTP ${response.status}.`);
+    throw new Error(`IMAGE_FETCH_FAILED: Manga image request returned HTTP ${response.status}.`);
   }
 
   const blob = await response.blob();
   const mimeType = (blob.type || "image/jpeg").split(";")[0].trim();
 
   console.log(
-    `[TRANSLATION IMAGE RESPONSE] status=${response.status} contentType=${mimeType} size=${blob.size} elapsed=${Date.now() - startedAt}ms`
+    `[TRANSLATION DEBUG] source=${sourceId} imageFetch=success imageSource=web-fetch imageBytes=${blob.size} contentType=${mimeType} duration=${Date.now() - webFetchStartedAt}ms`
   );
 
   return new Promise<{ data: string; mimeType: string }>((resolve, reject) => {
@@ -419,23 +459,36 @@ export async function translateImage(
     try {
       console.log(`[TRANSLATION REQUEST] attempt=${attempt}/${MAX_ATTEMPTS} model=${model}`);
 
-      const response = await client.models.generateContent({
-        model,
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { inlineData: { mimeType: resolvedMime, data: imageData } },
-              { text: prompt },
-            ],
-          },
-        ],
-        config: OCR_GEN_CONFIG,
-      });
+      console.log(
+        `[TRANSLATION DEBUG] model=${model} key=present geminiRequest=started endpoint=generativelanguage.googleapis.com${requestPath}`
+      );
+      let response;
+      try {
+        response = await client.models.generateContent({
+          model,
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { inlineData: { mimeType: resolvedMime, data: imageData } },
+                { text: prompt },
+              ],
+            },
+          ],
+          config: OCR_GEN_CONFIG,
+        });
+      } catch (err: unknown) {
+        const apiErr = err as { status?: number; code?: number; name?: string; message?: string };
+        const message = apiErr.message ?? String(err);
+        console.error(
+          `[TRANSLATION DEBUG] model=${model} geminiRequest=failure geminiHTTP=${apiErr.status ?? apiErr.code ?? "none"} duration=${Date.now() - requestStarted}ms errorCategory=${classifyGeminiError(apiErr, message)} message=${message.slice(0, 180)}`
+        );
+        throw err;
+      }
 
       const raw = response.text?.trim() ?? "";
       console.log(
-        `[TRANSLATION RESPONSE] status=success elapsed=${Date.now() - requestStarted}ms contentType=application/json`
+        `[TRANSLATION DEBUG] model=${model} geminiRequest=success geminiHTTP=success geminiResponse=received duration=${Date.now() - requestStarted}ms contentType=application/json`
       );
 
       if (!raw) {
@@ -573,6 +626,13 @@ export async function translateImage(
   }
 
   throw new Error("Translation failed: exhausted all retry attempts");
+}
+
+function inferImageMimeType(imageUrl: string): "image/jpeg" | "image/png" | "image/webp" {
+  const pathname = imageUrl.split("?")[0].toLowerCase();
+  if (pathname.endsWith(".png")) return "image/png";
+  if (pathname.endsWith(".webp")) return "image/webp";
+  return "image/jpeg";
 }
 
 function classifyGeminiError(

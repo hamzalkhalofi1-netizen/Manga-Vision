@@ -1,0 +1,333 @@
+We need to continue debugging the CURRENT translation failure shown in the mobile app.
+
+IMPORTANT:
+Do NOT assume the previous fix solved the problem.
+Do NOT redesign the translation system.
+Do NOT rebuild unrelated settings, UI, sources, or adapters.
+Do NOT make broad changes.
+Use the smallest possible number of file reads/actions and focus ONLY on the actual translation failure.
+
+CURRENT SYMPTOM:
+When the user opens a manga chapter, the manga page images display correctly.
+When the user presses "Translate", the app shows:
+
+"Page 4 Translation Failed"
+"Unable to reach the translation servers. Check your internet connection and try again."
+Technical detail:
+"Failed to fetch"
+
+The previous debugging attempt claimed:
+
+- The translation image was fetched directly from the CDN.
+- The reader already uses /api/source-proxy.
+- The selected Gemini model was not passed correctly.
+- A proxy/model patch was implemented.
+- Expo bundled successfully.
+
+BUT THE REAL USER-FACING ERROR STILL EXISTS.
+
+Therefore, treat the previous conclusion as UNVERIFIED and perform a real root-cause investigation.
+
+==================================================
+
+1. TRACE THE EXACT RUNTIME PATH
+   ==================================================
+
+Trace the complete flow when the user presses Translate:
+
+Translate button
+→ reader translation handler
+→ translation queue
+→ translateImage()
+→ image acquisition
+→ image conversion/base64/blob
+→ Gemini request
+→ Gemini response
+→ translation result
+→ UI rendering
+
+Identify EXACTLY which operation throws "Failed to fetch".
+
+Do not infer.
+Add temporary safe diagnostics if necessary.
+
+The diagnostic must distinguish:
+
+A. Fetching the manga image failed
+B. Calling Gemini failed
+C. The API key is invalid
+D. The selected model is invalid/unavailable
+E. The Gemini endpoint is unreachable
+F. The Replit/API proxy is unreachable
+G. CORS/network restriction
+H. Timeout
+I. Empty/invalid Gemini response
+J. Response parsing failure
+
+==================================================
+2. VERIFY THE REQUEST FROM THE ACTUAL EXPO CLIENT
+
+The application is primarily an Expo mobile application.
+
+Do NOT assume that a browser/Web implementation is the same as Android Expo.
+
+Check whether the failing request is executed:
+
+- directly from Android
+- through the Replit API server
+- through /api/source-proxy
+- directly against Google Gemini
+- through another proxy
+
+Then verify the exact URL being requested.
+
+Log ONLY safe information such as:
+
+[TRANSLATION DEBUG]
+page: 4
+source: MangaFire/Asura/etc.
+model: gemini-...
+imageFetch: success/failure
+imageBytes: ...
+geminiRequest: started
+geminiHTTP: ...
+geminiResponse: ...
+duration: ...
+errorCategory: ...
+
+NEVER log the API key itself.
+
+==================================================
+3. TEST IMAGE ACQUISITION SEPARATELY
+
+Before calling Gemini, verify that the exact image URL used by translation can actually be downloaded by the Expo Android client.
+
+The reader displaying an image does NOT prove that fetch(imageUrl) can download it.
+
+Test:
+
+- original image URL
+- proxied image URL, if available
+- final URL actually passed into translateImage()
+
+If image download fails, report:
+
+IMAGE_FETCH_FAILED
+
+and the exact reason/status.
+
+If image download succeeds, continue.
+
+Do not modify the source adapters unless the failing image URL is proven to be the cause.
+
+==================================================
+4. TEST GEMINI SEPARATELY
+
+After successfully obtaining the image, test the Gemini request independently.
+
+Use the API key currently stored by the application.
+
+Verify:
+
+- API key exists
+- API key format is accepted
+- selected model is valid
+- endpoint is correct
+- request body is valid
+- image MIME type is correct
+- image data is valid
+- response status
+- response body
+- response parsing
+
+Do NOT expose the key.
+
+If the request returns an HTTP error, record the exact status and safe response category.
+
+For example:
+
+401/403 → API key/authentication problem
+404 → model/endpoint problem
+429 → quota/rate limit
+400 → malformed Gemini request
+5xx → upstream/server problem
+network error → connectivity/request transport problem
+
+==================================================
+5. VERY IMPORTANT: VERIFY MODEL SELECTION
+
+The UI allows the user to select a Gemini model.
+
+Verify that the EXACT selected model reaches the actual Gemini request.
+
+Do not silently default to gemini-2.5-flash.
+
+Check all translation entry points:
+
+- single-page translation
+- chapter translation queue
+- description translation
+
+The selected model must be consistently passed through the entire call chain.
+
+Also verify that the model name used by the API is actually available for the configured Gemini API method.
+
+Do not invent model names.
+
+==================================================
+6. VERIFY API KEY ROTATION
+
+The app supports multiple Gemini API keys.
+
+Verify:
+
+- active key is correctly selected
+- disabled/depleted keys are skipped
+- failed 401/403 keys can be marked invalid
+- 429/quota errors trigger rotation when appropriate
+- a temporary network error does NOT incorrectly delete a valid key
+- the next available key is actually used
+
+Do not change the key-management architecture.
+
+==================================================
+7. VERIFY MOBILE NETWORKING
+
+Because the error occurs in the Expo Android application, check for mobile-specific issues.
+
+Specifically inspect whether the implementation uses:
+
+fetch()
+FormData
+Blob
+ArrayBuffer
+base64
+FileSystem
+localhost
+127.0.0.1
+Replit API URLs
+HTTP instead of HTTPS
+
+A request to localhost/127.0.0.1 from Android refers to the Android device itself, NOT the Replit server.
+
+If the translation request depends on the Replit API server, verify that the mobile client uses the correct reachable HTTPS URL.
+
+Do not change the server architecture unless this is proven to be the problem.
+
+==================================================
+8. DO A CONTROLLED TEST
+
+Do not test the entire application.
+
+Use ONE manga page and ONE translation request.
+
+The test sequence must be:
+
+1. Load page 4.
+2. Confirm image displayed.
+3. Press Translate.
+4. Confirm image acquisition.
+5. Confirm Gemini request.
+6. Confirm HTTP response.
+7. Confirm parsed translation.
+8. Confirm translated result rendered.
+
+If step 4 fails, stop and fix image acquisition.
+
+If step 5 fails, stop and fix Gemini request.
+
+If step 6 fails, diagnose HTTP status.
+
+If step 7 fails, fix response parsing.
+
+If step 8 fails, fix rendering.
+
+Do not make changes to unrelated features.
+
+==================================================
+9. REMOVE THE MISLEADING ERROR MESSAGE
+
+The current message:
+
+"Unable to reach the translation servers. Check your internet connection."
+
+is too generic.
+
+Keep the friendly UI but make the internal error classification accurate.
+
+Examples:
+
+"Image could not be downloaded"
+"Gemini API rejected the request"
+"Gemini quota temporarily exhausted"
+"Selected Gemini model is unavailable"
+"Network request timed out"
+"Translation response was empty"
+"Translation service temporarily unavailable"
+
+Technical details can remain hidden behind "Show technical details".
+
+==================================================
+10. DO NOT STOP AT BUILD SUCCESS
+
+A successful TypeScript check or Expo bundle is NOT proof that translation works.
+
+Do NOT report success just because:
+
+- Metro bundles
+- TypeScript passes
+- the API server starts
+- /api/source-proxy returns 200
+
+The actual requirement is:
+
+THE USER MUST BE ABLE TO PRESS TRANSLATE IN THE EXPO AND RECEIVE A TRANSLATION.
+
+If a real Gemini request cannot be performed from the workspace because the key is stored only locally, then create a minimal runtime diagnostic path that can be executed from the actual Expo app and clearly identifies the failing stage.
+
+Do not claim the issue is fixed until the failing stage has been proven.
+
+==================================================
+11. MINIMAL PATCH ONLY
+
+After identifying the root cause:
+
+- modify only the necessary files
+- preserve the existing architecture
+- preserve the existing UI
+- preserve the existing source adapters
+- preserve API key storage
+- preserve model selection
+- preserve translation caching
+
+Do not rewrite the translation system.
+
+==================================================
+12. FINAL REPORT
+
+At the end provide ONLY:
+
+ROOT CAUSE:
+[exact proven cause]
+
+FAILED STAGE:
+[exact stage]
+
+FIX:
+[what was changed]
+
+FILES MODIFIED:
+[list]
+
+VERIFICATION:
+[exact test performed]
+
+TRANSLATION RESULT:
+PASS / FAIL
+
+If still failing:
+[exact remaining blocker and what the user needs to do]
+
+IMPORTANT:
+Do not say "likely", "probably", or "most likely" in the final root cause.
+The root cause must be based on an observed request/error/result.
