@@ -90,7 +90,7 @@ export default function ReaderScreen() {
     ? chaptersForNav[currentNavIdx + 1]
     : null;
 
-  const { readerSettings, updateReaderSettings, incrementTranslationCount } =
+  const { readerSettings, updateReaderSettings, incrementTranslationCount, geminiModel, translationSettings } =
     useSettings();
   const { tokens, activeTokenId, markRateLimited } = useTokens();
   const { serverUrl: inpaintServerUrl } = useInpaintServer();
@@ -347,7 +347,16 @@ export default function ReaderScreen() {
           pageUrl,
           readerSettings.targetLanguage,
           userKey,
-          sourceId
+          sourceId,
+          {
+            model: geminiModel,
+            style: translationSettings.style,
+            customStyle: translationSettings.customStyle,
+            translateSFX: translationSettings.translateSFX,
+            translateNarration: translationSettings.translateNarration,
+            translateCredits: translationSettings.translateCredits,
+            keepOriginal: translationSettings.keepOriginal,
+          }
         );
 
         if (result === null) throw new Error("No response from Gemini");
@@ -381,6 +390,8 @@ export default function ReaderScreen() {
     sourceId,
     inpaintServerUrl,
     readerSettings.targetLanguage,
+    geminiModel,
+    translationSettings,
     incrementTranslationCount,
     showBanner,
     tokens,
@@ -414,6 +425,15 @@ export default function ReaderScreen() {
       sourceId,
       userApiKey: getLiveKey(),
       inpaintServerUrl: inpaintServerUrl || null,
+      translationOptions: {
+        model: geminiModel,
+        style: translationSettings.style,
+        customStyle: translationSettings.customStyle,
+        translateSFX: translationSettings.translateSFX,
+        translateNarration: translationSettings.translateNarration,
+        translateCredits: translationSettings.translateCredits,
+        keepOriginal: translationSettings.keepOriginal,
+      },
       onPageTranslated,
       onProgress: (progress) => {
         setQueueProgress(progress);
@@ -439,6 +459,8 @@ export default function ReaderScreen() {
     sourceId,
     inpaintServerUrl,
     readerSettings.targetLanguage,
+    geminiModel,
+    translationSettings,
     incrementTranslationCount,
     showBanner,
     showErrorModal,

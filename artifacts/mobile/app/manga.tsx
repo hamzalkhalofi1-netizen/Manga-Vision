@@ -38,7 +38,12 @@ export default function MangaScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ mangaId: string; sourceId: string }>();
   const { addToLibrary, removeFromLibrary, isInLibrary, getEntry, getProgress } = useLibrary();
-  const { readerSettings, activeSourceId, incrementTranslationCount } = useSettings();
+  const {
+    readerSettings,
+    activeSourceId,
+    incrementTranslationCount,
+    geminiModel,
+  } = useSettings();
   const { getActiveKey, markRateLimited, activeTokenId } = useTokens();
 
   const [manga, setManga] = useState<Manga | null>(null);
@@ -132,7 +137,8 @@ export default function MangaScreen() {
         manga.description,
         readerSettings.targetLanguage,
         userKey,
-        `Manga/manhwa description for: ${manga.title}. Genre: ${manga.genres?.join(", ")}`
+        `Manga/manhwa description for: ${manga.title}. Genre: ${manga.genres?.join(", ")}`,
+        { model: geminiModel }
       );
 
       setTranslatedDesc(translated);

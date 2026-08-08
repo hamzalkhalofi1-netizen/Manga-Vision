@@ -12,6 +12,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { getBasicImageHeaders } from "./sourceImageHeaders";
+import { ImageLoader } from "./engine/imageLoader";
 import type { GeminiModel } from "./geminiKeyTest";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -70,19 +71,52 @@ async function fetchImageAsBase64(
   sourceId: string
 ): Promise<{ data: string; mimeType: string }> {
   const headers = getBasicImageHeaders(sourceId);
+  // MangaPage already uses this existing proxy rewrite on web. Reuse it here
+  // so the translation request sees the same CORS/hotlink-safe image URL as
+  // the reader; native keeps the original URL and headers.
+  const requestUrl = ImageLoader.maybeProxyUrl(imageUrl);
+  const requestHost = (() => {
+    try {
+      return new URL(requestUrl).host;
+    } catch {
+      return "invalid-url";
+    }
+  })();
 
-  console.log(`[geminiTranslate] Fetching image: ${imageUrl.substring(0, 80)}...`);
+  console.log(
+    `[TRANSLATION IMAGE START] source=${sourceId} host=${requestHost} proxied=${requestUrl !== imageUrl}`
+  );
 
-  const response = await fetch(imageUrl, { headers });
+  let response: Response;
+  const startedAt = Date.now();
+  try {
+    response = await fetch(requestUrl, { headers });
+  } catch (err: unknown) {
+    const name = err instanceof Error ? err.name : "UnknownError";
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(
+      `[TRANSLATION IMAGE NETWORK ERROR] name=${name} message=${message.slice(0, 160)} elapsed=${Date.now() - startedAt}ms`
+    );
+    throw new Error(
+      name === "AbortError"
+        ? "IMAGE_REQUEST_TIMED_OUT: The manga image request timed out."
+        : `IMAGE_NETWORK_ERROR: Could not load the manga image (${message.slice(0, 160)}).`
+    );
+  }
 
   if (!response.ok) {
-    throw new Error(`Image fetch failed (HTTP ${response.status}): ${imageUrl.substring(0, 80)}`);
+    console.error(
+      `[TRANSLATION IMAGE RESPONSE] status=${response.status} contentType=${response.headers.get("content-type") ?? "unknown"} elapsed=${Date.now() - startedAt}ms`
+    );
+    throw new Error(`IMAGE_REQUEST_REJECTED: Manga image request returned HTTP ${response.status}.`);
   }
 
   const blob = await response.blob();
   const mimeType = (blob.type || "image/jpeg").split(";")[0].trim();
 
-  console.log(`[geminiTranslate] Image fetched OK — mimeType=${mimeType} size=${blob.size}B`);
+  console.log(
+    `[TRANSLATION IMAGE RESPONSE] status=${response.status} contentType=${mimeType} size=${blob.size} elapsed=${Date.now() - startedAt}ms`
+  );
 
   return new Promise<{ data: string; mimeType: string }>((resolve, reject) => {
     const reader = new FileReader();
@@ -329,12 +363,13 @@ ${text}
 
 Return ONLY the translated text with no preamble, no explanations, no quotes around it.`;
 
-  console.log(`[geminiTranslate] translateText — lang=${targetLanguage} chars=${text.length}`);
+  const model = options.model ?? "gemini-2.5-flash";
+  console.log(`[TRANSLATION START] kind=text model=${model} key=present`);
 
   const client = new GoogleGenAI({ apiKey: userApiKey });
 
   const response = await client.models.generateContent({
-    model: options.model ?? "gemini-2.5-flash",
+    model,
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     config: { maxOutputTokens: 8192 },
   });
@@ -367,7 +402,11 @@ export async function translateImage(
     throw new Error("No Gemini API key. Open Settings → Gemini API Keys and add your key.");
   }
 
-  console.log(`[geminiTranslate] Starting OCR+translate — lang=${targetLanguage} source=${sourceId}`);
+  const model = options.model ?? "gemini-2.5-flash";
+  const requestPath = `/v1beta/models/${model}:generateContent`;
+  console.log(
+    `[TRANSLATION START] kind=image language=${targetLanguage} model=${model} key=present url=generativelanguage.googleapis.com${requestPath}`
+  );
 
   const { data: imageData, mimeType } = await fetchImageAsBase64(imageUrl, sourceId);
   const prompt = buildPrompt(targetLanguage, options);
@@ -376,11 +415,12 @@ export async function translateImage(
   const client = new GoogleGenAI({ apiKey: userApiKey });
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const requestStarted = Date.now();
     try {
-      console.log(`[geminiTranslate] Gemini request — attempt ${attempt}/${MAX_ATTEMPTS}`);
+      console.log(`[TRANSLATION REQUEST] attempt=${attempt}/${MAX_ATTEMPTS} model=${model}`);
 
       const response = await client.models.generateContent({
-        model: options.model ?? "gemini-2.5-flash",
+        model,
         contents: [
           {
             role: "user",
@@ -394,7 +434,13 @@ export async function translateImage(
       });
 
       const raw = response.text?.trim() ?? "";
-      console.log(`[geminiTranslate] Response received — raw length=${raw.length}`);
+      console.log(
+        `[TRANSLATION RESPONSE] status=success elapsed=${Date.now() - requestStarted}ms contentType=application/json`
+      );
+
+      if (!raw) {
+        throw new Error("GEMINI_EMPTY_RESPONSE: Gemini returned no translation data.");
+      }
 
       let parsed: {
         found: boolean;
@@ -483,7 +529,9 @@ export async function translateImage(
       const anyErr = err as { status?: number; message?: string; code?: number };
       const errMsg = anyErr?.message ?? String(err);
 
-      console.error(`[geminiTranslate] Attempt ${attempt} failed: ${errMsg}`);
+      console.error(
+        `[TRANSLATION API ERROR] attempt=${attempt} status=${anyErr?.status ?? "none"} category=${classifyGeminiError(anyErr, errMsg)} elapsed=${Date.now() - requestStarted}ms message=${errMsg.slice(0, 180)}`
+      );
 
       if (
         anyErr?.status === 400 &&
@@ -497,6 +545,18 @@ export async function translateImage(
 
       if (anyErr?.status === 429 || anyErr?.code === 429) {
         throw new Error("RATE_LIMITED");
+      }
+
+      if (anyErr?.status === 404 || anyErr?.status === 403) {
+        throw new Error(
+          `MODEL_UNAVAILABLE: The selected Gemini model "${model}" is unavailable for this API key.`
+        );
+      }
+
+      if (anyErr?.status && anyErr.status >= 400 && anyErr.status < 500) {
+        throw new Error(
+          `GEMINI_REQUEST_REJECTED: Gemini rejected the translation request (HTTP ${anyErr.status}).`
+        );
       }
 
       if ((anyErr?.status === 503 || anyErr?.status === 500) && attempt < MAX_ATTEMPTS) {
@@ -513,4 +573,18 @@ export async function translateImage(
   }
 
   throw new Error("Translation failed: exhausted all retry attempts");
+}
+
+function classifyGeminiError(
+  err: { status?: number; code?: number; name?: string },
+  message = ""
+): string {
+  const status = err.status ?? err.code;
+  if (message.includes("GEMINI_EMPTY_RESPONSE")) return "empty_response";
+  if (status === 401 || status === 403) return "auth_or_model";
+  if (status === 404) return "model_unavailable";
+  if (status === 429) return "rate_limit";
+  if (status && status >= 400 && status < 500) return "request_rejected";
+  if (err.name === "AbortError") return "timeout";
+  return "network_or_server";
 }

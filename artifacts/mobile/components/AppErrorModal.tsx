@@ -26,7 +26,17 @@ import {
 
 // ── Error classification ───────────────────────────────────────────────────────
 
-type ErrorCategory = "rate_limit" | "auth" | "network" | "ocr" | "generic";
+type ErrorCategory =
+  | "rate_limit"
+  | "auth"
+  | "model"
+  | "request"
+  | "timeout"
+  | "image"
+  | "empty"
+  | "network"
+  | "ocr"
+  | "generic";
 
 interface ErrorConfig {
   icon: string;
@@ -50,12 +60,45 @@ const ERROR_CONFIGS: Record<ErrorCategory, ErrorConfig> = {
     body:
       "This API key appears to be invalid, revoked, or disabled. Go to Settings → AI Keys to verify your key or add a new one.",
   },
+  model: {
+    icon: "hardware-chip-outline",
+    accentColor: "#f97316",
+    heading: "Model Unavailable",
+    body:
+      "The selected Gemini model is unavailable for this API key. Choose another model in Settings → AI Translation.",
+  },
+  request: {
+    icon: "alert-circle-outline",
+    accentColor: "#eab308",
+    heading: "Gemini Request Rejected",
+    body:
+      "Gemini rejected this translation request. Check the selected model and translation settings, then try again.",
+  },
+  timeout: {
+    icon: "hourglass-outline",
+    accentColor: "#8b5cf6",
+    heading: "Request Timed Out",
+    body: "Gemini took too long to respond. Check your connection and try the page again.",
+  },
+  image: {
+    icon: "image-outline",
+    accentColor: "#06b6d4",
+    heading: "Manga Image Unavailable",
+    body:
+      "The manga image could not be loaded for translation. Try again, or use a different source if the problem continues.",
+  },
+  empty: {
+    icon: "document-outline",
+    accentColor: "#14b8a6",
+    heading: "Empty Gemini Response",
+    body: "Gemini did not return translation data for this page. Try the page again.",
+  },
   network: {
     icon: "wifi-outline",
     accentColor: "#6366f1",
     heading: "Connection Failed",
     body:
-      "Unable to reach the translation servers. Check your internet connection and try again.",
+      "Could not reach Gemini. Check your internet connection and try again.",
   },
   ocr: {
     icon: "scan-outline",
@@ -94,10 +137,20 @@ export function classifyError(raw: string): ErrorCategory {
   )
     return "auth";
 
+  if (msg.includes("model_unavailable") || msg.includes("model unavailable")) return "model";
+  if (msg.includes("gemini_request_rejected") || msg.includes("request rejected")) return "request";
+  if (msg.includes("timed out") || msg.includes("timeout")) return "timeout";
+  if (
+    msg.includes("image_network_error") ||
+    msg.includes("image_request_rejected") ||
+    msg.includes("manga image")
+  )
+    return "image";
+  if (msg.includes("gemini_empty_response") || msg.includes("empty response"))
+    return "empty";
+
   if (
     msg.includes("network") ||
-    msg.includes("timed out") ||
-    msg.includes("timeout") ||
     msg.includes("econnrefused") ||
     msg.includes("etimedout") ||
     msg.includes("fetch") ||
