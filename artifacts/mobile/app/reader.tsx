@@ -2,12 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import React, {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -74,7 +69,9 @@ export default function ReaderScreen() {
     if (!params.chaptersJson) return [];
     try {
       const raw: NavChapter[] = JSON.parse(params.chaptersJson);
-      return [...raw].sort((a, b) => parseFloat(a.number) - parseFloat(b.number));
+      return [...raw].sort(
+        (a, b) => parseFloat(a.number) - parseFloat(b.number),
+      );
     } catch {
       return [];
     }
@@ -84,14 +81,23 @@ export default function ReaderScreen() {
   const [activeChapterId, setActiveChapterId] = useState(params.chapterId);
   const [activeChapterNum, setActiveChapterNum] = useState(params.chapterNum);
 
-  const currentNavIdx = chaptersForNav.findIndex((c) => c.id === activeChapterId);
-  const prevChapter = currentNavIdx > 0 ? chaptersForNav[currentNavIdx - 1] : null;
-  const nextChapter = currentNavIdx >= 0 && currentNavIdx < chaptersForNav.length - 1
-    ? chaptersForNav[currentNavIdx + 1]
-    : null;
+  const currentNavIdx = chaptersForNav.findIndex(
+    (c) => c.id === activeChapterId,
+  );
+  const prevChapter =
+    currentNavIdx > 0 ? chaptersForNav[currentNavIdx - 1] : null;
+  const nextChapter =
+    currentNavIdx >= 0 && currentNavIdx < chaptersForNav.length - 1
+      ? chaptersForNav[currentNavIdx + 1]
+      : null;
 
-  const { readerSettings, updateReaderSettings, incrementTranslationCount, geminiModel, translationSettings } =
-    useSettings();
+  const {
+    readerSettings,
+    updateReaderSettings,
+    incrementTranslationCount,
+    geminiModel,
+    translationSettings,
+  } = useSettings();
   const { tokens, activeTokenId, markRateLimited } = useTokens();
   const { serverUrl: inpaintServerUrl } = useInpaintServer();
 
@@ -103,7 +109,12 @@ export default function ReaderScreen() {
     return token.key;
   };
   const { saveProgress } = useLibrary();
-  const { dlState, dlProgress, downloadChapter: startDownload, deleteChapter } = useDownloads();
+  const {
+    dlState,
+    dlProgress,
+    downloadChapter: startDownload,
+    deleteChapter,
+  } = useDownloads();
 
   // ── Page state ────────────────────────────────────────────────────────────
   const [pages, setPages] = useState<string[]>([]);
@@ -125,16 +136,24 @@ export default function ReaderScreen() {
   });
 
   // ── Translation state ─────────────────────────────────────────────────────
-  const [pageTranslations, setPageTranslations] = useState<PageTranslations>({});
+  const [pageTranslations, setPageTranslations] = useState<PageTranslations>(
+    {},
+  );
   const [singlePageTranslating, setSinglePageTranslating] = useState(false);
 
   // ── Queue state ───────────────────────────────────────────────────────────
-  const [queueProgress, setQueueProgress] = useState<QueueProgress | null>(null);
+  const [queueProgress, setQueueProgress] = useState<QueueProgress | null>(
+    null,
+  );
   const [statusBanner, setStatusBanner] = useState<string>("");
   const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Error modal state ─────────────────────────────────────────────────────
-  const [errorModal, setErrorModal] = useState<{ visible: boolean; title: string; message: string }>({
+  const [errorModal, setErrorModal] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+  }>({
     visible: false,
     title: "",
     message: "",
@@ -153,6 +172,9 @@ export default function ReaderScreen() {
   const flatListRef = useRef<FlatList>(null);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentPageRef = useRef(0);
+  // MangaPage reports this only after the exact URI being rendered has been
+  // resolved and verified by useCachedPageImage.
+  const resolvedPageUrisRef = useRef(new Map<number, string>());
   const saveProgressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
@@ -178,13 +200,18 @@ export default function ReaderScreen() {
     setCurrentPage(0);
     currentPageRef.current = 0;
     setPageTranslations({});
+    resolvedPageUrisRef.current.clear();
     setQueueProgress(null);
     translationQueue.cancel();
 
     (async () => {
       try {
         // ── Offline first: use locally saved pages if available ──────────────
-        const local = await DM.getDownloadedPages(sid, params.mangaId, activeChapterId);
+        const local = await DM.getDownloadedPages(
+          sid,
+          params.mangaId,
+          activeChapterId,
+        );
         if (local && local.length > 0) {
           if (controller.signal.aborted) return;
           setPages(local);
@@ -195,10 +222,15 @@ export default function ReaderScreen() {
         }
 
         // ── Network fetch ────────────────────────────────────────────────────
-        const p = await source.getChapterPages(activeChapterId, controller.signal);
+        const p = await source.getChapterPages(
+          activeChapterId,
+          controller.signal,
+        );
         if (controller.signal.aborted) return;
         const valid = (p || []).filter(
-          (u) => typeof u === "string" && (u.startsWith("http") || u.startsWith("file://"))
+          (u) =>
+            typeof u === "string" &&
+            (u.startsWith("http") || u.startsWith("file://")),
         );
         if (valid.length === 0) {
           setLoadError("No pages found for this chapter.");
@@ -212,9 +244,12 @@ export default function ReaderScreen() {
         // Ignore aborts — they are intentional (chapter changed / unmounted)
         if (err instanceof Error && err.name === "AbortError") return;
         console.error("[reader] getChapterPages failed:", err);
-        const msg = err instanceof SourceError
-          ? err.message
-          : err instanceof Error ? err.message : "Failed to load chapter.";
+        const msg =
+          err instanceof SourceError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : "Failed to load chapter.";
         setLoadError(msg);
       } finally {
         if (!controller.signal.aborted) setLoading(false);
@@ -281,9 +316,12 @@ export default function ReaderScreen() {
 
       // Pick the item with the highest visibility fraction
       let bestIdx = viewableItems[0].index ?? 0;
-      let bestFrac = (viewableItems[0] as ViewToken & { percentVisible?: number }).percentVisible ?? 0;
+      let bestFrac =
+        (viewableItems[0] as ViewToken & { percentVisible?: number })
+          .percentVisible ?? 0;
       for (const item of viewableItems) {
-        const frac = (item as ViewToken & { percentVisible?: number }).percentVisible ?? 0;
+        const frac =
+          (item as ViewToken & { percentVisible?: number }).percentVisible ?? 0;
         if (frac > bestFrac && item.index != null) {
           bestFrac = frac;
           bestIdx = item.index;
@@ -294,7 +332,7 @@ export default function ReaderScreen() {
         currentPageRef.current = bestIdx;
         setCurrentPage(bestIdx);
       }
-    }
+    },
   );
 
   // ─── Show status banner briefly ────────────────────────────────────────────
@@ -327,7 +365,12 @@ export default function ReaderScreen() {
 
       if (inpaintServerUrl) {
         // ── Decentralized HF inpaint server ──────────────────────────────────
-        const result = await callInpaintServer(inpaintServerUrl, pageUrl, [], 90_000);
+        const result = await callInpaintServer(
+          inpaintServerUrl,
+          pageUrl,
+          [],
+          90_000,
+        );
         regions = result.regions;
         summary = result.summary;
       } else {
@@ -336,12 +379,14 @@ export default function ReaderScreen() {
         if (!userKey) {
           showErrorModal(
             "Gemini API Key Required",
-            "Open Settings → Gemini API Keys and add your key to enable translations."
+            "Open Settings → Gemini API Keys and add your key to enable translations.",
           );
           return;
         }
 
-        console.log(`[reader] Starting single-page translate — page=${idx} lang=${readerSettings.targetLanguage}`);
+        console.log(
+          `[reader] Starting single-page translate — page=${idx} lang=${readerSettings.targetLanguage}`,
+        );
 
         const result = await translateImage(
           pageUrl,
@@ -350,13 +395,14 @@ export default function ReaderScreen() {
           sourceId,
           {
             model: geminiModel,
+            localImageUri: resolvedPageUrisRef.current.get(idx),
             style: translationSettings.style,
             customStyle: translationSettings.customStyle,
             translateSFX: translationSettings.translateSFX,
             translateNarration: translationSettings.translateNarration,
             translateCredits: translationSettings.translateCredits,
             keepOriginal: translationSettings.keepOriginal,
-          }
+          },
         );
 
         if (result === null) throw new Error("No response from Gemini");
@@ -364,7 +410,9 @@ export default function ReaderScreen() {
         regions = result.regions ?? [];
         summary = result.summary ?? "";
 
-        console.log(`[reader] Single-page translate success — regions=${regions.length}`);
+        console.log(
+          `[reader] Single-page translate success — regions=${regions.length}`,
+        );
       }
 
       setPageTranslations((prev) => ({ ...prev, [idx]: regions }));
@@ -374,7 +422,9 @@ export default function ReaderScreen() {
       if (regions.length === 0) {
         showBanner(summary || "No text detected on this page.");
       } else {
-        showBanner(`Found ${regions.length} text region${regions.length > 1 ? "s" : ""}. ${summary}`);
+        showBanner(
+          `Found ${regions.length} text region${regions.length > 1 ? "s" : ""}. ${summary}`,
+        );
       }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -414,7 +464,11 @@ export default function ReaderScreen() {
     setShowControls(false);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
-    const onPageTranslated: OnPageTranslated = (pageIndex, regions, summary) => {
+    const onPageTranslated: OnPageTranslated = (
+      pageIndex,
+      regions,
+      summary,
+    ) => {
       setPageTranslations((prev) => ({ ...prev, [pageIndex]: regions }));
       if (regions.length > 0) incrementTranslationCount();
     };
@@ -442,7 +496,7 @@ export default function ReaderScreen() {
         setQueueProgress(null);
         showBanner(
           `Done! ${stats.completed} pages translated${stats.failed > 0 ? `, ${stats.failed} failed` : ""}.`,
-          5000
+          5000,
         );
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       },
@@ -470,13 +524,16 @@ export default function ReaderScreen() {
   ]);
 
   // ─── Chapter navigation (in-place, no remount) ────────────────────────────
-  const handleGoToChapter = useCallback((chapter: { id: string; number: string }) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setActiveChapterId(chapter.id);
-    setActiveChapterNum(chapter.number);
-    setShowControls(true);
-    resetControlsTimer();
-  }, [resetControlsTimer]);
+  const handleGoToChapter = useCallback(
+    (chapter: { id: string; number: string }) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      setActiveChapterId(chapter.id);
+      setActiveChapterNum(chapter.number);
+      setShowControls(true);
+      resetControlsTimer();
+    },
+    [resetControlsTimer],
+  );
 
   // ─── Download / delete chapter ────────────────────────────────────────────
   const chDlState = dlState[activeChapterId] ?? "idle";
@@ -503,7 +560,7 @@ export default function ReaderScreen() {
             style: "destructive",
             onPress: () => deleteChapter(sid, params.mangaId, activeChapterId),
           },
-        ]
+        ],
       );
       return;
     }
@@ -517,7 +574,7 @@ export default function ReaderScreen() {
         params.mangaTitle ?? "Unknown",
         "",
         sid,
-        pages
+        pages,
       );
       showBanner(`Chapter ${activeChapterNum} saved for offline reading.`);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -539,7 +596,8 @@ export default function ReaderScreen() {
   // ─── Toggle reading mode ───────────────────────────────────────────────────
   const toggleMode = useCallback(() => {
     updateReaderSettings({
-      readingMode: readerSettings.readingMode === "vertical" ? "horizontal" : "vertical",
+      readingMode:
+        readerSettings.readingMode === "vertical" ? "horizontal" : "vertical",
     });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, [readerSettings.readingMode, updateReaderSettings]);
@@ -554,16 +612,19 @@ export default function ReaderScreen() {
           regions={pageTranslations[index]}
           showOverlay={overlayVisible}
           isRTL={isRTL}
+          onImageResolved={(localUri) => {
+            resolvedPageUrisRef.current.set(index, localUri);
+          }}
           sourceId={params.sourceId || "mangadex"}
         />
       </Pressable>
     ),
-    [handleTap, pageTranslations, overlayVisible, isRTL]
+    [handleTap, pageTranslations, overlayVisible, isRTL],
   );
 
   const keyExtractor = useCallback(
     (uri: string, idx: number) => `${uri}-${idx}`,
-    []
+    [],
   );
 
   // ─── Derived ───────────────────────────────────────────────────────────────
@@ -632,49 +693,70 @@ export default function ReaderScreen() {
             ? (_, i) => ({ length: SCREEN_W, offset: SCREEN_W * i, index: i })
             : undefined
         }
-        ListFooterComponent={isVertical ? (
-          <View>
-            <View style={{ height: 48 }} />
-            {/* End-of-chapter card */}
-            <View style={styles.chapterEndCard}>
-              <View style={styles.chapterEndDivider} />
-              <Text style={styles.chapterEndLabel}>End of Chapter {activeChapterNum}</Text>
-              {nextChapter ? (
-                <Pressable
-                  onPress={() => handleGoToChapter(nextChapter)}
-                  style={styles.chapterEndBtn}
-                >
-                  <View style={styles.chapterEndBtnInner}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.chapterEndBtnSub}>NEXT CHAPTER</Text>
-                      <Text style={styles.chapterEndBtnTitle} numberOfLines={2}>
-                        Ch. {nextChapter.number}{nextChapter.title ? ` — ${nextChapter.title}` : ""}
-                      </Text>
+        ListFooterComponent={
+          isVertical ? (
+            <View>
+              <View style={{ height: 48 }} />
+              {/* End-of-chapter card */}
+              <View style={styles.chapterEndCard}>
+                <View style={styles.chapterEndDivider} />
+                <Text style={styles.chapterEndLabel}>
+                  End of Chapter {activeChapterNum}
+                </Text>
+                {nextChapter ? (
+                  <Pressable
+                    onPress={() => handleGoToChapter(nextChapter)}
+                    style={styles.chapterEndBtn}
+                  >
+                    <View style={styles.chapterEndBtnInner}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.chapterEndBtnSub}>
+                          NEXT CHAPTER
+                        </Text>
+                        <Text
+                          style={styles.chapterEndBtnTitle}
+                          numberOfLines={2}
+                        >
+                          Ch. {nextChapter.number}
+                          {nextChapter.title ? ` — ${nextChapter.title}` : ""}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={22} color="#fff" />
                     </View>
-                    <Ionicons name="chevron-forward" size={22} color="#fff" />
-                  </View>
-                </Pressable>
-              ) : (
-                <View style={styles.endOfSeriesBox}>
-                  <Text style={styles.endOfSeriesEmoji}>🎉</Text>
-                  <Text style={styles.endOfSeriesTitle}>All caught up!</Text>
-                  <Text style={styles.endOfSeriesSub}>
-                    You've reached the latest chapter.{"\n"}Check back soon for updates.
-                  </Text>
-                  <Pressable onPress={() => router.back()} style={styles.endOfSeriesBtn}>
-                    <Text style={styles.endOfSeriesBtnTxt}>← Back to Manga</Text>
                   </Pressable>
-                </View>
-              )}
+                ) : (
+                  <View style={styles.endOfSeriesBox}>
+                    <Text style={styles.endOfSeriesEmoji}>🎉</Text>
+                    <Text style={styles.endOfSeriesTitle}>All caught up!</Text>
+                    <Text style={styles.endOfSeriesSub}>
+                      You've reached the latest chapter.{"\n"}Check back soon
+                      for updates.
+                    </Text>
+                    <Pressable
+                      onPress={() => router.back()}
+                      style={styles.endOfSeriesBtn}
+                    >
+                      <Text style={styles.endOfSeriesBtnTxt}>
+                        ← Back to Manga
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
             </View>
-          </View>
-        ) : null}
+          ) : null
+        }
         style={styles.list}
       />
 
       {/* ── Top controls ──────────────────────────────────────────────────── */}
       {showControls && (
-        <View style={[styles.topOverlay, { paddingTop: topPadding + 8, pointerEvents: "box-none" }]}>
+        <View
+          style={[
+            styles.topOverlay,
+            { paddingTop: topPadding + 8, pointerEvents: "box-none" },
+          ]}
+        >
           <LinearGradient
             colors={["rgba(0,0,0,0.90)", "rgba(0,0,0,0.45)", "transparent"]}
             style={StyleSheet.absoluteFillObject}
@@ -705,7 +787,11 @@ export default function ReaderScreen() {
             >
               {isQueueRunning ? (
                 <>
-                  <ActivityIndicator color="#fff" size="small" style={{ width: 14, height: 14 }} />
+                  <ActivityIndicator
+                    color="#fff"
+                    size="small"
+                    style={{ width: 14, height: 14 }}
+                  />
                   <Text style={styles.chapterTranslateTxt}>
                     {queueProgress?.completed}/{pages.length}
                   </Text>
@@ -730,29 +816,52 @@ export default function ReaderScreen() {
                     chDlState === "done"
                       ? "rgba(34,197,94,0.22)"
                       : chDlState === "error"
-                      ? "rgba(239,68,68,0.22)"
-                      : "rgba(255,255,255,0.15)",
+                        ? "rgba(239,68,68,0.22)"
+                        : "rgba(255,255,255,0.15)",
                   paddingHorizontal: 7,
                 },
               ]}
             >
               {chDlState === "downloading" ? (
                 <>
-                  <ActivityIndicator color="#fff" size="small" style={{ width: 14, height: 14 }} />
+                  <ActivityIndicator
+                    color="#fff"
+                    size="small"
+                    style={{ width: 14, height: 14 }}
+                  />
                   <Text style={styles.chapterTranslateTxt}>
-                    {chDlProgress ? `${chDlProgress.done}/${chDlProgress.total}` : "…"}
+                    {chDlProgress
+                      ? `${chDlProgress.done}/${chDlProgress.total}`
+                      : "…"}
                   </Text>
                 </>
               ) : chDlState === "done" ? (
-                <Ionicons name="checkmark-circle" size={17} color="rgb(34,197,94)" />
+                <Ionicons
+                  name="checkmark-circle"
+                  size={17}
+                  color="rgb(34,197,94)"
+                />
               ) : chDlState === "error" ? (
-                <Ionicons name="alert-circle-outline" size={17} color="rgb(239,68,68)" />
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={17}
+                  color="rgb(239,68,68)"
+                />
               ) : (
-                <Ionicons name="cloud-download-outline" size={17} color="#fff" />
+                <Ionicons
+                  name="cloud-download-outline"
+                  size={17}
+                  color="#fff"
+                />
               )}
             </Pressable>
 
-            <View style={[styles.pageBadge, { backgroundColor: "rgba(255,255,255,0.16)" }]}>
+            <View
+              style={[
+                styles.pageBadge,
+                { backgroundColor: "rgba(255,255,255,0.16)" },
+              ]}
+            >
               <Text style={styles.pageBadgeTxt}>
                 {currentPage + 1}/{pages.length}
               </Text>
@@ -767,7 +876,8 @@ export default function ReaderScreen() {
                   styles.progressBarFill,
                   {
                     backgroundColor: colors.primary,
-                    width: `${queueProgress?.percentDone ?? 0}%` as unknown as number,
+                    width:
+                      `${queueProgress?.percentDone ?? 0}%` as unknown as number,
                   },
                 ]}
               />
@@ -779,7 +889,10 @@ export default function ReaderScreen() {
       {/* ── Status banner ─────────────────────────────────────────────────── */}
       {statusBanner !== "" && (
         <View
-          style={[styles.banner, { top: topPadding + 72, pointerEvents: "none" }]}
+          style={[
+            styles.banner,
+            { top: topPadding + 72, pointerEvents: "none" },
+          ]}
         >
           <Text style={styles.bannerText} numberOfLines={3}>
             {statusBanner}
@@ -789,7 +902,12 @@ export default function ReaderScreen() {
 
       {/* ── Bottom controls ────────────────────────────────────────────────── */}
       {showControls && (
-        <View style={[styles.bottomOverlay, { paddingBottom: bottomPadding + 8, pointerEvents: "box-none" }]}>
+        <View
+          style={[
+            styles.bottomOverlay,
+            { paddingBottom: bottomPadding + 8, pointerEvents: "box-none" },
+          ]}
+        >
           <LinearGradient
             colors={["transparent", "rgba(0,0,0,0.72)", "rgba(0,0,0,0.97)"]}
             style={StyleSheet.absoluteFillObject}
@@ -798,7 +916,10 @@ export default function ReaderScreen() {
             {/* Reading mode */}
             <Pressable
               onPress={toggleMode}
-              style={[styles.sideBtn, { backgroundColor: "rgba(255,255,255,0.13)" }]}
+              style={[
+                styles.sideBtn,
+                { backgroundColor: "rgba(255,255,255,0.13)" },
+              ]}
             >
               <Ionicons
                 name={isVertical ? "albums-outline" : "book-outline"}
@@ -821,8 +942,8 @@ export default function ReaderScreen() {
                     hasTranslation && overlayVisible
                       ? colors.primary
                       : hasTranslation
-                      ? "rgba(255,255,255,0.18)"
-                      : colors.primary,
+                        ? "rgba(255,255,255,0.18)"
+                        : colors.primary,
                   opacity: singlePageTranslating ? 0.75 : 1,
                 },
               ]}
@@ -835,8 +956,8 @@ export default function ReaderScreen() {
                     hasTranslation && overlayVisible
                       ? "eye-outline"
                       : hasTranslation
-                      ? "eye-off-outline"
-                      : "sparkles"
+                        ? "eye-off-outline"
+                        : "sparkles"
                   }
                   size={17}
                   color="#fff"
@@ -846,17 +967,20 @@ export default function ReaderScreen() {
                 {singlePageTranslating
                   ? "Scanning..."
                   : hasTranslation && overlayVisible
-                  ? "Hide"
-                  : hasTranslation
-                  ? "Show"
-                  : "Translate"}
+                    ? "Hide"
+                    : hasTranslation
+                      ? "Show"
+                      : "Translate"}
               </Text>
             </Pressable>
 
             {/* Chapters list */}
             <Pressable
               onPress={() => router.back()}
-              style={[styles.sideBtn, { backgroundColor: "rgba(255,255,255,0.13)" }]}
+              style={[
+                styles.sideBtn,
+                { backgroundColor: "rgba(255,255,255,0.13)" },
+              ]}
             >
               <Ionicons name="list-outline" size={19} color="#fff" />
               <Text style={styles.sideBtnLabel}>Chapters</Text>
@@ -896,22 +1020,26 @@ export default function ReaderScreen() {
       />
 
       {/* ── Horizontal mode: Next Chapter floating banner on last page ──────── */}
-      {!isVertical && nextChapter && currentPage === pages.length - 1 && pages.length > 0 && (
-        <Pressable
-          onPress={() => handleGoToChapter(nextChapter)}
-          style={styles.nextChapterFloating}
-        >
-          <View style={styles.nextChapterFloatingInner}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.nextChapterFloatingSub}>NEXT CHAPTER</Text>
-              <Text style={styles.nextChapterFloatingTitle} numberOfLines={1}>
-                Ch. {nextChapter.number}{nextChapter.title ? ` — ${nextChapter.title}` : ""}
-              </Text>
+      {!isVertical &&
+        nextChapter &&
+        currentPage === pages.length - 1 &&
+        pages.length > 0 && (
+          <Pressable
+            onPress={() => handleGoToChapter(nextChapter)}
+            style={styles.nextChapterFloating}
+          >
+            <View style={styles.nextChapterFloatingInner}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.nextChapterFloatingSub}>NEXT CHAPTER</Text>
+                <Text style={styles.nextChapterFloatingTitle} numberOfLines={1}>
+                  Ch. {nextChapter.number}
+                  {nextChapter.title ? ` — ${nextChapter.title}` : ""}
+                </Text>
+              </View>
+              <Ionicons name="arrow-forward-circle" size={28} color="#fff" />
             </View>
-            <Ionicons name="arrow-forward-circle" size={28} color="#fff" />
-          </View>
-        </Pressable>
-      )}
+          </Pressable>
+        )}
     </View>
   );
 }

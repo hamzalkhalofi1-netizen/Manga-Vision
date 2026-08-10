@@ -24,7 +24,12 @@ export interface TranslatedRegion {
   original: string;
   translated: string;
   /** Tight 4-point polygon wrapping the text glyphs (normalized 0–1). */
-  polygon?: [[number, number], [number, number], [number, number], [number, number]];
+  polygon?: [
+    [number, number],
+    [number, number],
+    [number, number],
+    [number, number],
+  ];
   /**
    * 4–8 point polygon tracing the FULL speech bubble outline.
    * Larger than polygon — covers the bubble border, tail, and pointer.
@@ -71,7 +76,8 @@ const LANGUAGE_NAMES: Record<string, string> = {
 
 async function fetchImageAsBase64(
   imageUrl: string,
-  sourceId: string
+  sourceId: string,
+  localImageUri?: string,
 ): Promise<{ data: string; mimeType: string }> {
   const headers = getBasicImageHeaders(sourceId);
   const startedAt = Date.now();
@@ -82,32 +88,58 @@ async function fetchImageAsBase64(
   // JavaScript fetch to the same hotlink-protected URL fails with "Failed to
   // fetch".
   if (Platform.OS !== "web") {
+    let localUri = localImageUri;
     try {
-      const localUri =
-        (await ImageDiskCache.getPath(imageUrl)) ??
-        (await ImageDiskCache.download(imageUrl, headers));
-      const info = await FileSystem.getInfoAsync(localUri, { size: true } as any);
-      const sizeBytes = (info as FileSystem.FileInfo & { size?: number }).size ?? 0;
+      if (!localUri) {
+        localUri = (await ImageDiskCache.getPath(imageUrl)) ?? undefined;
+      }
+      if (!localUri) {
+        localUri = await ImageDiskCache.download(imageUrl, headers);
+      }
+      const info = await FileSystem.getInfoAsync(localUri, {
+        size: true,
+      } as any);
+      const sizeBytes =
+        (info as FileSystem.FileInfo & { size?: number }).size ?? 0;
       if (!info.exists || sizeBytes === 0) {
-        throw new Error("Downloaded image is empty or corrupted");
+        throw new Error(
+          "IMAGE_CACHE_READ_FAILED: Cached image is missing or empty",
+        );
       }
 
-      const data = await FileSystem.readAsStringAsync(localUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      if (!data) throw new Error("FileSystem returned empty base64");
+      let data: string;
+      try {
+        data = await FileSystem.readAsStringAsync(localUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+      } catch (readErr) {
+        const message =
+          readErr instanceof Error ? readErr.message : String(readErr);
+        throw new Error(`IMAGE_CACHE_READ_FAILED: ${message}`);
+      }
+      if (!data)
+        throw new Error(
+          "IMAGE_CONVERSION_FAILED: FileSystem returned empty base64",
+        );
 
-      const mimeType = inferImageMimeType(imageUrl);
+      const mimeType = inferImageMimeType(localUri || imageUrl);
       console.log(
-        `[TRANSLATION DEBUG] source=${sourceId} imageFetch=success imageSource=native-cache imageBytes=${sizeBytes} duration=${Date.now() - startedAt}ms`
+        `[TRANSLATION DEBUG] source=${sourceId} imageSource=${localImageUri ? "LOCAL_CACHE" : "NETWORK"} ` +
+          `imageExists=true imageSize=${sizeBytes} imageConversion=SUCCESS base64Length=${data.length} ` +
+          `duration=${Date.now() - startedAt}ms`,
       );
       return { data, mimeType };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(
-        `[TRANSLATION DEBUG] source=${sourceId} imageFetch=failure imageSource=native-cache duration=${Date.now() - startedAt}ms errorCategory=IMAGE_FETCH_FAILED message=${message.slice(0, 180)}`
+        `[TRANSLATION DEBUG] source=${sourceId} imageSource=${localImageUri ? "LOCAL_CACHE" : "NETWORK"} ` +
+          `imageExists=unknown imageConversion=FAIL duration=${Date.now() - startedAt}ms message=${message.slice(0, 180)}`,
       );
-      throw new Error(`IMAGE_FETCH_FAILED: Could not acquire the manga image (${message.slice(0, 180)}).`);
+      throw new Error(
+        message.startsWith("IMAGE_")
+          ? message
+          : `IMAGE_DOWNLOAD_FAILED: ${message.slice(0, 180)}`,
+      );
     }
   }
 
@@ -124,7 +156,7 @@ async function fetchImageAsBase64(
   })();
 
   console.log(
-    `[TRANSLATION DEBUG] source=${sourceId} imageFetch=started imageSource=web-fetch host=${requestHost} proxied=${requestUrl !== imageUrl}`
+    `[TRANSLATION DEBUG] source=${sourceId} imageSource=PROXY imageFetch=started host=${requestHost} proxied=${requestUrl !== imageUrl}`,
   );
 
   let response: Response;
@@ -135,27 +167,33 @@ async function fetchImageAsBase64(
     const name = err instanceof Error ? err.name : "UnknownError";
     const message = err instanceof Error ? err.message : String(err);
     console.error(
-      `[TRANSLATION DEBUG] source=${sourceId} imageFetch=failure imageSource=web-fetch duration=${Date.now() - webFetchStartedAt}ms errorCategory=IMAGE_FETCH_FAILED name=${name} message=${message.slice(0, 160)}`
+      `[TRANSLATION DEBUG] source=${sourceId} imageSource=PROXY imageFetch=failure duration=${Date.now() - webFetchStartedAt}ms ` +
+        `errorCategory=${name === "AbortError" ? "TIMEOUT" : "IMAGE_DOWNLOAD_FAILED"} message=${message.slice(0, 160)}`,
     );
     throw new Error(
       name === "AbortError"
-        ? "IMAGE_FETCH_TIMEOUT: The manga image request timed out."
-        : `IMAGE_FETCH_FAILED: Could not load the manga image (${message.slice(0, 160)}).`
+        ? "TIMEOUT: The manga image request timed out."
+        : `IMAGE_DOWNLOAD_FAILED: Could not load the manga image (${message.slice(0, 160)}).`,
     );
   }
 
   if (!response.ok) {
     console.error(
-      `[TRANSLATION DEBUG] source=${sourceId} imageFetch=failure imageSource=web-fetch status=${response.status} contentType=${response.headers.get("content-type") ?? "unknown"} duration=${Date.now() - webFetchStartedAt}ms errorCategory=IMAGE_FETCH_FAILED`
+      `[TRANSLATION DEBUG] source=${sourceId} imageSource=PROXY imageFetch=failure status=${response.status} ` +
+        `contentType=${response.headers.get("content-type") ?? "unknown"} duration=${Date.now() - webFetchStartedAt}ms ` +
+        `errorCategory=IMAGE_DOWNLOAD_FAILED`,
     );
-    throw new Error(`IMAGE_FETCH_FAILED: Manga image request returned HTTP ${response.status}.`);
+    throw new Error(
+      `IMAGE_DOWNLOAD_FAILED: Manga image request returned HTTP ${response.status}.`,
+    );
   }
 
   const blob = await response.blob();
   const mimeType = (blob.type || "image/jpeg").split(";")[0].trim();
 
   console.log(
-    `[TRANSLATION DEBUG] source=${sourceId} imageFetch=success imageSource=web-fetch imageBytes=${blob.size} contentType=${mimeType} duration=${Date.now() - webFetchStartedAt}ms`
+    `[TRANSLATION DEBUG] source=${sourceId} imageSource=PROXY imageFetch=success imageBytes=${blob.size} ` +
+      `contentType=${mimeType} duration=${Date.now() - webFetchStartedAt}ms`,
   );
 
   return new Promise<{ data: string; mimeType: string }>((resolve, reject) => {
@@ -164,12 +202,21 @@ async function fetchImageAsBase64(
       const result = reader.result as string;
       const base64 = result.split(",")[1];
       if (!base64) {
-        reject(new Error("FileReader produced empty base64"));
+        reject(
+          new Error(
+            "IMAGE_CONVERSION_FAILED: FileReader produced empty base64",
+          ),
+        );
         return;
       }
       resolve({ data: base64, mimeType });
     };
-    reader.onerror = () => reject(new Error("FileReader error reading image blob"));
+    reader.onerror = () =>
+      reject(
+        new Error(
+          "IMAGE_CONVERSION_FAILED: FileReader error reading image blob",
+        ),
+      );
     reader.readAsDataURL(blob);
   });
 }
@@ -178,7 +225,9 @@ async function fetchImageAsBase64(
 
 function computeCentroid(poly: [number, number][]): { x: number; y: number } {
   const n = poly.length;
-  let cx = 0, cy = 0, area = 0;
+  let cx = 0,
+    cy = 0,
+    area = 0;
   for (let i = 0; i < n; i++) {
     const [x0, y0] = poly[i];
     const [x1, y1] = poly[(i + 1) % n];
@@ -215,7 +264,7 @@ function bboxToPolygon(
   x: number,
   y: number,
   w: number,
-  h: number
+  h: number,
 ): [[number, number], [number, number], [number, number], [number, number]] {
   return [
     [x, y],
@@ -226,15 +275,20 @@ function bboxToPolygon(
 }
 
 function validatePolygon(
-  raw: unknown
-): [[number, number], [number, number], [number, number], [number, number]] | null {
+  raw: unknown,
+):
+  | [[number, number], [number, number], [number, number], [number, number]]
+  | null {
   if (!Array.isArray(raw) || raw.length < 3) return null;
   const pts = raw.map((p) => {
     if (!Array.isArray(p) || p.length < 2) return null;
     const x = Number(p[0]);
     const y = Number(p[1]);
     if (isNaN(x) || isNaN(y)) return null;
-    return [Math.max(0, Math.min(1, x)), Math.max(0, Math.min(1, y))] as [number, number];
+    return [Math.max(0, Math.min(1, x)), Math.max(0, Math.min(1, y))] as [
+      number,
+      number,
+    ];
   });
   if (pts.some((p) => p === null)) return null;
   const valid = pts as [number, number][];
@@ -263,6 +317,8 @@ function validateBubblePolygon(raw: unknown): [number, number][] | null {
 
 export interface TranslationOptions {
   model?: GeminiModel;
+  /** Exact local file currently rendered by MangaPage on native. */
+  localImageUri?: string;
   style?: "literal" | "natural" | "professional" | "anime" | "custom";
   customStyle?: string;
   translateSFX?: boolean;
@@ -271,23 +327,35 @@ export interface TranslationOptions {
   keepOriginal?: boolean;
 }
 
-function buildPrompt(targetLanguage: string, options: TranslationOptions = {}): string {
+function buildPrompt(
+  targetLanguage: string,
+  options: TranslationOptions = {},
+): string {
   const langName = LANGUAGE_NAMES[targetLanguage] ?? targetLanguage;
   const isRTL = targetLanguage === "ar";
-  const styleInstruction = options.style === "custom"
-    ? options.customStyle?.trim() || "natural and idiomatic"
-    : options.style === "literal"
-      ? "close to the source wording while remaining grammatical"
-      : options.style === "professional"
-        ? "polished and faithful to an official localization"
-        : options.style === "anime"
-          ? "emotionally vivid, characterful, and consistent with anime localization"
-          : "natural and idiomatic";
+  const styleInstruction =
+    options.style === "custom"
+      ? options.customStyle?.trim() || "natural and idiomatic"
+      : options.style === "literal"
+        ? "close to the source wording while remaining grammatical"
+        : options.style === "professional"
+          ? "polished and faithful to an official localization"
+          : options.style === "anime"
+            ? "emotionally vivid, characterful, and consistent with anime localization"
+            : "natural and idiomatic";
   const typeInstruction = [
-    options.translateSFX === false ? "Do not translate sound effects; omit SFX regions." : "",
-    options.translateNarration === false ? "Do not translate narration boxes; omit narration regions." : "",
-    options.translateCredits === false ? "Do not translate credits or metadata; omit credits regions." : "",
-  ].filter(Boolean).join("\n");
+    options.translateSFX === false
+      ? "Do not translate sound effects; omit SFX regions."
+      : "",
+    options.translateNarration === false
+      ? "Do not translate narration boxes; omit narration regions."
+      : "",
+    options.translateCredits === false
+      ? "Do not translate credits or metadata; omit credits regions."
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   return `You are a professional manga/manhwa OCR and translation engine.
 
@@ -314,9 +382,11 @@ TASK: Analyze this manga/manhwa page. For EVERY visible piece of text — dialog
    - "watermark": website URL or source watermark stamped on the page
 
 4. TRANSLATE to ${langName}:
-   ${isRTL
-    ? "- Natural, emotionally vivid Arabic — manga-localized, NOT robotic. Proper MSA with character voice and emotional flair.\n   - Sound effects: Arabic SFX equivalents or creative transliteration\n   - Preserve exclamations, ellipses, emphasis"
-   : `- ${styleInstruction} ${langName} — emotionally faithful\n   - Sound effects: equivalent ${langName} SFX or transliteration\n   - Preserve exclamations, ellipses, emphasis`}
+   ${
+     isRTL
+       ? "- Natural, emotionally vivid Arabic — manga-localized, NOT robotic. Proper MSA with character voice and emotional flair.\n   - Sound effects: Arabic SFX equivalents or creative transliteration\n   - Preserve exclamations, ellipses, emphasis"
+       : `- ${styleInstruction} ${langName} — emotionally faithful\n   - Sound effects: equivalent ${langName} SFX or transliteration\n   - Preserve exclamations, ellipses, emphasis`
+   }
 
 ${typeInstruction}
 
@@ -376,10 +446,12 @@ export async function translateText(
   targetLanguage: string,
   userApiKey: string,
   context?: string,
-  options: TranslationOptions = {}
+  options: TranslationOptions = {},
 ): Promise<string> {
   if (!userApiKey) {
-    throw new Error("No Gemini API key. Open Settings → Gemini API Keys and add your key.");
+    throw new Error(
+      "No Gemini API key. Open Settings → Gemini API Keys and add your key.",
+    );
   }
   if (!text.trim()) throw new Error("Text is empty");
 
@@ -417,7 +489,9 @@ Return ONLY the translated text with no preamble, no explanations, no quotes aro
   const result = response.text?.trim() ?? "";
   if (!result) throw new Error("Translation returned empty result");
 
-  console.log(`[geminiTranslate] translateText success — ${result.length} chars`);
+  console.log(
+    `[geminiTranslate] translateText success — ${result.length} chars`,
+  );
   return result;
 }
 
@@ -436,31 +510,43 @@ export async function translateImage(
   targetLanguage: string,
   userApiKey: string,
   sourceId: string = "mangadex",
-  options: TranslationOptions = {}
+  options: TranslationOptions = {},
 ): Promise<TranslateResult> {
   if (!userApiKey) {
-    throw new Error("No Gemini API key. Open Settings → Gemini API Keys and add your key.");
+    throw new Error(
+      "No Gemini API key. Open Settings → Gemini API Keys and add your key.",
+    );
   }
 
   const model = options.model ?? "gemini-2.5-flash";
   const requestPath = `/v1beta/models/${model}:generateContent`;
   console.log(
-    `[TRANSLATION START] kind=image language=${targetLanguage} model=${model} key=present url=generativelanguage.googleapis.com${requestPath}`
+    `[TRANSLATION START] kind=image language=${targetLanguage} model=${model} key=present url=generativelanguage.googleapis.com${requestPath}`,
   );
 
-  const { data: imageData, mimeType } = await fetchImageAsBase64(imageUrl, sourceId);
+  const { data: imageData, mimeType } = await fetchImageAsBase64(
+    imageUrl,
+    sourceId,
+    Platform.OS !== "web" ? options.localImageUri : undefined,
+  );
   const prompt = buildPrompt(targetLanguage, options);
   const resolvedMime = mimeType as "image/jpeg" | "image/png" | "image/webp";
+  console.log(
+    `[TRANSLATION DEBUG] imageSource=${Platform.OS !== "web" && options.localImageUri ? "LOCAL_CACHE" : "NETWORK"} ` +
+      `imageConversion=SUCCESS base64Length=${imageData.length} geminiModel=${model}`,
+  );
 
   const client = new GoogleGenAI({ apiKey: userApiKey });
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const requestStarted = Date.now();
     try {
-      console.log(`[TRANSLATION REQUEST] attempt=${attempt}/${MAX_ATTEMPTS} model=${model}`);
+      console.log(
+        `[TRANSLATION REQUEST] attempt=${attempt}/${MAX_ATTEMPTS} model=${model}`,
+      );
 
       console.log(
-        `[TRANSLATION DEBUG] model=${model} key=present geminiRequest=started endpoint=generativelanguage.googleapis.com${requestPath}`
+        `[TRANSLATION DEBUG] model=${model} key=present geminiRequest=started endpoint=generativelanguage.googleapis.com${requestPath}`,
       );
       let response;
       try {
@@ -478,21 +564,28 @@ export async function translateImage(
           config: OCR_GEN_CONFIG,
         });
       } catch (err: unknown) {
-        const apiErr = err as { status?: number; code?: number; name?: string; message?: string };
+        const apiErr = err as {
+          status?: number;
+          code?: number;
+          name?: string;
+          message?: string;
+        };
         const message = apiErr.message ?? String(err);
         console.error(
-          `[TRANSLATION DEBUG] model=${model} geminiRequest=failure geminiHTTP=${apiErr.status ?? apiErr.code ?? "none"} duration=${Date.now() - requestStarted}ms errorCategory=${classifyGeminiError(apiErr, message)} message=${message.slice(0, 180)}`
+          `[TRANSLATION DEBUG] model=${model} geminiRequest=failure geminiHTTP=${apiErr.status ?? apiErr.code ?? "none"} duration=${Date.now() - requestStarted}ms errorCategory=${classifyGeminiError(apiErr, message)} message=${message.slice(0, 180)}`,
         );
         throw err;
       }
 
       const raw = response.text?.trim() ?? "";
       console.log(
-        `[TRANSLATION DEBUG] model=${model} geminiRequest=success geminiHTTP=success geminiResponse=received duration=${Date.now() - requestStarted}ms contentType=application/json`
+        `[TRANSLATION DEBUG] model=${model} geminiRequest=success geminiHTTP=success geminiResponse=received duration=${Date.now() - requestStarted}ms contentType=application/json`,
       );
 
       if (!raw) {
-        throw new Error("GEMINI_EMPTY_RESPONSE: Gemini returned no translation data.");
+        throw new Error(
+          "GEMINI_EMPTY_RESPONSE: Gemini returned no translation data.",
+        );
       }
 
       let parsed: {
@@ -524,33 +617,46 @@ export async function translateImage(
               try {
                 return JSON.parse(match[0]);
               } catch {
-                return { found: false, regions: [], summary: "Could not parse AI response" };
+                return {
+                  found: false,
+                  regions: [],
+                  summary: "Could not parse AI response",
+                };
               }
             })()
           : { found: false, regions: [], summary: "No parseable response" };
       }
 
-       const processedRegions: TranslatedRegion[] = (parsed.regions ?? [])
+      const processedRegions: TranslatedRegion[] = (parsed.regions ?? [])
         .filter((r) => r && typeof r.x === "number" && typeof r.y === "number")
-         .filter((r) => options.translateSFX !== false || r.type !== "sfx")
-         .filter((r) => options.translateNarration !== false || r.type !== "narration")
-         .filter((r) => options.translateCredits !== false || !["credits", "watermark"].includes(r.type))
+        .filter((r) => options.translateSFX !== false || r.type !== "sfx")
+        .filter(
+          (r) => options.translateNarration !== false || r.type !== "narration",
+        )
+        .filter(
+          (r) =>
+            options.translateCredits !== false ||
+            !["credits", "watermark"].includes(r.type),
+        )
         .map((r) => {
           const cx = Math.max(0, Math.min(0.99, r.x));
           const cy = Math.max(0, Math.min(0.99, r.y));
           const cw = Math.max(0.02, Math.min(1 - cx, r.w));
           const ch = Math.max(0.02, Math.min(1 - cy, r.h));
 
-          const polygon = validatePolygon(r.polygon) ?? bboxToPolygon(cx, cy, cw, ch);
-          const bubblePolygon = validateBubblePolygon(r.bubblePolygon) ?? undefined;
+          const polygon =
+            validatePolygon(r.polygon) ?? bboxToPolygon(cx, cy, cw, ch);
+          const bubblePolygon =
+            validateBubblePolygon(r.bubblePolygon) ?? undefined;
           const centroid = computeCentroid(polygon);
           const rotation = computeRotation(polygon);
 
           return {
             original: r.original ?? "",
-             translated: options.keepOriginal && r.original
-               ? `${r.translated ?? ""}\n${r.original}`
-               : r.translated ?? "",
+            translated:
+              options.keepOriginal && r.original
+                ? `${r.translated ?? ""}\n${r.original}`
+                : (r.translated ?? ""),
             x: cx,
             y: cy,
             w: cw,
@@ -570,7 +676,7 @@ export async function translateImage(
         });
 
       console.log(
-        `[geminiTranslate] Success — regions=${processedRegions.length} attempt=${attempt}`
+        `[geminiTranslate] Success — regions=${processedRegions.length} attempt=${attempt}`,
       );
 
       return {
@@ -579,20 +685,25 @@ export async function translateImage(
         summary: parsed.summary ?? "",
       };
     } catch (err: unknown) {
-      const anyErr = err as { status?: number; message?: string; code?: number };
+      const anyErr = err as {
+        status?: number;
+        message?: string;
+        code?: number;
+      };
       const errMsg = anyErr?.message ?? String(err);
 
       console.error(
-        `[TRANSLATION API ERROR] attempt=${attempt} status=${anyErr?.status ?? "none"} category=${classifyGeminiError(anyErr, errMsg)} elapsed=${Date.now() - requestStarted}ms message=${errMsg.slice(0, 180)}`
+        `[TRANSLATION API ERROR] attempt=${attempt} status=${anyErr?.status ?? "none"} category=${classifyGeminiError(anyErr, errMsg)} elapsed=${Date.now() - requestStarted}ms message=${errMsg.slice(0, 180)}`,
       );
 
       if (
         anyErr?.status === 400 &&
-        (errMsg.includes("API_KEY_INVALID") || errMsg.includes("API key not valid"))
+        (errMsg.includes("API_KEY_INVALID") ||
+          errMsg.includes("API key not valid"))
       ) {
         throw new Error(
-          "API_KEY_INVALID: Your Gemini API key is not valid or has been revoked. " +
-          "Open Settings → Gemini API Keys, remove it and add a working key."
+          "GEMINI_AUTH_FAILED: Your Gemini API key is not valid or has been revoked. " +
+            "Open Settings → Gemini API Keys, remove it and add a working key.",
         );
       }
 
@@ -602,25 +713,32 @@ export async function translateImage(
 
       if (anyErr?.status === 404 || anyErr?.status === 403) {
         throw new Error(
-          `MODEL_UNAVAILABLE: The selected Gemini model "${model}" is unavailable for this API key.`
+          `GEMINI_MODEL_FAILED: The selected Gemini model "${model}" is unavailable for this API key.`,
         );
       }
 
       if (anyErr?.status && anyErr.status >= 400 && anyErr.status < 500) {
         throw new Error(
-          `GEMINI_REQUEST_REJECTED: Gemini rejected the translation request (HTTP ${anyErr.status}).`
+          `GEMINI_REQUEST_FAILED: Gemini rejected the translation request (HTTP ${anyErr.status}).`,
         );
       }
 
-      if ((anyErr?.status === 503 || anyErr?.status === 500) && attempt < MAX_ATTEMPTS) {
+      if (
+        (anyErr?.status === 503 || anyErr?.status === 500) &&
+        attempt < MAX_ATTEMPTS
+      ) {
         const delay = attempt * 5000;
-        console.warn(`[geminiTranslate] Gemini overloaded, retrying in ${delay}ms`);
+        console.warn(
+          `[geminiTranslate] Gemini overloaded, retrying in ${delay}ms`,
+        );
         await new Promise((r) => setTimeout(r, delay));
         continue;
       }
 
       if (attempt === MAX_ATTEMPTS) {
-        throw new Error(`Translation failed after ${MAX_ATTEMPTS} attempts: ${errMsg}`);
+        throw new Error(
+          `GEMINI_REQUEST_FAILED: Translation failed after ${MAX_ATTEMPTS} attempts: ${errMsg}`,
+        );
       }
     }
   }
@@ -628,7 +746,9 @@ export async function translateImage(
   throw new Error("Translation failed: exhausted all retry attempts");
 }
 
-function inferImageMimeType(imageUrl: string): "image/jpeg" | "image/png" | "image/webp" {
+function inferImageMimeType(
+  imageUrl: string,
+): "image/jpeg" | "image/png" | "image/webp" {
   const pathname = imageUrl.split("?")[0].toLowerCase();
   if (pathname.endsWith(".png")) return "image/png";
   if (pathname.endsWith(".webp")) return "image/webp";
@@ -637,14 +757,21 @@ function inferImageMimeType(imageUrl: string): "image/jpeg" | "image/png" | "ima
 
 function classifyGeminiError(
   err: { status?: number; code?: number; name?: string },
-  message = ""
+  message = "",
 ): string {
   const status = err.status ?? err.code;
-  if (message.includes("GEMINI_EMPTY_RESPONSE")) return "empty_response";
-  if (status === 401 || status === 403) return "auth_or_model";
-  if (status === 404) return "model_unavailable";
-  if (status === 429) return "rate_limit";
-  if (status && status >= 400 && status < 500) return "request_rejected";
-  if (err.name === "AbortError") return "timeout";
-  return "network_or_server";
+  if (message.includes("GEMINI_EMPTY_RESPONSE")) return "GEMINI_EMPTY_RESPONSE";
+  if (
+    message.includes("API_KEY_INVALID") ||
+    message.includes("API key not valid") ||
+    status === 401
+  ) {
+    return "GEMINI_AUTH_FAILED";
+  }
+  if (status === 403 || status === 404) return "GEMINI_MODEL_FAILED";
+  if (status === 429) return "GEMINI_REQUEST_FAILED";
+  if (status && status >= 400 && status < 500) return "GEMINI_REQUEST_FAILED";
+  if (err.name === "AbortError" || message.toLowerCase().includes("timeout"))
+    return "TIMEOUT";
+  return "GEMINI_REQUEST_FAILED";
 }

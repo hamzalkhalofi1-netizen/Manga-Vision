@@ -1,5 +1,12 @@
 import { Image } from "expo-image";
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -16,7 +23,11 @@ import {
 const _renderCounts = __DEV__ ? new Map<string, number>() : null;
 import PremiumOverlayRenderer from "./PremiumOverlayRenderer";
 import CVPipelineRenderer from "./CVPipelineRenderer";
-import { runCVPipelineWithRetry, type CvRefinedRegion, type CvRegionInput } from "./cv/InpaintingEngine";
+import {
+  runCVPipelineWithRetry,
+  type CvRefinedRegion,
+  type CvRegionInput,
+} from "./cv/InpaintingEngine";
 import { classifyRegion } from "./cv/TextClassificationEngine";
 import { getBasicImageHeaders } from "@/services/sourceImageHeaders";
 import { ImageLoader } from "@/services/engine";
@@ -70,6 +81,8 @@ interface MangaPageProps {
   showOverlay: boolean;
   isRTL?: boolean;
   onHeightKnown?: (height: number) => void;
+  /** Reports the exact local file currently used for the visible page image. */
+  onImageResolved?: (localUri: string) => void;
   sourceId?: string;
 }
 
@@ -80,24 +93,24 @@ function MangaPage({
   showOverlay,
   isRTL = false,
   onHeightKnown,
+  onImageResolved,
   sourceId,
 }: MangaPageProps) {
   // Memoised so the object reference is stable across re-renders — prevents
   // useCachedPageImage's load useCallback from recreating every render.
   const imageHeaders = useMemo(
     () => (sourceId ? getBasicImageHeaders(sourceId) : undefined),
-    [sourceId]
+    [sourceId],
   );
 
   // On web, rewrite CDN URLs through the server proxy so the proxy injects the
   // correct Referer/Origin headers that the CDN requires for hotlink protection.
   // On native, the URL is unchanged — ImageDiskCache sends headers directly.
-  const proxyUri = useMemo(
-    () => ImageLoader.maybeProxyUrl(uri),
-    [uri]
-  );
+  const proxyUri = useMemo(() => ImageLoader.maybeProxyUrl(uri), [uri]);
 
-  const [displayH, setDisplayH] = useState(Math.round(SCREEN_W * DEFAULT_ASPECT));
+  const [displayH, setDisplayH] = useState(
+    Math.round(SCREEN_W * DEFAULT_ASPECT),
+  );
   const [nativeDims, setNativeDims] = useState({ w: 0, h: 0 });
 
   // ── Cache-first page image loading ────────────────────────────────────────
@@ -112,6 +125,10 @@ function MangaPage({
     retryAttempt,
     retryMax,
   } = useCachedPageImage(proxyUri, imageHeaders);
+
+  useEffect(() => {
+    if (pageLocalUri) onImageResolved?.(pageLocalUri);
+  }, [pageLocalUri, onImageResolved]);
 
   const [cvState, setCvState] = useState<CVState | null>(null);
   const [cvLoading, setCvLoading] = useState(false);
@@ -163,8 +180,20 @@ function MangaPage({
       setCvLoading(false);
       setRenderPath("fallback");
       const _page = uri.slice(-60);
-      console.log(`[MangaPage] CV_PIPELINE_USED=false  FALLBACK_RENDERER_USED=true  reason="no inpaintable regions"  page="${_page}"`);
-      recordCvDebug({ status: "fallback_no_regions", cvPipelineUsed: false, fallbackRendererUsed: true, apiBase: "", inpaintedImageBytes: 0, error: null, reason: "no inpaintable regions", refinedRegions: null, page: _page });
+      console.log(
+        `[MangaPage] CV_PIPELINE_USED=false  FALLBACK_RENDERER_USED=true  reason="no inpaintable regions"  page="${_page}"`,
+      );
+      recordCvDebug({
+        status: "fallback_no_regions",
+        cvPipelineUsed: false,
+        fallbackRendererUsed: true,
+        apiBase: "",
+        inpaintedImageBytes: 0,
+        error: null,
+        reason: "no inpaintable regions",
+        refinedRegions: null,
+        page: _page,
+      });
       return;
     }
 
@@ -176,11 +205,21 @@ function MangaPage({
     const _page = uri.slice(-60);
     console.log(
       `[MangaPage] CV_PIPELINE_USED=PENDING` +
-      `  apiBase="${apiBase}"` +
-      `  regions=${cvRegions.length}` +
-      `  page="${_page}"`
+        `  apiBase="${apiBase}"` +
+        `  regions=${cvRegions.length}` +
+        `  page="${_page}"`,
     );
-    recordCvDebug({ status: "pending", cvPipelineUsed: "pending", fallbackRendererUsed: false, apiBase, inpaintedImageBytes: 0, error: null, reason: null, refinedRegions: null, page: _page });
+    recordCvDebug({
+      status: "pending",
+      cvPipelineUsed: "pending",
+      fallbackRendererUsed: false,
+      apiBase,
+      inpaintedImageBytes: 0,
+      error: null,
+      reason: null,
+      refinedRegions: null,
+      page: _page,
+    });
 
     runCVPipelineWithRetry(uri, cvRegions, apiBase)
       .then((result) => {
@@ -188,25 +227,49 @@ function MangaPage({
           setRenderPath("fallback");
           console.warn(
             `[MangaPage] CV_PIPELINE_USED=false  FALLBACK_RENDERER_USED=true` +
-            `  INPAINTED_IMAGE_BYTES=0  reason="null result"` +
-            `  page="${_page}"`
+              `  INPAINTED_IMAGE_BYTES=0  reason="null result"` +
+              `  page="${_page}"`,
           );
-          recordCvDebug({ status: "fallback_null", cvPipelineUsed: false, fallbackRendererUsed: true, apiBase, inpaintedImageBytes: 0, error: null, reason: "null result (all retries failed)", refinedRegions: null, page: _page });
+          recordCvDebug({
+            status: "fallback_null",
+            cvPipelineUsed: false,
+            fallbackRendererUsed: true,
+            apiBase,
+            inpaintedImageBytes: 0,
+            error: null,
+            reason: "null result (all retries failed)",
+            refinedRegions: null,
+            page: _page,
+          });
           return;
         }
         if (cvRunRef.current !== runKey) return;
 
-        const inpBytes = Math.round((result.inpaintedImage?.length ?? 0) * 3 / 4);
+        const inpBytes = Math.round(
+          ((result.inpaintedImage?.length ?? 0) * 3) / 4,
+        );
         console.log(
           `[MangaPage] CV_PIPELINE_USED=true  FALLBACK_RENDERER_USED=false` +
-          `  INPAINTED_IMAGE_BYTES=${inpBytes}` +
-          `  refinedRegions=${result.refinedRegions?.length}` +
-          `  apiBase="${apiBase}"` +
-          `  page="${_page}"`
+            `  INPAINTED_IMAGE_BYTES=${inpBytes}` +
+            `  refinedRegions=${result.refinedRegions?.length}` +
+            `  apiBase="${apiBase}"` +
+            `  page="${_page}"`,
         );
-        recordCvDebug({ status: "success", cvPipelineUsed: true, fallbackRendererUsed: false, apiBase, inpaintedImageBytes: inpBytes, error: null, reason: null, refinedRegions: result.refinedRegions?.length ?? 0, page: _page });
+        recordCvDebug({
+          status: "success",
+          cvPipelineUsed: true,
+          fallbackRendererUsed: false,
+          apiBase,
+          inpaintedImageBytes: inpBytes,
+          error: null,
+          reason: null,
+          refinedRegions: result.refinedRegions?.length ?? 0,
+          page: _page,
+        });
 
-        const fullRefined: (CvRefinedRegion | null)[] = new Array(regions.length).fill(null);
+        const fullRefined: (CvRefinedRegion | null)[] = new Array(
+          regions.length,
+        ).fill(null);
         result.refinedRegions.forEach((refined, pipelineIdx) => {
           const originalIdx = inpaintIndices[pipelineIdx];
           if (originalIdx !== undefined) {
@@ -226,12 +289,22 @@ function MangaPage({
         setRenderPath("fallback");
         console.error(
           `[MangaPage] CV_PIPELINE_USED=false  FALLBACK_RENDERER_USED=true` +
-          `  INPAINTED_IMAGE_BYTES=0` +
-          `  error="${msg}"` +
-          `  apiBase="${apiBase}"` +
-          `  page="${_page}"`
+            `  INPAINTED_IMAGE_BYTES=0` +
+            `  error="${msg}"` +
+            `  apiBase="${apiBase}"` +
+            `  page="${_page}"`,
         );
-        recordCvDebug({ status: "fallback_error", cvPipelineUsed: false, fallbackRendererUsed: true, apiBase, inpaintedImageBytes: 0, error: msg, reason: null, refinedRegions: null, page: _page });
+        recordCvDebug({
+          status: "fallback_error",
+          cvPipelineUsed: false,
+          fallbackRendererUsed: true,
+          apiBase,
+          inpaintedImageBytes: 0,
+          error: msg,
+          reason: null,
+          refinedRegions: null,
+          page: _page,
+        });
       })
       .finally(() => {
         if (cvRunRef.current === runKey) setCvLoading(false);
@@ -248,12 +321,14 @@ function MangaPage({
         // creating a new object reference on every load, which would cause
         // an unnecessary re-render of MangaPage.
         setNativeDims((prev) =>
-          prev.w === width && prev.h === height ? prev : { w: width, h: height }
+          prev.w === width && prev.h === height
+            ? prev
+            : { w: width, h: height },
         );
         onHeightKnown?.(h);
       }
     },
-    [onHeightKnown]
+    [onHeightKnown],
   );
 
   // Memoize rawImageSource so expo-image receives a stable object reference
@@ -274,13 +349,13 @@ function MangaPage({
         : Platform.OS === "web"
           ? { uri: proxyUri }
           : { uri, headers: imageHeaders },
-    [pageLocalUri, proxyUri, uri, imageHeaders]
+    [pageLocalUri, proxyUri, uri, imageHeaders],
   );
 
   const imageSource = useMemo(
     () =>
       cvState?.inpaintedUri ? { uri: cvState.inpaintedUri } : rawImageSource,
-    [cvState, rawImageSource]
+    [cvState, rawImageSource],
   );
 
   // Stable recycling key — only changes when the actual content source changes.
@@ -289,9 +364,14 @@ function MangaPage({
   const showBadge = showOverlay && regions.length > 0 && renderPath !== "idle";
 
   // Per-page image readiness (independent of the CV overlay pipeline above).
-  const imageNotReady = Platform.OS !== "web" && !cvState?.inpaintedUri && pageStatus !== "ready";
-  const imageIsLoading = imageNotReady && (pageStatus === "checking" || pageStatus === "loading" || pageStatus === "retrying");
-  const imageFailed    = imageNotReady && pageStatus === "error";
+  const imageNotReady =
+    Platform.OS !== "web" && !cvState?.inpaintedUri && pageStatus !== "ready";
+  const imageIsLoading =
+    imageNotReady &&
+    (pageStatus === "checking" ||
+      pageStatus === "loading" ||
+      pageStatus === "retrying");
+  const imageFailed = imageNotReady && pageStatus === "error";
 
   // ── Diagnostic render logging ────────────────────────────────────────────
   if (__DEV__ && _renderCounts) {
@@ -301,17 +381,26 @@ function MangaPage({
     if (count <= 5 || count % 10 === 0) {
       console.log(
         `[MangaPage] render #${count}  page="${key}"` +
-        `  pageStatus=${pageStatus}  imageNotReady=${imageNotReady}` +
-        `  localUri=${pageLocalUri ? pageLocalUri.slice(-20) : "null"}`
+          `  pageStatus=${pageStatus}  imageNotReady=${imageNotReady}` +
+          `  localUri=${pageLocalUri ? pageLocalUri.slice(-20) : "null"}`,
       );
     }
     if (count > 20) {
-      console.warn(`[MangaPage] EXCESSIVE RE-RENDERS (${count}) for page="${key}" — possible flicker loop!`);
+      console.warn(
+        `[MangaPage] EXCESSIVE RE-RENDERS (${count}) for page="${key}" — possible flicker loop!`,
+      );
     }
   }
 
   return (
-    <View style={{ width: SCREEN_W, height: displayH, backgroundColor: "#000", overflow: "hidden" }}>
+    <View
+      style={{
+        width: SCREEN_W,
+        height: displayH,
+        backgroundColor: "#000",
+        overflow: "hidden",
+      }}
+    >
       {!imageNotReady && (
         <Image
           source={imageSource}
@@ -332,16 +421,27 @@ function MangaPage({
           )}
           {pageStatus === "retrying" ? (
             <>
-              <ActivityIndicator size="small" color="#7B96FF" style={{ marginBottom: 8 }} />
+              <ActivityIndicator
+                size="small"
+                color="#7B96FF"
+                style={{ marginBottom: 8 }}
+              />
               <Text style={styles.retryingText}>
                 Retrying… (Attempt {retryAttempt}/{retryMax + 1})
               </Text>
             </>
           ) : pageProgress != null ? (
             <>
-              <Text style={styles.progressText}>{Math.round(pageProgress * 100)}%</Text>
+              <Text style={styles.progressText}>
+                {Math.round(pageProgress * 100)}%
+              </Text>
               <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${Math.round(pageProgress * 100)}%` }]} />
+                <View
+                  style={[
+                    styles.progressFill,
+                    { width: `${Math.round(pageProgress * 100)}%` },
+                  ]}
+                />
               </View>
             </>
           ) : (
@@ -385,10 +485,7 @@ function MangaPage({
 
       {/* ── Loading spinner ─────────────────────────────────────────────── */}
       {showOverlay && cvLoading && (
-        <View
-          style={styles.spinnerContainer}
-          pointerEvents="none"
-        >
+        <View style={styles.spinnerContainer} pointerEvents="none">
           <ActivityIndicator size="small" color="#7B96FF" />
         </View>
       )}
@@ -402,9 +499,7 @@ function MangaPage({
           ]}
           pointerEvents="none"
         >
-          <Text style={styles.badgeDot}>
-            {renderPath === "cv" ? "●" : "●"}
-          </Text>
+          <Text style={styles.badgeDot}>{renderPath === "cv" ? "●" : "●"}</Text>
           <View style={styles.badgeTextBlock}>
             <Text style={styles.badgeLabel}>
               {renderPath === "cv" ? "CV PIPELINE" : "FALLBACK"}
