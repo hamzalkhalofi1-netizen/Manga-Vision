@@ -1,0 +1,106 @@
+IMPORTANT: Do NOT restart the project, redesign anything, add new features, or investigate unrelated TypeScript errors.
+
+We have one remaining bug only:
+
+The manga reader can DISPLAY the manga page image correctly, but pressing Translate fails with:
+
+IMAGE_DOWNLOAD_FAILED: Could not load the manga image (Failed to fetch)
+
+This proves the current problem is specifically the IMAGE BYTES acquisition path used by the translation pipeline, NOT the Gemini model/API.
+
+The UI image is already visible in the reader, so DO NOT attempt to download the original CDN URL again from JavaScript fetch().
+
+Your task is to fix ONLY this translation-image acquisition problem with the smallest possible patch.
+
+STRICT LOW-CREDIT MODE:
+
+- Inspect only the files involved in the translation button -> current page image -> image bytes -> Gemini request.
+- Do not scan or refactor the entire project.
+- Do not modify unrelated settings.
+- Do not add dependencies unless absolutely required.
+- Do not perform large test suites.
+- Make the minimum root-cause change.
+- Do not consume Gemini quota for repeated tests.
+
+REQUIRED INVESTIGATION:
+
+1. Trace the exact image object/URI currently rendered by the reader.
+2. Trace how the reader obtains/caches that image.
+3. Trace how translateImage() obtains its image bytes.
+4. Compare these two paths.
+
+The critical requirement is:
+
+THE TRANSLATION PIPELINE MUST REUSE THE EXACT SAME IMAGE BYTES/LOCAL FILE THAT THE READER ALREADY SUCCESSFULLY DISPLAYED.
+
+Do NOT call fetch(originalCdnUrl) again on Android.
+
+If the reader has already cached the page through ImageDiskCache / Expo FileSystem / a local URI, pass that local cached file directly into the translation pipeline.
+
+If the displayed image is represented by a local file:// URI, content URI, blob URI, or another native-safe URI, use that existing URI instead of the remote CDN URL.
+
+If the reader only has a remote URI, inspect the existing image-loading implementation and reuse its successful loading mechanism rather than creating another independent fetch path.
+
+PLATFORM REQUIREMENT:
+
+This must work on Android/Expo native, not only Expo Web.
+
+Do not assume ImageLoader.maybeProxyUrl() solves Android. Verify the actual native path.
+
+The final translation flow should conceptually be:
+
+Reader successfully loads page
+→ existing image/cache mechanism
+→ obtain the already-loaded/cached image bytes
+→ send those bytes to Gemini
+→ receive OCR/translation
+→ continue the existing rendering pipeline
+
+NOT:
+
+Reader loads image
+→ translation starts
+→ JavaScript fetch() downloads original CDN URL again
+→ Failed to fetch
+
+ERROR HANDLING:
+
+Keep the existing diagnostic categories, but make them truthful.
+
+If image bytes cannot be obtained from the already-loaded/cached page, report the exact local/native acquisition failure.
+
+If image acquisition succeeds but Gemini fails, report a Gemini-stage error.
+
+Do NOT label Gemini errors as image-download errors.
+
+TESTING:
+
+Do NOT repeatedly call Gemini.
+
+First perform a local/static validation that the translation function receives the same local image URI/bytes used by the reader.
+
+Then perform ONE real translation smoke test using the existing configured test API key/model only if necessary.
+
+Use ONE manga page only.
+
+Do not translate a chapter or multiple pages.
+
+Do not add or change the user's API keys.
+
+SUCCESS CRITERIA:
+
+The exact page currently visible in the reader must be passed to Gemini without downloading the original CDN URL a second time.
+
+The Translate button must reach the Gemini request stage.
+
+If Gemini returns a response, the existing translation/rendering pipeline should continue unchanged.
+
+At the end, report ONLY:
+
+1. Root cause found.
+2. Exact minimal files changed.
+3. Exact fix.
+4. Whether the single-page real translation test reached Gemini successfully.
+5. Any remaining error, if one exists.
+
+Do not make any unrelated changes.
