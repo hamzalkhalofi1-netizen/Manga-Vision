@@ -64,7 +64,7 @@ export function GeminiModelSelector() {
               <View style={styles.cardHeader}>
                 <View style={[styles.modelIconWrap, { backgroundColor: selected ? `${colors.primary}20` : colors.muted }]}>
                   <Ionicons
-                    name={model.id === "gemini-2.5-pro" ? "diamond-outline" : "flash-outline"}
+                    name="flash-outline"
                     size={16}
                     color={selected ? colors.primary : colors.mutedForeground}
                   />

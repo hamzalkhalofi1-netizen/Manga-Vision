@@ -175,9 +175,7 @@ const NETWORK_KEY           = "mangaverse_network_settings";
 const TRANSLATION_CFG_KEY   = "mangaverse_translation_settings";
 
 const VALID_GEMINI_MODELS: GeminiModel[] = [
-  "gemini-2.5-flash",
-  "gemini-2.5-pro",
-  "gemini-2.0-flash-lite",
+  "gemini-flash-lite-latest",
 ];
 
 // ── Context type ─────────────────────────────────────────────────────────────
@@ -227,7 +225,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [activeSourceId, setActiveSourceIdState] = useState("mangadex");
   const [translationCount, setTranslationCount] = useState(0);
   const [themeMode, setThemeModeState] = useState<ThemeMode>("auto");
-  const [geminiModel, setGeminiModelState] = useState<GeminiModel>("gemini-2.5-flash");
+  const [geminiModel, setGeminiModelState] = useState<GeminiModel>("gemini-flash-lite-latest");
   const [fontSettings, setFontSettings] = useState<FontSettings>(DEFAULT_FONT_SETTINGS);
   const [networkSettings, setNetworkSettings] = useState<NetworkSettings>(DEFAULT_NETWORK);
   const [translationSettings, setTranslationSettings] = useState<TranslationSettings>(DEFAULT_TRANSLATION);

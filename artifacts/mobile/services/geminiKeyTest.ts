@@ -11,9 +11,7 @@ import { GoogleGenAI } from "@google/genai";
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type GeminiModel =
-  | "gemini-2.5-flash"
-  | "gemini-2.5-pro"
-  | "gemini-2.0-flash-lite";
+  | "gemini-flash-lite-latest";
 
 export interface GeminiModelInfo {
   id: GeminiModel;
@@ -27,32 +25,14 @@ export interface GeminiModelInfo {
 
 export const GEMINI_MODELS: GeminiModelInfo[] = [
   {
-    id: "gemini-2.5-flash",
-    displayName: "Gemini 2.5 Flash",
-    tagline: "Best balance of speed & accuracy for manga OCR",
+    id: "gemini-flash-lite-latest",
+    displayName: "Gemini Flash-Lite",
+    tagline: "Fast, efficient image translation on the Free Tier",
     tier: "free",
-    rpm: 10,
-    rpd: 500,
-    recommended: true,
-  },
-  {
-    id: "gemini-2.5-pro",
-    displayName: "Gemini 2.5 Pro",
-    tagline: "Highest accuracy — complex pages, dense text",
-    tier: "paid",
-    rpm: 5,
-    rpd: 25,
-    recommended: false,
-  },
-  {
-    id: "gemini-2.0-flash-lite",
-    displayName: "Gemini Flash Lite",
-    tagline: "Fastest response, great for simple pages",
-    tier: "free",
-    rpm: 30,
+    rpm: 15,
     rpd: 1500,
-    recommended: false,
-  },
+    recommended: true,
+  }
 ];
 
 export type KeyTestErrorCode =
@@ -74,7 +54,7 @@ export interface KeyTestResult {
 // ── Test prompt — absolute minimum tokens ─────────────────────────────────────
 
 const TEST_PROMPT = "Reply with exactly one word: OK";
-const TEST_CONFIG = { maxOutputTokens: 5, thinkingConfig: { thinkingBudget: 0 } };
+const TEST_CONFIG = { maxOutputTokens: 5 };
 
 // ── Key format detection ───────────────────────────────────────────────────────
 
@@ -99,7 +79,7 @@ export function detectKeyFormat(raw: string): KeyFormatHint {
 
 /**
  * Test a Gemini API key validity by making a real (minimal) API call.
- * Tries gemini-2.5-flash first; falls back to flash-lite on model errors.
+ * Tests the current image-capable Free Tier model.
  * A 429 means the key IS valid — just quota-exceeded.
  */
 export async function testGeminiKey(apiKey: string): Promise<KeyTestResult> {
@@ -117,8 +97,7 @@ export async function testGeminiKey(apiKey: string): Promise<KeyTestResult> {
 
   const client = new GoogleGenAI({ apiKey: trimmed });
 
-  // Try flash first (most permissive free tier), then lite
-  const modelsToTry: GeminiModel[] = ["gemini-2.5-flash", "gemini-2.0-flash-lite"];
+  const modelsToTry: GeminiModel[] = ["gemini-flash-lite-latest"];
 
   for (const model of modelsToTry) {
     const start = Date.now();

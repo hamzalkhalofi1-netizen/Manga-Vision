@@ -1,2 +1,3 @@
 - [natomanga-migration](natomanga-migration.md) — chapmanganato.to/manganato.com squatted 2026; live successor is www.natomanga.com with different URL structure
 - [manganelo-mangagg](manganelo-mangagg.md) — manganelo adapter targets mangagg.com (WP-Manga/Madara), NOT the dead readmanganelo.com
+- [gemini-model-availability](gemini-model-availability.md) — Gemini model listings can include IDs that return 404; verify generateContent availability before making a model the app default

@@ -313,6 +313,55 @@ function validateBubblePolygon(raw: unknown): [number, number][] | null {
   return pts;
 }
 
+function parseGeminiJson(raw: string): Record<string, unknown> | null {
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+  const source = fenced || raw.trim();
+
+  try {
+    const parsed = JSON.parse(source);
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {}
+
+  // Gemini may add a short explanation around the JSON. Extract balanced
+  // objects instead of using a greedy regex that can include later braces.
+  for (let start = source.indexOf("{"); start >= 0; start = source.indexOf("{", start + 1)) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = start; i < source.length; i++) {
+      const char = source[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === "\\") escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') {
+        inString = true;
+      } else if (char === "{") {
+        depth++;
+      } else if (char === "}") {
+        depth--;
+        if (depth === 0) {
+          try {
+            const parsed = JSON.parse(source.slice(start, i + 1));
+            return parsed && typeof parsed === "object"
+              ? (parsed as Record<string, unknown>)
+              : null;
+          } catch {
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
 // ── Gemini prompt ──────────────────────────────────────────────────────────────
 
 export interface TranslationOptions {
@@ -424,15 +473,12 @@ const MAX_ATTEMPTS = 4;
 /**
  * Gemini generation config shared by all image-OCR calls.
  *
- * thinkingBudget: 0 disables the model's internal reasoning pass.
- * Without this, gemini-2.5-flash enters extended thinking (~30-40 s) on
- * complex manga pages and then returns an empty regions array.
- * Setting budget to 0 cuts latency from ~36 s → ~6 s and raises
- * OCR success rate from ~20 % → ~95 %+ on speech-bubble pages.
+ * Flash-Lite does not need a thinking configuration. Keeping this config
+ * limited to output size also avoids INVALID_ARGUMENT responses from the
+ * latest-model alias.
  */
 const OCR_GEN_CONFIG = {
   maxOutputTokens: 8192,
-  thinkingConfig: { thinkingBudget: 0 },
 } as const;
 
 // ── Text translation (for descriptions, etc.) ─────────────────────────────────
@@ -475,7 +521,7 @@ ${text}
 
 Return ONLY the translated text with no preamble, no explanations, no quotes around it.`;
 
-  const model = options.model ?? "gemini-2.5-flash";
+  const model = options.model ?? "gemini-flash-lite-latest";
   console.log(`[TRANSLATION START] kind=text model=${model} key=present`);
 
   const client = new GoogleGenAI({ apiKey: userApiKey });
@@ -518,7 +564,7 @@ export async function translateImage(
     );
   }
 
-  const model = options.model ?? "gemini-2.5-flash";
+  const model = options.model ?? "gemini-flash-lite-latest";
   const requestPath = `/v1beta/models/${model}:generateContent`;
   console.log(
     `[TRANSLATION START] kind=image language=${targetLanguage} model=${model} key=present url=generativelanguage.googleapis.com${requestPath}`,
@@ -608,24 +654,23 @@ export async function translateImage(
         summary: string;
       };
 
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        const match = raw.match(/\{[\s\S]*\}/);
-        parsed = match
-          ? (() => {
-              try {
-                return JSON.parse(match[0]);
-              } catch {
-                return {
-                  found: false,
-                  regions: [],
-                  summary: "Could not parse AI response",
-                };
-              }
-            })()
-          : { found: false, regions: [], summary: "No parseable response" };
-      }
+      const parsedJson = parseGeminiJson(raw);
+      parsed = parsedJson
+        ? {
+            found: Boolean(parsedJson.found),
+            regions: Array.isArray(parsedJson.regions)
+              ? (parsedJson.regions as typeof parsed.regions)
+              : [],
+            summary:
+              typeof parsedJson.summary === "string"
+                ? parsedJson.summary
+                : "",
+          }
+        : {
+            found: false,
+            regions: [],
+            summary: "Could not parse AI response",
+          };
 
       const processedRegions: TranslatedRegion[] = (parsed.regions ?? [])
         .filter((r) => r && typeof r.x === "number" && typeof r.y === "number")

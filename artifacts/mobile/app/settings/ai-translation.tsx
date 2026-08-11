@@ -42,9 +42,7 @@ const TRANSLATION_STYLES = [
 ];
 
 const MODEL_INFO = {
-  "gemini-2.5-flash": { label: "Gemini 2.5 Flash", tag: "⭐ Recommended for Free Users", color: "#f59e0b" },
-  "gemini-2.5-pro":   { label: "Gemini 2.5 Pro",   tag: "Best Quality",                  color: "#8b5cf6" },
-  "gemini-2.0-flash-lite": { label: "Gemini Flash Lite", tag: "Fastest & Cheapest",       color: "#22c55e" },
+  "gemini-flash-lite-latest": { label: "Gemini Flash-Lite", tag: "⭐ Recommended for Free Tier", color: "#22c55e" },
 } as const;
 
 // ── Dashboard card ────────────────────────────────────────────────────────────
