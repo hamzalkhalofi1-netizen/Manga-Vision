@@ -1,0 +1,138 @@
+CRITICAL: FIX ONLY THE MANGA TRANSLATION FAILURE
+
+Do NOT redesign the app.
+Do NOT modify Settings.
+Do NOT modify the AI settings UI.
+Do NOT modify the API-key management system.
+Do NOT inspect unrelated features.
+Do NOT perform a broad project audit.
+
+Your ONLY task is to fix the current manga translation failure.
+
+CURRENT ERROR
+
+When the user opens a manga and presses Translate, the app currently shows:
+
+"Page 4 Translation Failed"
+
+and previously showed:
+
+"Failed to fetch"
+
+The manga image itself is visible correctly in the reader.
+
+The previous attempts already modified the translation path, but the problem still exists.
+
+VERY IMPORTANT
+
+Use the existing implementation.
+
+First inspect ONLY the minimum files required to trace:
+
+Reader Translate button
+→ translation function
+→ image acquisition
+→ Gemini request
+→ Gemini response
+→ translation rendering
+
+Do not scan the entire project.
+
+TEMPORARY GEMINI TEST
+
+A temporary Gemini API key is available securely as:
+
+GEMINI_TEST_API_KEY
+
+Use this key ONLY to perform one real translation test.
+
+Do NOT hardcode the key.
+Do NOT print the key.
+Do NOT expose it in the UI.
+Do NOT commit it.
+Do NOT modify the existing user API-key system.
+
+TEST REQUIREMENT
+
+Use the exact manga page that currently fails, preferably Page 4.
+
+Perform ONE real end-to-end test:
+
+1. Get the actual image used by the reader.
+2. Verify that the translation code can access the image bytes.
+3. Send the actual image to Gemini using "GEMINI_TEST_API_KEY".
+4. Use the currently configured Gemini model.
+5. Receive the Gemini response.
+6. Parse the response.
+7. Render the translation.
+
+FIND THE EXACT FAILURE
+
+Do not assume the problem is CORS.
+
+Do not assume the problem is Gemini.
+
+Determine which ONE stage fails:
+
+IMAGE
+→ IMAGE BYTES
+→ GEMINI REQUEST
+→ GEMINI RESPONSE
+→ PARSING
+→ RENDERING
+
+Add only minimal temporary diagnostics if necessary.
+
+Safe diagnostics are allowed:
+
+- image exists
+- image size
+- image source type
+- Gemini request started
+- HTTP status
+- response received
+- parsing success
+- rendering success
+
+NEVER log the API key.
+
+FIX
+
+Once the exact failing stage is identified:
+
+1. Fix ONLY that root cause.
+2. Do not rewrite working parts.
+3. Do not introduce a new architecture.
+4. Do not change unrelated files.
+5. Do not add unnecessary dependencies.
+
+Then immediately repeat the SAME Page 4 translation test.
+
+SUCCESS CONDITION
+
+Do NOT say "fixed" because the app builds.
+
+The task is successful ONLY if:
+
+Page 4 image
+→ image bytes obtained
+→ Gemini receives image
+→ Gemini returns response
+→ response parsed
+→ Arabic translation appears on the manga page.
+
+If the test succeeds, stop.
+
+If it fails, report the exact failing stage and the actual error instead of making broad changes.
+
+RESOURCE LIMIT
+
+This is extremely important:
+
+Use the minimum possible Agent actions.
+Do not repeatedly scan the project.
+Do not rewrite existing code unnecessarily.
+Do not run expensive broad diagnostics.
+Do not work on anything except this translation failure.
+
+Start by tracing the existing translation path and make the smallest possible fix.
