@@ -87,6 +87,11 @@ interface UseCachedPageImageResult {
 // ImageDiskCache); it is just a React-render-cycle shortcut.
 const _resolvedPaths = new Map<string, string>();
 
+/** Return the exact local file currently resolved for a reader page. */
+export function getResolvedPageImageUri(uri: string): string | null {
+  return Platform.OS !== "web" ? (_resolvedPaths.get(uri) ?? null) : null;
+}
+
 // ── Diagnostic logging ────────────────────────────────────────────────────────
 // Logs status transitions and the reason, keyed by the last 50 chars of URI.
 // Search for "[useCachedPageImage]" in the Metro/device logs to trace flicker.

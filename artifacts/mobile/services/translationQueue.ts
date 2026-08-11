@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { callInpaintServer } from "./inpaintClient";
 import { translateImage, TranslatedRegion } from "./geminiTranslate";
 import type { TranslationOptions } from "./geminiTranslate";
+import { getResolvedPageImageUri } from "@/hooks/useCachedPageImage";
 
 export type TextRegion = TranslatedRegion;
 
@@ -274,7 +275,19 @@ class TranslationQueueManager {
 
                const requestStarted = Date.now();
                const result = await withTimeout(
-                 translateImage(pageUrl, targetLanguage, userApiKey, sourceId, translationOptions),
+                 translateImage(
+                   pageUrl,
+                   targetLanguage,
+                   userApiKey,
+                   sourceId,
+                   {
+                     ...translationOptions,
+                     localImageUri:
+                       translationOptions.localImageUri ??
+                       getResolvedPageImageUri(pageUrl) ??
+                       undefined,
+                   },
+                 ),
                  timeoutMs
                );
                onRequestUsage?.(Date.now() - requestStarted);

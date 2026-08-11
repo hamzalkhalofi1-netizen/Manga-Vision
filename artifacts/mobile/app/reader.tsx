@@ -36,6 +36,7 @@ import { useInpaintServer } from "@/hooks/useInpaintServer";
 import { callInpaintServer } from "@/services/inpaintClient";
 import { useReaderPreloader } from "@/hooks/useReaderPreloader";
 import { translateImage } from "@/services/geminiTranslate";
+import { getResolvedPageImageUri } from "@/hooks/useCachedPageImage";
 
 const { width: SCREEN_W } = Dimensions.get("window");
 
@@ -395,7 +396,10 @@ export default function ReaderScreen() {
           sourceId,
           {
             model: geminiModel,
-            localImageUri: resolvedPageUrisRef.current.get(idx),
+            localImageUri:
+              resolvedPageUrisRef.current.get(idx) ??
+              getResolvedPageImageUri(pageUrl) ??
+              undefined,
             style: translationSettings.style,
             customStyle: translationSettings.customStyle,
             translateSFX: translationSettings.translateSFX,

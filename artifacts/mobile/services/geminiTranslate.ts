@@ -94,7 +94,9 @@ async function fetchImageAsBase64(
         localUri = (await ImageDiskCache.getPath(imageUrl)) ?? undefined;
       }
       if (!localUri) {
-        localUri = await ImageDiskCache.download(imageUrl, headers);
+        throw new Error(
+          "IMAGE_CACHE_READ_FAILED: Reader image is not available in the local cache",
+        );
       }
       const info = await FileSystem.getInfoAsync(localUri, {
         size: true,
