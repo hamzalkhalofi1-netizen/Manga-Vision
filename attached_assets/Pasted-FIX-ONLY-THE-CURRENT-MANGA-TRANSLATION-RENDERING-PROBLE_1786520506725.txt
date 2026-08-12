@@ -1,0 +1,229 @@
+FIX ONLY THE CURRENT MANGA TRANSLATION RENDERING PROBLEMS.
+
+IMPORTANT:
+Translation/API/image acquisition is NOW WORKING. DO NOT TOUCH OR REFACTOR the working Gemini translation, image acquisition, model selection, or manga/chapter loading systems.
+
+There are exactly TWO remaining bugs visible in the translated page:
+
+BUG 1 — ORIGINAL TEXT IS NOT BEING WHITENED/REMOVED
+
+The translated Arabic text is rendered, but the original English text remains visible underneath it.
+
+Example visible result:
+English text remains inside the speech bubble while Arabic is drawn over it.
+
+The UI also shows:
+"CV PIPELINE"
+"3% KB inpainted"
+
+This strongly indicates that the CV/inpainting stage is running but the generated mask is wrong, incomplete, empty, or the renderer is using the original image instead of the successfully inpainted image.
+
+DO NOT assume Gemini is the problem.
+
+Trace ONLY this pipeline:
+
+original page image
+→ OCR text regions
+→ region classification
+→ bubble/region geometry
+→ segmentation/mask generation
+→ inpainting
+→ returned inpainted bitmap/image
+→ translation text renderer
+→ final displayed page
+
+Find exactly where the original text pixels survive.
+
+Check these specific possibilities:
+
+A. Is the mask actually covering the original text pixels?
+
+B. Is the mask empty/sparse because segmentation is detecting the bubble border instead of the characters?
+
+C. Is the inpainting function receiving the correct mask?
+
+D. Does the inpainting function return a modified image?
+
+E. Is the renderer actually displaying the modified/inpainted image?
+
+F. Is the Arabic overlay being composited onto the ORIGINAL image instead of the INPAINTED image?
+
+G. Are coordinate transformations/scaling causing the mask to be placed in the wrong location?
+
+Do not replace the whole CV system.
+
+Make the smallest root-cause fix.
+
+The final image MUST follow:
+
+ORIGINAL IMAGE
+→ REMOVE/PAINT OVER ORIGINAL TEXT
+→ INPAINT/RESTORE THE BACKGROUND
+→ DRAW TRANSLATED TEXT
+
+Never:
+
+ORIGINAL IMAGE
+→ DRAW ARABIC TEXT ON TOP
+
+For speech bubbles, narration boxes, and similar regions, the original text must be completely hidden before translated text is rendered.
+
+IMPORTANT:
+Do not blindly increase the mask size globally. Preserve bubble borders, tails, artwork, and background as much as possible.
+
+Use the existing region coordinates and existing segmentation/inpainting architecture.
+
+After fixing, test ONE page only.
+
+Do not run a whole chapter.
+Do not call Gemini repeatedly.
+Do not add dependencies.
+Do not modify unrelated files.
+
+---
+
+BUG 2 — TRANSLATION TEXT SETTINGS ARE IGNORED
+
+The new translation settings for:
+
+- text color
+- font size
+- possibly font weight/style
+- text rendering configuration
+
+are not reflected in the final translated image.
+
+Changing the settings produces the same final text appearance.
+
+Trace ONLY:
+
+Settings UI
+→ stored translation settings
+→ translation state/config
+→ translation result
+→ Renderer
+→ final Canvas/Image/Overlay
+
+Find where the settings are being lost or replaced by hardcoded defaults.
+
+Look specifically for:
+
+- hardcoded text color
+- hardcoded font size
+- default renderer configuration
+- settings not included in translation state
+- settings not passed to the page renderer
+- settings passed correctly but overwritten during rendering
+- separate renderer configuration used specifically for translated pages
+- cached translation results containing old rendering configuration
+
+The renderer MUST use the CURRENT settings at render time.
+
+Do not regenerate the Gemini translation just because the user changes color or size.
+
+Changing color/size should re-render the existing translated regions locally.
+
+For example:
+
+translation result
++
+current rendering settings
+→ renderer
+→ final image
+
+NOT:
+
+translation result
+→ hardcoded renderer defaults
+
+IMPORTANT:
+Do not redesign the settings UI.
+Do not add new settings.
+Only repair the connection between the existing settings and the actual translation renderer.
+
+---
+
+STRICT LOW-CREDIT MODE
+
+This is critical.
+
+You have very limited Replit Agent credits.
+
+Therefore:
+
+1. Do NOT scan the entire repository.
+2. Do NOT inspect unrelated files.
+3. Do NOT run broad project-wide analysis.
+4. Do NOT refactor architecture.
+5. Do NOT add dependencies.
+6. Do NOT modify Gemini/API code.
+7. Do NOT modify image acquisition code.
+8. Do NOT translate multiple pages.
+9. Do NOT repeatedly call the Gemini API.
+
+Inspect only files directly involved in:
+
+A) inpainting/mask/rendering
+B) translation text rendering/settings
+
+Use targeted searches and focused checks.
+
+Before editing, identify the exact functions responsible for:
+
+- mask generation
+- inpainting
+- final translated-page composition
+- translation text rendering
+- translation rendering settings
+
+Then make the smallest possible changes.
+
+---
+
+VALIDATION
+
+Perform local/static validation first.
+
+Then perform ONE real translation test on ONE manga page using the existing configured test API key.
+
+Verify these four things:
+
+1. Gemini translation succeeds.
+2. Original English text is actually removed/covered.
+3. Arabic translation is rendered on the cleaned background.
+4. Changing text color and font size changes the final rendered result WITHOUT calling Gemini again.
+
+If possible, test settings by changing:
+
+- color once
+- font size once
+
+No additional Gemini calls should be made for these setting tests.
+
+SUCCESS CONDITION:
+
+The final manga page must look like:
+
+clean speech bubble/background
++
+Arabic translated text
++
+current selected text color
++
+current selected font size
+
+with NO original English text visible underneath.
+
+If the inpainting algorithm itself is still failing, report the exact stage and evidence instead of pretending it is fixed.
+
+FINAL RESPONSE MUST CONTAIN ONLY:
+
+1. Exact root cause of whitening failure.
+2. Exact root cause of settings failure.
+3. Minimal files changed.
+4. What was changed.
+5. Whether ONE real page was successfully cleaned and translated.
+6. Whether changing color/size worked without another Gemini request.
+7. Any remaining blocker.
+
+DO NOT make unrelated changes.
