@@ -148,7 +148,10 @@ async function fetchImageAsBase64(
   // MangaPage already uses this existing proxy rewrite on web. Reuse it here
   // so the translation request sees the same CORS/hotlink-safe image URL as
   // the reader; native keeps the original URL and headers.
-  const requestUrl = ImageLoader.maybeProxyUrl(imageUrl);
+  // MangaPage already resolved the exact URI it rendered (the source proxy URL
+  // on web). Reuse it instead of rebuilding a second request from the CDN URL.
+  const requestUrl =
+    localImageUri ?? ImageLoader.maybeProxyUrl(imageUrl);
   const requestHost = (() => {
     try {
       return new URL(requestUrl).host;
@@ -575,7 +578,7 @@ export async function translateImage(
   const { data: imageData, mimeType } = await fetchImageAsBase64(
     imageUrl,
     sourceId,
-    Platform.OS !== "web" ? options.localImageUri : undefined,
+    options.localImageUri,
   );
   const prompt = buildPrompt(targetLanguage, options);
   const resolvedMime = mimeType as "image/jpeg" | "image/png" | "image/webp";
