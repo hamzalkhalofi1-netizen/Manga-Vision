@@ -38,6 +38,57 @@ function forward(req, res, targetPort) {
 
   proxy.on("error", () => {
     if (!res.headersSent) {
+      if (targetPort === EXPO_PORT && req.method === "GET") {
+        // Metro can take a few seconds to come up after the proxy starts.
+        // Returning a one-shot 502 leaves the Replit preview iframe stuck on
+        // a blank page, even after Metro becomes available. Keep the preview
+        // alive with a small retry page instead.
+        res.writeHead(503, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+        });
+        res.end(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MangaVerse</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; }
+      body {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #080808;
+        color: #f5f5f5;
+        font: 500 15px/1.5 system-ui, -apple-system, sans-serif;
+      }
+      main { text-align: center; padding: 32px; }
+      .mark {
+        width: 42px;
+        height: 42px;
+        margin: 0 auto 18px;
+        border: 3px solid rgba(244, 63, 94, .25);
+        border-top-color: #f43f5e;
+        border-radius: 50%;
+        animation: spin .8s linear infinite;
+      }
+      p { margin: 0; color: #a1a1aa; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <main aria-live="polite">
+      <div class="mark" aria-hidden="true"></div>
+      <p>Starting MangaVerse…</p>
+    </main>
+    <script>setTimeout(function () { location.reload(); }, 1200);</script>
+  </body>
+</html>`);
+        return;
+      }
       res.writeHead(502, { "Content-Type": "text/plain" });
     }
     res.end(`upstream error (port ${targetPort})`);
