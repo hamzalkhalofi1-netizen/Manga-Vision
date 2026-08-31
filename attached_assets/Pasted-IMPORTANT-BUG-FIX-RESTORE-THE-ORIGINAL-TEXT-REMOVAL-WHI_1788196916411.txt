@@ -1,0 +1,478 @@
+IMPORTANT BUG FIX — RESTORE THE ORIGINAL TEXT REMOVAL / WHITE-OUT PIPELINE
+
+I have attached screenshots showing the current problem in my MangaVision/MangaVerse manga reader.
+
+The AI translation itself is working correctly, but the ORIGINAL TEXT REMOVAL / WHITE-OUT stage is broken.
+
+CURRENT BEHAVIOR:
+- Gemini successfully translates the manga page.
+- The translated Arabic text is generated correctly.
+- BUT the original text remains visible underneath/around the translated text.
+- The application is NOT correctly detecting the original text regions.
+- The detected text regions are not being converted into masks correctly.
+- The original text is therefore not being erased/whited out before rendering the translated text.
+- This results in Arabic translation being drawn directly over the original English/Korean/Japanese text.
+- The screenshots clearly demonstrate this problem.
+
+VERY IMPORTANT:
+The white-out/text removal feature WORKED BEFORE some recent changes.
+Therefore, do NOT create a completely unrelated new translation system.
+Investigate the recent changes and restore/fix the original working behavior.
+
+I want you to debug the ACTUAL CODEBASE, not give me theoretical advice.
+
+==================================================
+GOAL
+==================================================
+
+Restore a professional manga translation pipeline:
+
+ORIGINAL MANGA IMAGE
+        ↓
+TEXT DETECTION / OCR
+        ↓
+EXACT TEXT BOUNDING BOXES / POLYGONS
+        ↓
+CREATE TEXT MASK
+        ↓
+REMOVE ORIGINAL TEXT
+        ↓
+INPAINT / WHITE-OUT THE TEXT REGION
+        ↓
+RENDER TRANSLATED TEXT
+        ↓
+FINAL CLEAN MANGA PAGE
+
+The final result must NOT contain the original text underneath the translation.
+
+==================================================
+1. INVESTIGATE THE CURRENT PIPELINE
+==================================================
+
+Search the entire project for everything related to:
+
+- OCR
+- text detection
+- text bounding boxes
+- text regions
+- text polygons
+- masks
+- mask generation
+- white-out
+- erase text
+- remove text
+- inpainting
+- image processing
+- canvas
+- image manipulation
+- translated text rendering
+- Gemini vision
+- Gemini OCR
+- translation regions
+- detected regions
+- boundingBox
+- boundingBoxes
+- polygon
+- segmentation
+- coordinates
+- x / y / width / height
+- image coordinates
+- canvas coordinates
+- scaling
+- crop
+- resize
+
+Also inspect recent changes/checkpoints if available.
+
+Find out exactly what changed between the version where WHITE-OUT WORKED and the current broken version.
+
+==================================================
+2. DO NOT ASSUME OCR IS THE ONLY PROBLEM
+==================================================
+
+Determine which of these is actually failing:
+
+A. Text detection itself is failing.
+
+B. OCR returns text but does not return valid coordinates.
+
+C. Coordinates are returned but are in the wrong coordinate system.
+
+D. Coordinates are correct but are scaled incorrectly relative to the original image.
+
+E. Bounding boxes are correct but the mask is not created.
+
+F. Mask is created but is not applied to the image.
+
+G. White-out/inpainting is performed on the wrong image.
+
+H. White-out happens before an image resize/crop and coordinates become invalid.
+
+I. Translation is rendered on the original image instead of the cleaned image.
+
+J. The cleaned image is generated correctly but the UI displays the original image.
+
+K. The frontend/backend data structure changed and the mask information is being lost.
+
+Do not guess.
+Trace the data through the complete pipeline and identify the actual failure.
+
+==================================================
+3. VERIFY TEXT DETECTION
+==================================================
+
+For every detected text region, verify that the application has valid coordinates.
+
+For example, the internal result should conceptually contain something like:
+
+{
+  text: "...",
+  boundingBox: {
+    x: ...,
+    y: ...,
+    width: ...,
+    height: ...
+  }
+}
+
+or polygon coordinates if the system uses polygons.
+
+Add safe development logging showing:
+
+- number of detected text regions
+- detected text
+- bounding box coordinates
+- original image width
+- original image height
+- processed image width
+- processed image height
+- mask dimensions
+
+DO NOT log:
+- Gemini API keys
+- tokens
+- secrets
+- authentication credentials
+
+==================================================
+4. FIX COORDINATE SYSTEM PROBLEMS
+==================================================
+
+This is extremely important.
+
+Make sure OCR coordinates correspond to the ORIGINAL IMAGE PIXEL COORDINATES.
+
+If OCR operates on a resized image, correctly transform the coordinates back to the original image.
+
+Example:
+
+originalWidth / processedWidth
+originalHeight / processedHeight
+
+must be accounted for.
+
+Also handle:
+
+- devicePixelRatio
+- CSS scaling
+- canvas scaling
+- image resizing
+- aspect ratio
+- cropping
+- object-fit
+- EXIF orientation if applicable
+
+Do NOT use screen/UI coordinates as image coordinates.
+
+The mask must be created using the actual pixel dimensions of the image being edited.
+
+==================================================
+5. RESTORE WHITE-OUT / TEXT REMOVAL
+==================================================
+
+Implement/fix the actual text removal stage.
+
+For manga speech bubbles with mostly white backgrounds:
+
+- detect the text region
+- expand the mask slightly around the detected characters
+- remove the original characters
+- fill the region naturally
+- preserve the speech bubble outline
+- preserve nearby artwork whenever possible
+- do NOT simply place a giant white rectangle over the entire speech bubble
+
+The system should remove the ORIGINAL CHARACTERS, not destroy the entire panel.
+
+For white speech bubbles, use an intelligent white/near-white fill where appropriate.
+
+For non-white backgrounds, use inpainting/content-aware reconstruction rather than blindly painting white.
+
+==================================================
+6. MASK QUALITY
+==================================================
+
+The mask should cover the actual original characters.
+
+Do not create tiny masks that leave black pixels around the letters.
+
+Use a configurable padding/margin around detected text.
+
+However, do not make the mask excessively large.
+
+The goal is:
+
+Original:
+
+        HELLO
+       [text]
+
+After removal:
+
+        clean bubble/background
+
+Then:
+
+        مرحباً
+
+The original "HELLO" must NOT remain visible.
+
+==================================================
+7. MULTIPLE TEXT REGIONS
+==================================================
+
+A manga page may contain:
+
+- speech bubbles
+- narration boxes
+- sound effects
+- small text
+- vertical text
+- horizontal text
+- text close to artwork
+
+The system must process multiple detected regions independently.
+
+Do not stop after detecting the first region.
+
+Make sure every detected region is passed through:
+
+Detection → Mask → Removal → Translation → Rendering.
+
+==================================================
+8. DO NOT DESTROY THE ORIGINAL IMAGE
+==================================================
+
+Keep the original image immutable.
+
+Use separate stages such as:
+
+originalImage
+detectedTextRegions
+mask
+cleanedImage
+translatedRegions
+finalImage
+
+Do not accidentally overwrite the source image before OCR or translation is complete.
+
+==================================================
+9. VERY IMPORTANT — CHECK WHICH IMAGE IS DISPLAYED
+==================================================
+
+There may be a frontend bug where the cleaned image is successfully generated but the UI continues displaying the original image.
+
+Verify the complete chain:
+
+translation result
+      ↓
+cleaned image
+      ↓
+translated image
+      ↓
+state/store
+      ↓
+React component
+      ↓
+displayed image
+
+Make sure the reader displays the FINAL PROCESSED IMAGE and not the original page.
+
+==================================================
+10. GEMINI INTEGRATION
+==================================================
+
+Do not remove Gemini.
+
+Do not replace Gemini with another AI provider.
+
+Keep the existing Gemini translation functionality.
+
+If Gemini currently returns both:
+
+- translated text
+- detected text locations
+
+make sure those locations are actually used by the image processing stage.
+
+If Gemini only returns translated text without coordinates, inspect the existing architecture and restore the existing detection method rather than inventing an unreliable coordinate system.
+
+==================================================
+11. REGRESSION INVESTIGATION
+==================================================
+
+Because WHITE-OUT WORKED BEFORE recent modifications:
+
+Compare the current implementation with previous working checkpoints/version history if available.
+
+Look specifically for changes involving:
+
+- translation response format
+- OCR response parsing
+- bounding box parsing
+- coordinate normalization
+- image URL handling
+- canvas rendering
+- image resizing
+- image processing
+- mask creation
+- frontend state
+- backend response structure
+
+Find the regression.
+
+If possible, restore the relevant previous logic and then make it compatible with the current architecture.
+
+==================================================
+12. DO NOT HIDE THE PROBLEM
+==================================================
+
+DO NOT:
+
+- disable error handling
+- simply hide the original text with another UI layer
+- reduce opacity of the original image
+- cover the whole page with white
+- draw a white rectangle over every speech bubble
+- fake a successful cleaning result
+- remove OCR
+- remove text detection
+- replace the image with a static placeholder
+- hardcode coordinates for this particular manga page
+
+The solution must work dynamically for different manga/manhwa pages.
+
+==================================================
+13. PERFORMANCE
+==================================================
+
+This is a mobile application.
+
+Do not introduce unnecessarily heavy processing that will freeze the UI.
+
+If image processing is expensive:
+
+- move appropriate processing to the backend/server
+- use efficient image buffers
+- avoid unnecessary conversions
+- avoid repeatedly decoding the same image
+- cache processed results where appropriate
+
+But correctness comes first.
+
+==================================================
+14. ADD A DEBUG MODE
+==================================================
+
+Create a development-only debugging mechanism that can optionally show:
+
+- detected text boxes
+- polygons
+- masks
+- cleaned image
+- final translated image
+
+This will allow us to verify visually whether:
+
+1. OCR detected the text.
+2. The coordinates are correct.
+3. The mask covers the original text.
+4. The text was actually removed.
+5. The translated text is rendered in the correct location.
+
+Do not expose this debug UI in normal production mode unless already supported by the application.
+
+==================================================
+15. ACCEPTANCE TEST
+==================================================
+
+After implementing the fix, test a page containing multiple speech bubbles.
+
+The expected result is:
+
+BEFORE:
+
+Original English/Korean/Japanese text
+        ↓
+OCR detects text
+        ↓
+Text is removed
+        ↓
+Clean speech bubble
+        ↓
+Arabic translation is rendered
+
+FINAL:
+
+Only the Arabic translation should be visible inside the bubble.
+
+The original text must NOT remain underneath it.
+
+Also verify:
+
+- multiple bubbles work
+- small text works
+- different page sizes work
+- portrait pages work
+- long webtoon pages work
+- resized images work
+- translation coordinates remain aligned
+- no TypeScript errors
+- no runtime errors
+- no broken existing features
+
+==================================================
+16. FINAL REPORT
+==================================================
+
+After fixing the code, report:
+
+1. ROOT CAUSE:
+   What exactly caused white-out to stop working?
+
+2. FILES CHANGED:
+   List every file modified.
+
+3. FIX:
+   Explain exactly what was repaired.
+
+4. OCR:
+   Confirm whether text detection was working or broken.
+
+5. COORDINATES:
+   Confirm whether the coordinate mapping was correct.
+
+6. MASK:
+   Confirm whether the mask is now actually applied.
+
+7. IMAGE PIPELINE:
+   Confirm that the final UI displays the cleaned/translated image.
+
+8. TEST:
+   Tell me what tests/build/typecheck you ran and whether they passed.
+
+MOST IMPORTANT:
+Do not stop after identifying the issue.
+Actually implement the fix in the Replit project and validate it.
+
+The screenshots I attached show the current broken behavior: translation is appearing, but the original text remains underneath because the text removal/white-out stage is not correctly being applied.

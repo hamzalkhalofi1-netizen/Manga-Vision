@@ -70,6 +70,24 @@ const CDN_HOST_PROXY_MAP: Record<string, string> = {
 const PROXY_BASE = "/api/source-proxy";
 const isWeb = Platform.OS === "web";
 
+function getProxyIdForHostname(hostname: string): string | undefined {
+  const exactMatch = CDN_HOST_PROXY_MAP[hostname];
+  if (exactMatch) return exactMatch;
+
+  // MangaDex serves chapter pages from rotating *.mangadex.network hosts
+  // returned by /at-home/server, while the proxy uses the stable uploads
+  // origin. Treat only that specific subdomain family as MangaDex CDN
+  // traffic; do not proxy api.mangadex.org or unrelated hosts.
+  if (
+    hostname.endsWith(".mangadex.network") &&
+    hostname !== "mangadex.network"
+  ) {
+    return "mangadex-cdn";
+  }
+
+  return undefined;
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export interface ImageHeaders {
@@ -135,7 +153,7 @@ export const ImageLoader = {
     if (!imageUrl) return imageUrl;
     try {
       const parsed = new URL(imageUrl);
-      const proxyId = CDN_HOST_PROXY_MAP[parsed.hostname];
+      const proxyId = getProxyIdForHostname(parsed.hostname);
       if (!proxyId) return imageUrl;
       const cleanPath = parsed.pathname.startsWith("/")
         ? parsed.pathname.slice(1)

@@ -167,7 +167,11 @@ async function fetchImageAsBase64(
   let response: Response;
   const webFetchStartedAt = Date.now();
   try {
-    response = await fetch(requestUrl, { headers });
+    // The web request goes through the same-origin source proxy. The proxy
+    // adds the source Referer/User-Agent server-side; sending those
+    // browser-forbidden headers here can make Fetch reject with only
+    // "Failed to fetch" before the request reaches the proxy.
+    response = await fetch(requestUrl);
   } catch (err: unknown) {
     const name = err instanceof Error ? err.name : "UnknownError";
     const message = err instanceof Error ? err.message : String(err);

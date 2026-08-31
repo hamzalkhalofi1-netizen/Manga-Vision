@@ -37,7 +37,7 @@ function SourceCard({ sourceId }: { sourceId: string }) {
   const handleTest = async () => {
     setTesting(true);
     try {
-      const result = await source.getTrending?.({ page: 1 });
+      const result = await source.getTrending?.(1);
       Alert.alert(
         "Source Test",
         result && result.length > 0
