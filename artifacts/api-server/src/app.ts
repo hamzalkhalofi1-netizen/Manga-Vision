@@ -26,7 +26,10 @@ app.use(
   }),
 );
 app.use(cors());
-app.use(express.json());
+// Manga pages are sent as base64 when the client already has a cached/local
+// copy. Keep a bounded limit large enough for high-resolution pages while
+// still rejecting accidentally unbounded request bodies.
+app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);

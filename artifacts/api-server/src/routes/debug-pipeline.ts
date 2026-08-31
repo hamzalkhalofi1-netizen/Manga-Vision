@@ -31,6 +31,16 @@ import {
 
 const router = Router();
 
+// The diagnostic endpoint returns source/cleaned artwork and is intentionally
+// unavailable in production deployments.
+router.use((_req, res, next) => {
+  if (process.env.NODE_ENV === "production") {
+    res.status(404).json({ error: "Pipeline diagnostics are development-only" });
+    return;
+  }
+  next();
+});
+
 // ── Classification (self-contained, mirrors TextClassificationEngine.ts) ──────
 
 type TextClass =
@@ -465,6 +475,7 @@ interface GeminiRegion {
   bgColor?: string;
   textColor?: string;
   polygon?: [number, number][];
+  mask?: [number, number][];
   bubblePolygon?: [number, number][];
   speaker?: string | null;
   emphasis?: boolean;
@@ -512,6 +523,7 @@ router.post("/", async (req, res) => {
         [r.x, r.y], [r.x + r.w, r.y],
         [r.x + r.w, r.y + r.h], [r.x, r.y + r.h],
       ] as [number, number][],
+      mask: r.mask,
       bubblePolygon: r.bubblePolygon,
       x: r.x, y: r.y, w: r.w, h: r.h,
     }));

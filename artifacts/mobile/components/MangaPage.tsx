@@ -38,12 +38,7 @@ import { useCachedPageImage } from "@/hooks/useCachedPageImage";
 const SCREEN_W = Dimensions.get("window").width;
 const DEFAULT_ASPECT = 1.45;
 
-export type BubblePolygon = [
-  [number, number],
-  [number, number],
-  [number, number],
-  [number, number],
-];
+export type BubblePolygon = [number, number][];
 
 export interface TextRegion {
   original: string;
@@ -57,6 +52,15 @@ export interface TextRegion {
   centroid?: { x: number; y: number };
   rotation?: number;
   polygon?: BubblePolygon;
+  /** Gemini segmentation polygon, normalized from 0 to 1000 as [x,y]. */
+  mask?: [number, number][];
+  box_2d?: [number, number, number, number];
+  id?: string;
+  language?: string;
+  confidence?: number;
+  maskSource?: "gemini" | "box_fallback";
+  pixelBox?: { x: number; y: number; width: number; height: number };
+  pixelMask?: [number, number][];
   bubblePolygon?: [number, number][];
   type: string;
   bgColor: string;
@@ -168,6 +172,7 @@ function MangaPage({
           [r.x + r.w, r.y + r.h],
           [r.x, r.y + r.h],
         ],
+        mask: r.mask,
         bubblePolygon: r.bubblePolygon,
         x: r.x,
         y: r.y,

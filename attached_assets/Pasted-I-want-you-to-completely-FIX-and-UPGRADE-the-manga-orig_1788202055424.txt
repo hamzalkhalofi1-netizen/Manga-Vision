@@ -1,0 +1,637 @@
+I want you to completely FIX and UPGRADE the manga original-text removal system in my MangaVision / MangaVerse application.
+
+IMPORTANT:
+The translation itself is already working.
+The problem is that Gemini generates the translated text, but the ORIGINAL manga text is not being properly detected, masked, removed, or cleaned before the translated text is rendered.
+
+I want you to replace the current weak text-removal logic with a professional AI-powered text detection and removal pipeline using Gemini Vision.
+
+DO NOT simply draw Arabic text over the original text.
+
+The final result must look like a professionally translated manga page where the original text has actually been removed.
+
+==================================================
+CORE PIPELINE
+==================================================
+
+For every manga page:
+
+ORIGINAL IMAGE
+      ↓
+GEMINI VISION ANALYSIS
+      ↓
+DETECT EVERY TEXT REGION
+      ↓
+RETURN PRECISE TEXT BOUNDING BOX + SEGMENTATION MASK
+      ↓
+CREATE HIGH-QUALITY TEXT MASK
+      ↓
+REMOVE ORIGINAL CHARACTERS
+      ↓
+RESTORE / INPAINT BACKGROUND
+      ↓
+CLEAN IMAGE
+      ↓
+RENDER TRANSLATION
+      ↓
+FINAL TRANSLATED PAGE
+
+The original text must NOT remain underneath the translated text.
+
+==================================================
+1. USE GEMINI FOR TEXT DETECTION
+==================================================
+
+Use the Gemini Vision capability already available in the application.
+
+Gemini must analyze the ORIGINAL manga image and detect ALL visible textual content, including:
+
+- English
+- Korean
+- Japanese
+- Chinese
+- Arabic
+- speech bubble text
+- narration boxes
+- dialogue
+- captions
+- signs
+- UI-like text inside the manga
+- small text
+- vertical text
+- horizontal text
+- stylized manga fonts
+- text partially overlapping artwork
+- sound effects when possible
+
+Do NOT only ask Gemini:
+
+"Translate this image."
+
+Instead, create a dedicated image-analysis stage whose job is:
+
+"Find every text region and provide precise coordinates."
+
+==================================================
+2. REQUIRED GEMINI RESPONSE
+==================================================
+
+Use structured JSON output.
+
+Do NOT rely on Gemini returning free-form text.
+
+The response should conceptually contain:
+
+{
+  "imageWidth": number,
+  "imageHeight": number,
+  "regions": [
+    {
+      "id": "text_001",
+      "text": "original text",
+      "language": "en",
+      "type": "dialogue",
+      "box_2d": [ymin, xmin, ymax, xmax],
+      "mask": [[x, y], [x, y], ...],
+      "confidence": 0.98
+    }
+  ]
+}
+
+IMPORTANT:
+
+Use Gemini's documented coordinate convention:
+
+box_2d:
+[ymin, xmin, ymax, xmax]
+
+normalized from 0 to 1000.
+
+The segmentation mask should contain polygon coordinates normalized from 0 to 1000.
+
+Then convert these coordinates back to the actual original image pixel coordinates.
+
+DO NOT treat the 0–1000 values as actual pixels.
+
+==================================================
+3. SEGMENTATION IS MORE IMPORTANT THAN SIMPLE RECTANGLES
+==================================================
+
+Do NOT rely only on rectangular bounding boxes.
+
+A rectangle around text can destroy artwork and speech-bubble borders.
+
+Prefer:
+
+TEXT → precise segmentation polygon → mask
+
+The mask should follow the actual shape of the text as closely as possible.
+
+Example:
+
+BAD:
+
++------------------------+
+|       HELLO            |
++------------------------+
+
+This removes too much background.
+
+GOOD:
+
+The mask follows the actual letters:
+
+  H E L L O
+  █ █ █ █ █
+
+with only a small safety margin around the characters.
+
+==================================================
+4. MASK EXPANSION
+==================================================
+
+After Gemini returns the segmentation mask:
+
+Create a controlled dilation/expansion around the text.
+
+The expansion should be small and configurable.
+
+For example:
+
+text mask
+    ↓
+slightly expanded mask
+    ↓
+remove anti-aliased edges
+    ↓
+clean background
+
+This prevents black/gray pixels from the original letters from remaining.
+
+DO NOT expand the mask excessively.
+
+The goal is to remove the characters, NOT the entire speech bubble.
+
+==================================================
+5. REMOVE THE ORIGINAL TEXT INTELLIGENTLY
+==================================================
+
+Do NOT always use a simple white rectangle.
+
+Determine the local background around each text region.
+
+If the text is inside a white speech bubble:
+
+→ use near-white reconstruction/fill.
+
+If the text is inside a colored speech bubble:
+
+→ estimate the surrounding bubble color and reconstruct it.
+
+If the text is over a complex manga illustration:
+
+→ use image inpainting/content-aware reconstruction.
+
+If the background contains lines, gradients, textures, or artwork:
+
+→ preserve those details as much as possible.
+
+The removal method must adapt to the background.
+
+==================================================
+6. SPEECH BUBBLE PROTECTION
+==================================================
+
+This is extremely important.
+
+When removing text from a speech bubble:
+
+DO NOT remove:
+
+- speech bubble outline
+- bubble shadow
+- bubble tail
+- surrounding artwork
+
+Only remove the characters.
+
+For example:
+
+BEFORE:
+
+   __________________
+  /                  \
+ |      HELLO         |
+  \__________________/
+
+AFTER:
+
+   __________________
+  /                  \
+ |                   |
+  \__________________/
+
+Then render:
+
+   __________________
+  /                  \
+ |      مرحباً        |
+  \__________________/
+
+==================================================
+7. TEXT OVER ARTWORK
+==================================================
+
+For manga/manhwa pages where text is directly over artwork:
+
+DO NOT turn the entire region white.
+
+Use the surrounding pixels to reconstruct the background.
+
+The removal should preserve:
+
+- faces
+- hair
+- clothing
+- walls
+- objects
+- shadows
+- panel borders
+- background lines
+- textures
+
+Only the original characters should disappear.
+
+==================================================
+8. SMALL TEXT
+==================================================
+
+The detector must not ignore small text.
+
+Pay special attention to:
+
+- tiny speech bubble text
+- narration
+- vertical Japanese text
+- small Korean text
+- small English text
+- text near panel edges
+
+Use sufficient image resolution when sending the page to Gemini.
+
+Do not unnecessarily downscale a long webtoon page before detection.
+
+If resizing is required for Gemini:
+
+1. record original width/height
+2. resize image
+3. detect text
+4. convert coordinates back to original pixel coordinates
+5. generate the mask on the ORIGINAL resolution
+
+==================================================
+9. COORDINATE CONVERSION
+==================================================
+
+Implement a dedicated coordinate conversion function.
+
+Gemini:
+
+[ymin, xmin, ymax, xmax]
+0–1000
+
+Convert to:
+
+actual pixel coordinates
+
+For example:
+
+x = normalizedX / 1000 * originalWidth
+y = normalizedY / 1000 * originalHeight
+
+Do this consistently for:
+
+- bounding boxes
+- segmentation polygons
+- masks
+
+Never use:
+
+- screen coordinates
+- CSS coordinates
+- phone display coordinates
+- canvas display coordinates
+
+for image processing.
+
+Everything must ultimately map to ORIGINAL IMAGE PIXELS.
+
+==================================================
+10. VALIDATE GEMINI MASKS
+==================================================
+
+Before applying a mask, validate:
+
+- coordinates are numbers
+- values are within 0–1000
+- polygon has enough points
+- xmin < xmax
+- ymin < ymax
+- region is inside image bounds
+
+Clamp invalid coordinates safely.
+
+If Gemini returns an invalid mask:
+
+fallback to the bounding box with a small controlled padding.
+
+Do not crash the entire page translation.
+
+==================================================
+11. MULTIPLE REGIONS
+==================================================
+
+Process every detected region.
+
+Do not process only the first region.
+
+Example:
+
+Page:
+
+Bubble 1
+Bubble 2
+Narration
+Sound effect
+Small text
+
+All valid text regions should be processed independently.
+
+==================================================
+12. SEPARATE DETECTION FROM TRANSLATION
+==================================================
+
+Create two logical stages:
+
+STAGE A:
+TEXT DETECTION + MASK GENERATION
+
+STAGE B:
+TRANSLATION + RENDERING
+
+Do not mix these responsibilities.
+
+The detection result should contain stable region IDs.
+
+Example:
+
+text_001
+text_002
+text_003
+
+Then translation can reference those IDs.
+
+==================================================
+13. DO NOT LOSE THE DETECTION DATA
+==================================================
+
+Make sure the data flow is:
+
+Gemini
+ ↓
+structured detection JSON
+ ↓
+validated regions
+ ↓
+pixel coordinates
+ ↓
+mask
+ ↓
+cleaned image
+ ↓
+translation
+ ↓
+rendered text
+
+Do not convert the response into plain strings and lose the coordinates.
+
+==================================================
+14. DEBUG VISUALIZATION
+==================================================
+
+Add a development-only debug mode.
+
+It should allow us to see:
+
+1. Original image
+2. Detected bounding boxes
+3. Segmentation masks
+4. Cleaned image
+5. Final translated image
+
+This is extremely important.
+
+If Gemini detects the text correctly but the cleaned image is wrong, we can immediately identify whether the problem is:
+
+Gemini detection
+OR
+coordinate conversion
+OR
+mask generation
+OR
+image processing
+OR
+rendering.
+
+==================================================
+15. KEEP GEMINI API SECURE
+==================================================
+
+Do not expose the Gemini API key/token in the client bundle.
+
+Keep the API key on the secure backend/server side if the current architecture supports it.
+
+Never print the API key in logs.
+
+==================================================
+16. PERFORMANCE
+==================================================
+
+The application is designed for Android/mobile devices.
+
+Optimize the pipeline.
+
+Avoid:
+
+- unnecessary image conversions
+- repeated Gemini calls
+- repeated image downloads
+- processing the same page multiple times
+
+Cache detection results and cleaned images when appropriate.
+
+If multiple pages are translated, process them efficiently without freezing the UI.
+
+==================================================
+17. RETRY / FALLBACK
+==================================================
+
+If Gemini detection fails:
+
+retry once using a stronger detection prompt.
+
+If segmentation is missing but bounding boxes exist:
+
+use bounding-box fallback.
+
+If a region cannot be safely removed:
+
+do not destroy the entire page.
+
+Continue processing the other regions.
+
+==================================================
+18. IMPORTANT GEMINI DETECTION PROMPT
+==================================================
+
+Use a dedicated detection instruction similar to:
+
+"You are a professional manga/manhwa text detection and localization system.
+
+Analyze the supplied manga page at pixel-level visual precision.
+
+Detect every visible piece of textual content that should be translated.
+
+For each text region:
+- identify the original text
+- identify its language
+- classify the text type
+- return a precise bounding box
+- return a segmentation polygon following the actual characters
+- avoid including speech bubble borders
+- avoid including unrelated artwork
+- include small text
+- include vertical text
+- include stylized text
+
+The segmentation polygon must tightly follow the visible characters and include a very small safety margin for anti-aliased edges.
+
+Do not return large rectangles when a precise polygon can be provided.
+
+Coordinates must use:
+box_2d = [ymin, xmin, ymax, xmax]
+normalized from 0 to 1000.
+
+Mask polygon coordinates must also be normalized from 0 to 1000.
+
+Return ONLY the required structured JSON."
+
+==================================================
+19. IMPORTANT: DO NOT USE A SINGLE GIANT WHITE RECTANGLE
+==================================================
+
+This is a critical requirement.
+
+NEVER solve the problem by:
+
+- whitening the entire speech bubble
+- whitening the entire bounding box
+- covering the entire panel
+- placing a white layer above the original text
+- hiding the original image
+
+The system must actually remove the detected characters.
+
+==================================================
+20. REGRESSION
+==================================================
+
+The old white-out functionality worked before.
+
+Before implementing everything from scratch:
+
+inspect the current code and recent changes.
+
+Find the old implementation of:
+
+- text detection
+- coordinates
+- mask generation
+- white-out
+- image cleanup
+
+Reuse working logic where possible.
+
+If recent changes broke the pipeline, repair the regression instead of unnecessarily rewriting unrelated parts.
+
+==================================================
+21. FINAL QUALITY REQUIREMENT
+==================================================
+
+The final output should look like this:
+
+ORIGINAL:
+English/Korean/Japanese text
+
+        ↓
+
+AI detects exact characters
+
+        ↓
+
+Characters are removed from the image
+
+        ↓
+
+Background is reconstructed naturally
+
+        ↓
+
+Arabic translation is rendered
+
+        ↓
+
+FINAL:
+Clean professional translated manga page.
+
+There must be NO visible original text underneath the Arabic translation.
+
+==================================================
+22. IMPLEMENT IT NOW
+==================================================
+
+Do not only explain what should be done.
+
+Inspect the actual project.
+
+Find the current implementation.
+
+Modify the necessary files.
+
+Implement the improved Gemini detection + segmentation + mask + removal pipeline.
+
+Run:
+
+- TypeScript/type checking
+- lint if available
+- build
+- existing tests
+
+Fix any errors introduced by the changes.
+
+Then test the translation pipeline on a manga page containing multiple speech bubbles.
+
+Finally report:
+
+1. What was broken.
+2. Why the old white-out failed.
+3. How Gemini now detects the text.
+4. How coordinates are converted.
+5. How segmentation masks are generated.
+6. How original text is removed.
+7. How the background is reconstructed.
+8. Which files were changed.
+9. What tests/build checks passed.
+
+DO NOT STOP AT A THEORY.
+ACTUALLY IMPLEMENT AND VERIFY THE FIX.

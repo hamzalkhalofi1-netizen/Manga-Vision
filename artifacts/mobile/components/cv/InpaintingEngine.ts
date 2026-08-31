@@ -14,6 +14,8 @@
 
 export interface CvRegionInput {
   polygon: [number, number][];
+  /** Gemini glyph mask, normalized from 0 to 1000 as [x,y] points. */
+  mask?: [number, number][];
   bubblePolygon?: [number, number][];
   x: number;
   y: number;

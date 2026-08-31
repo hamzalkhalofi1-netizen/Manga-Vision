@@ -16,6 +16,7 @@ import { Platform } from "react-native";
 import { getBasicImageHeaders } from "./sourceImageHeaders";
 import { ImageLoader } from "./engine/imageLoader";
 import { ImageDiskCache } from "./cache/ImageDiskCache";
+import { getApiBase } from "./api";
 import type { GeminiModel } from "./geminiKeyTest";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -24,12 +25,17 @@ export interface TranslatedRegion {
   original: string;
   translated: string;
   /** Tight 4-point polygon wrapping the text glyphs (normalized 0–1). */
-  polygon?: [
-    [number, number],
-    [number, number],
-    [number, number],
-    [number, number],
-  ];
+  polygon?: [number, number][];
+  /** Gemini's glyph mask, normalized from 0 to 1000 as [x,y] points. */
+  mask?: [number, number][];
+  /** Gemini's documented [ymin,xmin,ymax,xmax] box, normalized 0–1000. */
+  box_2d?: [number, number, number, number];
+  id?: string;
+  language?: string;
+  confidence?: number;
+  maskSource?: "gemini" | "box_fallback";
+  pixelBox?: { x: number; y: number; width: number; height: number };
+  pixelMask?: [number, number][];
   /**
    * 4–8 point polygon tracing the FULL speech bubble outline.
    * Larger than polygon — covers the bubble border, tail, and pointer.
@@ -573,231 +579,64 @@ export async function translateImage(
     );
   }
 
-  const model = options.model ?? "gemini-flash-lite-latest";
-  const requestPath = `/v1beta/models/${model}:generateContent`;
-  console.log(
-    `[TRANSLATION START] kind=image language=${targetLanguage} model=${model} key=present url=generativelanguage.googleapis.com${requestPath}`,
-  );
-
+  // Manga page localization runs through the server-side detection pipeline.
+  // This keeps Gemini out of the client bundle for image OCR and ensures the
+  // returned regions contain the same validated mask used by OpenCV cleanup.
   const { data: imageData, mimeType } = await fetchImageAsBase64(
     imageUrl,
     sourceId,
     options.localImageUri,
   );
-  const prompt = buildPrompt(targetLanguage, options);
-  const resolvedMime = mimeType as "image/jpeg" | "image/png" | "image/webp";
-  console.log(
-    `[TRANSLATION DEBUG] imageSource=${Platform.OS !== "web" && options.localImageUri ? "LOCAL_CACHE" : "NETWORK"} ` +
-      `imageConversion=SUCCESS base64Length=${imageData.length} geminiModel=${model}`,
-  );
-
-  const client = new GoogleGenAI({ apiKey: userApiKey });
-
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const requestStarted = Date.now();
-    try {
-      console.log(
-        `[TRANSLATION REQUEST] attempt=${attempt}/${MAX_ATTEMPTS} model=${model}`,
-      );
-
-      console.log(
-        `[TRANSLATION DEBUG] model=${model} key=present geminiRequest=started endpoint=generativelanguage.googleapis.com${requestPath}`,
-      );
-      let response;
-      try {
-        response = await client.models.generateContent({
-          model,
-          contents: [
-            {
-              role: "user",
-              parts: [
-                { inlineData: { mimeType: resolvedMime, data: imageData } },
-                { text: prompt },
-              ],
-            },
-          ],
-          config: OCR_GEN_CONFIG,
-        });
-      } catch (err: unknown) {
-        const apiErr = err as {
-          status?: number;
-          code?: number;
-          name?: string;
-          message?: string;
-        };
-        const message = apiErr.message ?? String(err);
-        console.error(
-          `[TRANSLATION DEBUG] model=${model} geminiRequest=failure geminiHTTP=${apiErr.status ?? apiErr.code ?? "none"} duration=${Date.now() - requestStarted}ms errorCategory=${classifyGeminiError(apiErr, message)} message=${message.slice(0, 180)}`,
-        );
-        throw err;
-      }
-
-      const raw = response.text?.trim() ?? "";
-      console.log(
-        `[TRANSLATION DEBUG] model=${model} geminiRequest=success geminiHTTP=success geminiResponse=received duration=${Date.now() - requestStarted}ms contentType=application/json`,
-      );
-
-      if (!raw) {
-        throw new Error(
-          "GEMINI_EMPTY_RESPONSE: Gemini returned no translation data.",
-        );
-      }
-
-      let parsed: {
-        found: boolean;
-        regions: Array<{
-          original: string;
-          translated: string;
-          polygon?: unknown;
-          bubblePolygon?: unknown;
-          x: number;
-          y: number;
-          w: number;
-          h: number;
-          type: string;
-          bgColor: string;
-          textColor: string;
-          speaker: string | null;
-          emphasis: boolean;
-        }>;
-        summary: string;
-      };
-
-      const parsedJson = parseGeminiJson(raw);
-      parsed = parsedJson
-        ? {
-            found: Boolean(parsedJson.found),
-            regions: Array.isArray(parsedJson.regions)
-              ? (parsedJson.regions as typeof parsed.regions)
-              : [],
-            summary:
-              typeof parsedJson.summary === "string"
-                ? parsedJson.summary
-                : "",
-          }
-        : {
-            found: false,
-            regions: [],
-            summary: "Could not parse AI response",
-          };
-
-      const processedRegions: TranslatedRegion[] = (parsed.regions ?? [])
-        .filter((r) => r && typeof r.x === "number" && typeof r.y === "number")
-        .filter((r) => options.translateSFX !== false || r.type !== "sfx")
-        .filter(
-          (r) => options.translateNarration !== false || r.type !== "narration",
-        )
-        .filter(
-          (r) =>
-            options.translateCredits !== false ||
-            !["credits", "watermark"].includes(r.type),
-        )
-        .map((r) => {
-          const cx = Math.max(0, Math.min(0.99, r.x));
-          const cy = Math.max(0, Math.min(0.99, r.y));
-          const cw = Math.max(0.02, Math.min(1 - cx, r.w));
-          const ch = Math.max(0.02, Math.min(1 - cy, r.h));
-
-          const polygon =
-            validatePolygon(r.polygon) ?? bboxToPolygon(cx, cy, cw, ch);
-          const bubblePolygon =
-            validateBubblePolygon(r.bubblePolygon) ?? undefined;
-          const centroid = computeCentroid(polygon);
-          const rotation = computeRotation(polygon);
-
-          return {
-            original: r.original ?? "",
-            translated:
-              options.keepOriginal && r.original
-                ? `${r.translated ?? ""}\n${r.original}`
-                : (r.translated ?? ""),
-            x: cx,
-            y: cy,
-            w: cw,
-            h: ch,
-            polygon,
-            bubblePolygon,
-            centroid,
-            rotation,
-            centerX: centroid.x,
-            centerY: centroid.y,
-            type: r.type ?? "speech",
-            bgColor: r.bgColor || "#ffffff",
-            textColor: r.textColor || "#000000",
-            emphasis: !!r.emphasis,
-            speaker: r.speaker || null,
-          };
-        });
-
-      console.log(
-        `[geminiTranslate] Success — regions=${processedRegions.length} attempt=${attempt}`,
-      );
-
-      return {
-        found: parsed.found ?? processedRegions.length > 0,
-        regions: processedRegions,
-        summary: parsed.summary ?? "",
-      };
-    } catch (err: unknown) {
-      const anyErr = err as {
-        status?: number;
-        message?: string;
-        code?: number;
-      };
-      const errMsg = anyErr?.message ?? String(err);
-
-      console.error(
-        `[TRANSLATION API ERROR] attempt=${attempt} status=${anyErr?.status ?? "none"} category=${classifyGeminiError(anyErr, errMsg)} elapsed=${Date.now() - requestStarted}ms message=${errMsg.slice(0, 180)}`,
-      );
-
-      if (
-        anyErr?.status === 400 &&
-        (errMsg.includes("API_KEY_INVALID") ||
-          errMsg.includes("API key not valid"))
-      ) {
-        throw new Error(
-          "GEMINI_AUTH_FAILED: Your Gemini API key is not valid or has been revoked. " +
-            "Open Settings → Gemini API Keys, remove it and add a working key.",
-        );
-      }
-
-      if (anyErr?.status === 429 || anyErr?.code === 429) {
-        throw new Error("RATE_LIMITED");
-      }
-
-      if (anyErr?.status === 404 || anyErr?.status === 403) {
-        throw new Error(
-          `GEMINI_MODEL_FAILED: The selected Gemini model "${model}" is unavailable for this API key.`,
-        );
-      }
-
-      if (anyErr?.status && anyErr.status >= 400 && anyErr.status < 500) {
-        throw new Error(
-          `GEMINI_REQUEST_FAILED: Gemini rejected the translation request (HTTP ${anyErr.status}).`,
-        );
-      }
-
-      if (
-        (anyErr?.status === 503 || anyErr?.status === 500) &&
-        attempt < MAX_ATTEMPTS
-      ) {
-        const delay = attempt * 5000;
-        console.warn(
-          `[geminiTranslate] Gemini overloaded, retrying in ${delay}ms`,
-        );
-        await new Promise((r) => setTimeout(r, delay));
-        continue;
-      }
-
-      if (attempt === MAX_ATTEMPTS) {
-        throw new Error(
-          `GEMINI_REQUEST_FAILED: Translation failed after ${MAX_ATTEMPTS} attempts: ${errMsg}`,
-        );
-      }
-    }
+  const apiRoot = Platform.OS === "web"
+    ? "/api"
+    : `${getApiBase()}`.replace(/\/$/, "") + "/api";
+  if (Platform.OS !== "web" && !getApiBase()) {
+    throw new Error("API_SERVER_NOT_CONFIGURED: Configure the API Server URL in Settings.");
   }
 
-  throw new Error("Translation failed: exhausted all retry attempts");
+  const response = await fetch(`${apiRoot}/translate-image`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-gemini-key": userApiKey,
+    },
+    body: JSON.stringify({
+      imageUrl,
+      imageData,
+      mimeType,
+      targetLanguage,
+      options: {
+        style: options.style,
+        customStyle: options.customStyle,
+        translateSFX: options.translateSFX,
+        translateNarration: options.translateNarration,
+        translateCredits: options.translateCredits,
+        keepOriginal: options.keepOriginal,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const errorBody = await response.json() as { error?: string };
+      if (errorBody.error) detail = errorBody.error;
+    } catch {}
+    if (response.status === 429) throw new Error("RATE_LIMITED");
+    if (response.status === 401) throw new Error("GEMINI_AUTH_FAILED: Your Gemini API key is not valid or has been revoked.");
+    throw new Error(`GEMINI_REQUEST_FAILED: ${detail}`);
+  }
+
+  const result = await response.json() as {
+    found?: boolean;
+    regions?: TranslatedRegion[];
+    summary?: string;
+  };
+  return {
+    found: result.found ?? (result.regions?.length ?? 0) > 0,
+    regions: result.regions ?? [],
+    summary: result.summary ?? "",
+  };
 }
 
 function inferImageMimeType(

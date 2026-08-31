@@ -66,6 +66,7 @@ async function fetchImageBuffer(imageUrl: string): Promise<Buffer> {
 
 interface RegionInput {
   polygon: [number, number][];
+  mask?: [number, number][];
   bubblePolygon?: [number, number][];
   x: number;
   y: number;
@@ -103,6 +104,7 @@ router.post("/", async (req, res) => {
 
   const ocrRegions: OcrRegion[] = regions.map((r) => ({
     polygon: r.polygon,
+    mask: r.mask,
     bubblePolygon: r.bubblePolygon,
     x: r.x,
     y: r.y,

@@ -35,6 +35,8 @@ import { getCV } from "./index.js";
 export interface OcrRegion {
   /** Tight OCR polygon in normalized [0,1] image coordinates. */
   polygon?: [number, number][];
+  /** Gemini segmentation polygon in normalized [0,1000] coordinates. */
+  mask?: [number, number][];
   bubblePolygon?: [number, number][];
   x: number;
   y: number;
@@ -60,6 +62,14 @@ function clamp01(value: number): number {
 }
 
 function getTightPolygon(region: OcrRegion): [number, number][] {
+  if (region.mask && region.mask.length >= 3) {
+    const maskUsesThousandScale = region.mask.some(([x, y]) => Math.abs(x) > 1 || Math.abs(y) > 1);
+    return region.mask.map(([x, y]) => [
+      clamp01(maskUsesThousandScale ? x / 1000 : x),
+      clamp01(maskUsesThousandScale ? y / 1000 : y),
+    ]);
+  }
+
   if (region.polygon && region.polygon.length >= 3) {
     return region.polygon.map(([x, y]) => [clamp01(x), clamp01(y)]);
   }
