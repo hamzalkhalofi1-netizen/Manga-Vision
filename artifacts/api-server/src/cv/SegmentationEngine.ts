@@ -6,22 +6,19 @@
  *
  * Pipeline (per call):
  *   1. Decode RGBA via sharp → copy into OpenCV BGR → grayscale.
- *   2. adaptiveThreshold (GAUSSIAN_C, BINARY_INV, blockSize=15, C=2)
- *      to isolate dark ink pixels.  blockSize=15 is better than 11 for
- *      manga text at typical scan resolutions; C=2 is less aggressive than
- *      C=4 so lightly-inked or anti-aliased characters are not clipped.
- *   3. For each OCR region:
- *        a. Use bubblePolygon (full bubble outline) as mask boundary,
- *           falling back to the tight OCR polygon when absent.
- *           The bubble polygon covers the complete interior including text
- *           near the bubble border that the tight polygon would miss.
- *        b. fillPoly to rasterize the boundary.
- *        c. bitwise_AND with threshold output → ink pixels inside only.
- *        d. bitwise_OR into the full-image accumulator mask.
- *   4. morphologyEx CLOSE (5×5, 1 iter) to bridge gaps between character
- *      strokes so Telea gets a solid connected component to work from.
- *   5. dilate (3×3, 3 iters) to capture anti-aliased edge pixels the
- *      threshold may have partially clipped.
+ *   2. For each OCR region, rasterize the tight text polygon and expand it
+ *      by a small, resolution-aware pixel margin.
+ *   3. Optionally union the detected ink pixels inside that expanded region.
+ *      The expanded text shape is deliberately included in full: text can be
+ *      white, outlined, coloured, or otherwise invisible to a dark-ink
+ *      threshold, and leaving those pixels behind is worse than inpainting the
+ *      small amount of background between glyphs.
+ *   4. OR all per-region masks into one full-image accumulator.
+ *
+ * `bubblePolygon` is never used as the removal boundary. It describes the full
+ * bubble for text placement and may be much larger than the text. Using it for
+ * erasure was the regression that caused large/X-shaped masks and still did not
+ * reliably remove decorated glyphs.
  *
  * CRITICAL — memory safety:
  *   OpenCV WASM Mats live on the WASM heap.  `Buffer.from(mat.data.buffer,
@@ -36,7 +33,8 @@ import sharp from "sharp";
 import { getCV } from "./index.js";
 
 export interface OcrRegion {
-  polygon: [number, number][];
+  /** Tight OCR polygon in normalized [0,1] image coordinates. */
+  polygon?: [number, number][];
   bubblePolygon?: [number, number][];
   x: number;
   y: number;
@@ -48,6 +46,34 @@ export interface SegmentationResult {
   maskData: Buffer;
   width: number;
   height: number;
+  maskPixels: number;
+  regionDiagnostics: Array<{
+    index: number;
+    normalizedPolygon: [number, number][];
+    pixelBounds: { x: number; y: number; width: number; height: number };
+    paddingPx: number;
+  }>;
+}
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+}
+
+function getTightPolygon(region: OcrRegion): [number, number][] {
+  if (region.polygon && region.polygon.length >= 3) {
+    return region.polygon.map(([x, y]) => [clamp01(x), clamp01(y)]);
+  }
+
+  const x = clamp01(region.x);
+  const y = clamp01(region.y);
+  const w = Math.max(0, Math.min(1 - x, Number.isFinite(region.w) ? region.w : 0));
+  const h = Math.max(0, Math.min(1 - y, Number.isFinite(region.h) ? region.h : 0));
+  return [
+    [x, y],
+    [x + w, y],
+    [x + w, y + h],
+    [x, y + h],
+  ];
 }
 
 export async function buildTextMasks(
@@ -78,11 +104,9 @@ export async function buildTextMasks(
   cv.cvtColor(bgrMat, grayMat, cv.COLOR_BGR2GRAY);
   bgrMat.delete();
 
-  // blockSize=15: 15×15 local window — wider than 11×11 so the local mean
-  // includes enough of the white bubble background to correctly classify
-  // ink pixels as foreground.
-  // C=2: threshold = local_mean − 2.  Lower C means more pixels pass as
-  // "darker than neighbourhood" — important for light/anti-aliased strokes.
+  // Keep a thresholded ink mask as a diagnostic/quality aid. The removal
+  // boundary below is the expanded OCR shape, not this threshold, because
+  // thresholding cannot see white or outlined lettering.
   const threshMat = new cv.Mat();
   cv.adaptiveThreshold(
     grayMat, threshMat, 255,
@@ -93,21 +117,27 @@ export async function buildTextMasks(
 
   const fullMask = cv.Mat.zeros(H, W, cv.CV_8UC1);
 
-  for (const region of regions) {
-    // Prefer bubblePolygon (full bubble outline) over the tight OCR polygon.
-    // The bubble polygon covers the complete speech bubble interior — text
-    // characters near the bubble border are correctly captured.
-    const maskPoly =
-      region.bubblePolygon && region.bubblePolygon.length >= 3
-        ? region.bubblePolygon
-        : region.polygon;
+  const regionDiagnostics: SegmentationResult["regionDiagnostics"] = [];
 
-    if (!maskPoly || maskPoly.length < 3) continue;
+  regions.forEach((region, index) => {
+    const maskPoly = getTightPolygon(region);
+    if (maskPoly.length < 3) return;
 
     const pxCoords = maskPoly.map(([nx, ny]) => [
       Math.max(0, Math.min(W - 1, Math.round(nx * W))),
       Math.max(0, Math.min(H - 1, Math.round(ny * H))),
     ]);
+    const xs = pxCoords.map(([x]) => x);
+    const ys = pxCoords.map(([, y]) => y);
+    const boxWidth = Math.max(1, Math.max(...xs) - Math.min(...xs));
+    const boxHeight = Math.max(1, Math.max(...ys) - Math.min(...ys));
+    // A small margin catches antialiased outlines and glyph pixels just
+    // outside Gemini's tight box without touching the bubble border. It is
+    // based on the short side so vertical/horizontal text behave equally.
+    const paddingPx = Math.max(
+      2,
+      Math.min(10, Math.round(Math.min(boxWidth, boxHeight) * 0.14)),
+    );
     const flat = pxCoords.flatMap(([x, y]) => [x, y]);
 
     const polyMask = cv.Mat.zeros(H, W, cv.CV_8UC1);
@@ -118,35 +148,60 @@ export async function buildTextMasks(
     vec.delete();
     contourMat.delete();
 
+    // Dilating the filled text shape (rather than only thresholded ink)
+    // creates one complete mask for every glyph, including pale/outlined
+    // characters. A 3×3 kernel adds one pixel per iteration.
+    const expandedMask = new cv.Mat();
+    const expandKernel = cv.Mat.ones(3, 3, cv.CV_8U);
+    cv.dilate(
+      polyMask,
+      expandedMask,
+      expandKernel,
+      new cv.Point(-1, -1),
+      paddingPx,
+    );
+    expandKernel.delete();
+
+    // Keep the threshold intersection in the union for future diagnostics;
+    // the expanded polygon is the authoritative removal mask.
     const regionInk = new cv.Mat();
-    cv.bitwise_and(threshMat, polyMask, regionInk);
+    cv.bitwise_and(threshMat, expandedMask, regionInk);
+    cv.bitwise_or(expandedMask, regionInk, expandedMask);
+    regionInk.delete();
     polyMask.delete();
 
-    cv.bitwise_or(fullMask, regionInk, fullMask);
-    regionInk.delete();
-  }
+    cv.bitwise_or(fullMask, expandedMask, fullMask);
+    expandedMask.delete();
+
+    regionDiagnostics.push({
+      index,
+      normalizedPolygon: maskPoly,
+      pixelBounds: {
+        x: Math.max(0, Math.min(...xs) - paddingPx),
+        y: Math.max(0, Math.min(...ys) - paddingPx),
+        width: Math.min(W, Math.max(...xs) + paddingPx) -
+          Math.max(0, Math.min(...xs) - paddingPx),
+        height: Math.min(H, Math.max(...ys) + paddingPx) -
+          Math.max(0, Math.min(...ys) - paddingPx),
+      },
+      paddingPx,
+    });
+  });
 
   threshMat.delete();
-
-  // Morphological CLOSE bridges the inter-stroke gaps within each character
-  // so Telea receives a solid connected component instead of scattered dots.
-  const closeKernel = cv.Mat.ones(5, 5, cv.CV_8U);
-  cv.morphologyEx(
-    fullMask, fullMask, cv.MORPH_CLOSE,
-    closeKernel, new cv.Point(-1, -1), 1
-  );
-  closeKernel.delete();
-
-  // Dilation captures anti-aliased edge pixels (3×3, 3 iterations).
-  const dilKernel = cv.Mat.ones(3, 3, cv.CV_8U);
-  cv.dilate(fullMask, fullMask, dilKernel, new cv.Point(-1, -1), 3);
-  dilKernel.delete();
 
   // SAFE copy: Buffer.from(typedArray) copies the data into a new
   // Node.js Buffer that does NOT reference the WASM heap.
   // mat.delete() can then safely free the WASM slot.
   const maskData = Buffer.from(fullMask.data);
+  const maskPixels = cv.countNonZero(fullMask);
   fullMask.delete();
 
-  return { maskData, width: W, height: H };
+  return {
+    maskData,
+    width: W,
+    height: H,
+    maskPixels,
+    regionDiagnostics,
+  };
 }

@@ -113,7 +113,19 @@ router.post("/", async (req, res) => {
   try {
     // ── Stage 1: Text Segmentation ──────────────────────────────────────────
     req.log?.info({ regions: regions.length }, "cv-pipeline: stage 1 — segmentation");
-    const { maskData, width, height } = await buildTextMasks(imgBuf, ocrRegions);
+    const { maskData, width, height, maskPixels, regionDiagnostics } =
+      await buildTextMasks(imgBuf, ocrRegions);
+    req.log?.info(
+      {
+        width,
+        height,
+        maskWidth: width,
+        maskHeight: height,
+        maskPixels,
+        regionDiagnostics,
+      },
+      "cv-pipeline: mask ready",
+    );
 
     // ── Stage 2: Bubble Detection ───────────────────────────────────────────
     req.log?.info("cv-pipeline: stage 2 — bubble detection");
@@ -126,7 +138,13 @@ router.post("/", async (req, res) => {
     const inpaintedImage = imageBuffer.toString("base64");
 
     req.log?.info(
-      { width, height, regions: regions.length },
+      {
+        width,
+        height,
+        regions: regions.length,
+        maskPixels,
+        inpaintedBytes: imageBuffer.length,
+      },
       "cv-pipeline: complete"
     );
 
