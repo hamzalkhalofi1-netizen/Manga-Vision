@@ -17,12 +17,9 @@ mkdirSync(OUT, { recursive: true });
 const CDN_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36';
 const MD_UA  = 'MangaVerse-Diagnostic/1.0';
 
-// ── Gemini model fallback chain ───────────────────────────────────────────────
-const MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
-];
+// Keep diagnostics aligned with the production model. Never retry a model that
+// the application has explicitly retired.
+const MODELS = ['gemini-2.5-flash'];
 
 const PROMPT = `You are a professional manga OCR and translation engine.
 

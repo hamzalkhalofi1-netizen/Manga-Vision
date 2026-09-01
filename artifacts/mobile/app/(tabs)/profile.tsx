@@ -124,7 +124,7 @@ const LANG_LABELS: Record<string, string> = {
 const MODEL_LABELS: Record<string, string> = {
   "gemini-2.5-flash":    "Gemini 2.5 Flash",
   "gemini-2.5-pro":      "Gemini 2.5 Pro",
-  "gemini-2.0-flash-lite": "Gemini Flash Lite",
+  "gemini-flash-lite-latest": "Gemini Flash Lite",
 };
 
 export default function ProfileScreen() {

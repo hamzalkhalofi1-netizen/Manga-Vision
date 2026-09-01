@@ -1,5 +1,11 @@
 import { Router } from "express";
-import { ai, createUserGeminiClient } from "@workspace/integrations-gemini-ai";
+import {
+  ai,
+  createUserGeminiClient,
+  GEMINI_MODEL,
+  GEMINI_MODEL_UNAVAILABLE_MESSAGE,
+  isGeminiModelUnavailable,
+} from "@workspace/integrations-gemini-ai";
 
 const router = Router();
 
@@ -57,7 +63,7 @@ Return ONLY the translated text with no preamble, no explanations, no quotes aro
 
   try {
     const response = await client.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: GEMINI_MODEL,
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: { maxOutputTokens: 8192 },
     });
@@ -74,6 +80,14 @@ Return ONLY the translated text with no preamble, no explanations, no quotes aro
     const anyErr = err as { status?: number; message?: string };
     if (anyErr?.status === 429) {
       res.status(429).json({ error: "rate_limited", retryAfter: 70 });
+      return;
+    }
+    if (isGeminiModelUnavailable(err)) {
+      req.log?.error({ model: GEMINI_MODEL, status: anyErr?.status }, "Configured Gemini model unavailable");
+      res.status(503).json({
+        error: "GEMINI_MODEL_UNAVAILABLE",
+        message: GEMINI_MODEL_UNAVAILABLE_MESSAGE,
+      });
       return;
     }
     req.log?.error({ err }, "Translation failed");

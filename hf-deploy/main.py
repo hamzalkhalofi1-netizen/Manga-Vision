@@ -18,6 +18,12 @@ app.add_middleware(
 )
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+configured_gemini_model = os.getenv("GEMINI_MODEL", "").strip().removeprefix("models/")
+GEMINI_MODEL = (
+    configured_gemini_model
+    if configured_gemini_model.lower().startswith("gemini-2.5-")
+    else "gemini-2.5-flash"
+)
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
@@ -107,7 +113,7 @@ def translate_blocks_gemini(blocks: List[TextBlock]) -> List[TranslatedBlock]:
             for b in blocks
         ]
 
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel(GEMINI_MODEL)
     results: List[TranslatedBlock] = []
 
     for blk in blocks:

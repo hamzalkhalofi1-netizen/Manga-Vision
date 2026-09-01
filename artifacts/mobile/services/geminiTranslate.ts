@@ -620,7 +620,11 @@ export async function translateImage(
     let detail = `HTTP ${response.status}`;
     try {
       const errorBody = await response.json() as { error?: string };
-      if (errorBody.error) detail = errorBody.error;
+      if (errorBody.error === "GEMINI_MODEL_UNAVAILABLE") {
+        detail = "GEMINI_MODEL_UNAVAILABLE: Gemini model unavailable. Check the configured Gemini model and API project.";
+      } else if (errorBody.error) {
+        detail = errorBody.error;
+      }
     } catch {}
     if (response.status === 429) throw new Error("RATE_LIMITED");
     if (response.status === 401) throw new Error("GEMINI_AUTH_FAILED: Your Gemini API key is not valid or has been revoked.");

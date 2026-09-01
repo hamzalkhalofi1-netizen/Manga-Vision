@@ -8,6 +8,10 @@
  */
 
 import type { GoogleGenAI } from "@google/genai";
+import {
+  GEMINI_MODEL,
+  isGeminiModelUnavailable,
+} from "@workspace/integrations-gemini-ai";
 import sharp from "sharp";
 
 export type Point = [number, number];
@@ -330,7 +334,7 @@ export async function detectTextRegions(
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const response = await client.models.generateContent({
-        model: "gemini-2.5-flash",
+        model: GEMINI_MODEL,
         contents: [{
           role: "user",
           parts: [
@@ -356,7 +360,7 @@ export async function detectTextRegions(
       };
     } catch (error) {
       lastError = error;
-      if (attempt === 2) break;
+      if (attempt === 2 || isGeminiModelUnavailable(error)) break;
     }
   }
 

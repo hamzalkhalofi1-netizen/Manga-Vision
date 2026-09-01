@@ -1,5 +1,11 @@
 import { Router } from "express";
-import { ai, createUserGeminiClient } from "@workspace/integrations-gemini-ai";
+import {
+  ai,
+  createUserGeminiClient,
+  GEMINI_MODEL,
+  GEMINI_MODEL_UNAVAILABLE_MESSAGE,
+  isGeminiModelUnavailable,
+} from "@workspace/integrations-gemini-ai";
 import {
   detectTextRegions,
   getImageDimensions,
@@ -53,6 +59,14 @@ router.post("/", async (req, res) => {
     const detection = await detectTextRegions(client, image.data, image.mimeType, width, height);
     res.json(detection);
   } catch (error) {
+    if (isGeminiModelUnavailable(error)) {
+      req.log?.error({ model: GEMINI_MODEL }, "Configured Gemini model unavailable");
+      res.status(503).json({
+        error: "GEMINI_MODEL_UNAVAILABLE",
+        message: GEMINI_MODEL_UNAVAILABLE_MESSAGE,
+      });
+      return;
+    }
     req.log?.error({ err: error }, "Text detection failed");
     res.status(500).json({
       error: `Text detection failed: ${error instanceof Error ? error.message : String(error)}`,

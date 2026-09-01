@@ -1,0 +1,320 @@
+URGENT FIX — GEMINI MODEL 404 / LOCALIZATION PIPELINE
+
+The translation button is currently failing with this error:
+
+GEMINI_REQUEST_FAILED:
+Localization pipeline failed:
+
+{
+  "error": {
+    "code": 404,
+    "message": "This model models/gemini-1.5-flash is no longer available to new users."
+  }
+}
+
+The application currently uses:
+
+models/gemini-1.5-flash
+
+This model must NOT be used anymore.
+
+IMPORTANT:
+Do not just hide the error.
+Do not disable the localization pipeline.
+Do not remove Gemini.
+Do not change the translation architecture unnecessarily.
+
+==================================================
+GOAL
+==================================================
+
+Migrate the entire Gemini integration to a CURRENT supported Gemini model while preserving all existing functionality:
+
+1. Manga image analysis
+2. Text detection
+3. Bounding boxes
+4. Segmentation/mask information
+5. OCR
+6. Translation
+7. Original-text removal / white-out
+8. Final translated image rendering
+
+The current problem is a MODEL AVAILABILITY / 404 problem.
+
+==================================================
+1. FIND EVERY OLD GEMINI MODEL REFERENCE
+==================================================
+
+Search the entire project for:
+
+gemini-1.5-flash
+models/gemini-1.5-flash
+gemini-1.5
+gemini-1.5-flash-latest
+
+Also search for:
+
+model:
+modelName:
+model =
+generateContent
+GoogleGenerativeAI
+@google/generative-ai
+@google/genai
+Gemini API
+localization
+OCR
+text detection
+
+Do not assume there is only one reference.
+
+Find every place where the old model is used.
+
+==================================================
+2. MIGRATE TO A CURRENT MODEL
+==================================================
+
+Use a current supported multimodal Gemini model.
+
+Prefer:
+
+gemini-2.5-flash
+
+if it is available for this API key/project.
+
+Do NOT use:
+
+gemini-1.5-flash
+gemini-1.5-flash-latest
+gemini-2.0-flash
+shut-down preview models
+
+The model must support image input and structured text output because this application needs visual manga analysis and JSON localization data.
+
+Keep the model name centralized in ONE configuration value instead of hardcoding it throughout the application.
+
+For example conceptually:
+
+GEMINI_MODEL=gemini-2.5-flash
+
+Use the project's existing environment-variable architecture if one already exists.
+
+==================================================
+3. VERIFY API COMPATIBILITY
+==================================================
+
+Inspect the Gemini SDK currently installed in the project.
+
+Do NOT blindly mix old Gemini SDK syntax with the new SDK.
+
+Determine whether the project uses:
+
+@google/generative-ai
+
+or
+
+@google/genai
+
+or another Gemini integration.
+
+Then use the correct API syntax for the installed SDK.
+
+If upgrading the SDK is necessary, do it carefully and update the affected code.
+
+Do not break unrelated application functionality.
+
+==================================================
+4. PRESERVE MULTIMODAL INPUT
+==================================================
+
+The localization pipeline must continue accepting manga page images.
+
+The Gemini request must still send:
+
+- the manga image
+- the localization/detection prompt
+- structured output instructions
+
+Do NOT accidentally convert the request into text-only generation.
+
+==================================================
+5. PRESERVE STRUCTURED LOCALIZATION OUTPUT
+==================================================
+
+The localization pipeline must continue returning structured data.
+
+Conceptually:
+
+{
+  "regions": [
+    {
+      "id": "text_001",
+      "text": "...",
+      "language": "en",
+      "type": "dialogue",
+      "box_2d": [ymin, xmin, ymax, xmax],
+      "mask": [...]
+    }
+  ]
+}
+
+Do not convert this into free-form text.
+
+The downstream white-out/removal system depends on these coordinates.
+
+==================================================
+6. PRESERVE THE TEXT REMOVAL PIPELINE
+==================================================
+
+This migration must NOT break the work we just implemented.
+
+The complete pipeline must remain:
+
+MANGA IMAGE
+    ↓
+GEMINI VISION
+    ↓
+TEXT DETECTION
+    ↓
+TEXT COORDINATES / MASK
+    ↓
+TEXT REMOVAL
+    ↓
+BACKGROUND RECONSTRUCTION
+    ↓
+TRANSLATION
+    ↓
+TRANSLATED TEXT RENDERING
+    ↓
+FINAL IMAGE
+
+The purpose of this change is ONLY to fix the unavailable Gemini model and make the existing pipeline work with a supported model.
+
+==================================================
+7. CHECK API KEY / PROJECT
+==================================================
+
+Do not assume the API key is invalid.
+
+The current error is specifically:
+
+HTTP 404
+model unavailable to new users
+
+Therefore first fix the model selection.
+
+Do NOT ask the user to regenerate their API key unless the new model produces an authentication error.
+
+==================================================
+8. ADD MODEL CONFIGURATION
+==================================================
+
+Create a centralized configuration.
+
+For example:
+
+GEMINI_MODEL=gemini-2.5-flash
+
+The exact implementation should follow the project's architecture.
+
+Do not expose the Gemini API key to the frontend.
+
+The API key must remain server-side.
+
+==================================================
+9. MODEL FALLBACK
+==================================================
+
+Implement a safe fallback only if appropriate.
+
+Preferred:
+
+Primary:
+gemini-2.5-flash
+
+If the API returns a model-not-found/availability error, handle it clearly.
+
+Do NOT automatically fall back to obsolete models such as:
+
+gemini-1.5-flash
+gemini-2.0-flash
+
+Never retry the same unavailable model indefinitely.
+
+==================================================
+10. ERROR HANDLING
+==================================================
+
+Improve the error handling so the user sees a useful message.
+
+For example:
+
+Gemini model unavailable.
+Please check the configured Gemini model/API project.
+
+Do not display raw API responses containing secrets.
+
+Log useful diagnostic information server-side, but NEVER log:
+
+- API keys
+- tokens
+- credentials
+- authorization headers
+
+==================================================
+11. TEST THE COMPLETE PIPELINE
+==================================================
+
+After changing the model:
+
+1. Run type checking.
+2. Run lint if available.
+3. Run build.
+4. Start the application.
+5. Test the Translate button.
+6. Send an actual manga page to Gemini.
+7. Verify Gemini returns localization data.
+8. Verify text regions are detected.
+9. Verify masks/bounding boxes reach the white-out stage.
+10. Verify original text is removed.
+11. Verify Arabic translation is rendered.
+12. Verify the final image is displayed.
+
+Do not stop after confirming that the 404 disappeared.
+
+The entire manga translation pipeline must work.
+
+==================================================
+12. IMPORTANT REGRESSION CHECK
+==================================================
+
+Before finishing, search again for:
+
+gemini-1.5-flash
+models/gemini-1.5-flash
+
+There must be NO active production code still using the obsolete model.
+
+If an old model appears only in comments/documentation, that is acceptable.
+
+==================================================
+13. FINAL REPORT
+==================================================
+
+After fixing the project, tell me:
+
+1. Which old model caused the 404.
+2. Which new model you selected.
+3. Which Gemini SDK the project uses.
+4. Which files were changed.
+5. Whether the localization pipeline still returns structured regions.
+6. Whether white-out/text removal still works.
+7. Whether Arabic translation still works.
+8. Whether build/typecheck passed.
+9. Whether the Translate button works successfully.
+
+IMPORTANT:
+
+DO NOT just tell me how to fix it.
+
+ACTUALLY MODIFY THE REPLIT PROJECT AND TEST THE FIX.

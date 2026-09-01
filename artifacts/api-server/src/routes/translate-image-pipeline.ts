@@ -1,6 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Router } from "express";
-import { ai, createUserGeminiClient } from "@workspace/integrations-gemini-ai";
+import {
+  ai,
+  createUserGeminiClient,
+  GEMINI_MODEL,
+  GEMINI_MODEL_UNAVAILABLE_MESSAGE,
+  isGeminiModelUnavailable,
+} from "@workspace/integrations-gemini-ai";
 import {
   detectTextRegions,
   getImageDimensions,
@@ -283,7 +289,7 @@ router.post("/", async (req, res) => {
       let translations = new Map<string, string>();
       for (let attempt = 1; attempt <= 3; attempt++) {
         const response = await client.models.generateContent({
-          model: "gemini-2.5-flash",
+          model: GEMINI_MODEL,
           contents: [{ role: "user", parts: [{ inlineData: { mimeType: finalMime as "image/jpeg" | "image/png" | "image/webp", data: finalData } }, { text: prompt }] }],
           config: { maxOutputTokens: 8192, responseMimeType: "application/json" },
         });
@@ -312,6 +318,14 @@ router.post("/", async (req, res) => {
       const anyError = error as { status?: number; message?: string };
       if (anyError.status === 429) {
         res.status(429).json({ error: "rate_limited", retryAfter: 70 });
+        return;
+      }
+      if (isGeminiModelUnavailable(error)) {
+        req.log?.error({ model: GEMINI_MODEL, status: anyError.status }, "Configured Gemini model unavailable");
+        res.status(503).json({
+          error: "GEMINI_MODEL_UNAVAILABLE",
+          message: GEMINI_MODEL_UNAVAILABLE_MESSAGE,
+        });
         return;
       }
       if (anyError.status === 400 && anyError.message?.includes("API_KEY_INVALID")) {
