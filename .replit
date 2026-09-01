@@ -20,6 +20,10 @@ author = "agent"
 task = "workflow.run"
 args = "MangaVerse"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "artifacts/api-server: API Server"
+
 
 [[workflows.workflow]]
 name = "MangaVerse"
@@ -32,6 +36,18 @@ outputType = "webview"
 task = "shell.exec"
 args = "DANGEROUSLY_DISABLE_HOST_CHECK=true PORT=5000 EXPO_DEV_PORT=5001 EXPO_API_PORT=8080 EXPO_PUBLIC_REPL_ID=$REPL_ID REACT_NATIVE_PACKAGER_HOSTNAME=$REPLIT_DEV_DOMAIN EXPO_PACKAGER_PROXY_URL=https://$REPLIT_EXPO_DEV_DOMAIN bash artifacts/mobile/server/start.sh"
 waitForPort = 5000
+
+[[workflows.workflow]]
+name = "artifacts/api-server: API Server"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=8080 pnpm --filter @workspace/api-server run dev"
+waitForPort = 8080
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
