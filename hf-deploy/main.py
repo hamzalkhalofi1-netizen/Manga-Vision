@@ -21,9 +21,13 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 configured_gemini_model = os.getenv("GEMINI_MODEL", "").strip().removeprefix("models/")
 GEMINI_MODEL = (
     configured_gemini_model
-    if configured_gemini_model.lower().startswith("gemini-2.5-")
+    if (
+        configured_gemini_model.lower().startswith("gemini-2.5-")
+        or configured_gemini_model == "gemini-flash-lite-latest"
+    )
     else "gemini-2.5-flash"
 )
+GEMINI_FALLBACK_MODEL = "gemini-flash-lite-latest"
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 
@@ -113,7 +117,6 @@ def translate_blocks_gemini(blocks: List[TextBlock]) -> List[TranslatedBlock]:
             for b in blocks
         ]
 
-    model = genai.GenerativeModel(GEMINI_MODEL)
     results: List[TranslatedBlock] = []
 
     for blk in blocks:
@@ -132,11 +135,20 @@ def translate_blocks_gemini(blocks: List[TextBlock]) -> List[TranslatedBlock]:
             f"Source text:\n{blk.text}"
         )
 
-        try:
-            response = model.generate_content(prompt)
-            translated = response.text.strip()
-        except Exception as e:
-            translated = f"[Translation error: {e}]"
+        translated = ""
+        last_error = None
+        for model_name in dict.fromkeys([GEMINI_MODEL, GEMINI_FALLBACK_MODEL]):
+            try:
+                response = genai.GenerativeModel(model_name).generate_content(prompt)
+                translated = response.text.strip()
+                break
+            except Exception as e:
+                last_error = e
+                error_text = str(e).lower()
+                if not any(term in error_text for term in ("not found", "not available", "unavailable", "does not exist")):
+                    break
+        if not translated:
+            translated = "[Gemini translation unavailable]"
 
         results.append(TranslatedBlock(
             x=blk.x, y=blk.y, w=blk.w, h=blk.h,

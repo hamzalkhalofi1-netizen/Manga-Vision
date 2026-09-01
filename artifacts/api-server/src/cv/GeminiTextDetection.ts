@@ -9,7 +9,7 @@
 
 import type { GoogleGenAI } from "@google/genai";
 import {
-  GEMINI_MODEL,
+  GEMINI_MODEL_CANDIDATES,
   isGeminiModelUnavailable,
 } from "@workspace/integrations-gemini-ai";
 import sharp from "sharp";
@@ -331,36 +331,39 @@ export async function detectTextRegions(
   imageHeight: number,
 ): Promise<DetectionResult> {
   let lastError: unknown = null;
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    try {
-      const response = await client.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: [{
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: mimeType as "image/jpeg" | "image/png" | "image/webp", data: imageData } },
-            { text: attempt === 1 ? DETECTION_PROMPT : `${DETECTION_PROMPT}\nSECOND PASS: zoom mentally into the entire page and do not omit tiny, vertical, outlined, or partially obscured glyphs.` },
-          ],
-        }],
-        config: {
-          maxOutputTokens: 8192,
-          responseMimeType: "application/json",
-        },
-      });
+  for (const model of GEMINI_MODEL_CANDIDATES) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const response = await client.models.generateContent({
+          model,
+          contents: [{
+            role: "user",
+            parts: [
+              { inlineData: { mimeType: mimeType as "image/jpeg" | "image/png" | "image/webp", data: imageData } },
+              { text: attempt === 1 ? DETECTION_PROMPT : `${DETECTION_PROMPT}\nSECOND PASS: zoom mentally into the entire page and do not omit tiny, vertical, outlined, or partially obscured glyphs.` },
+            ],
+          }],
+          config: {
+            maxOutputTokens: 8192,
+            responseMimeType: "application/json",
+          },
+        });
 
-      const parsed = parseJsonObject(response.text?.trim() ?? "");
-      if (!parsed) throw new Error("Gemini detection returned invalid JSON");
-      const regions = normalizeDetection(parsed.regions, imageWidth, imageHeight);
-      return {
-        imageWidth,
-        imageHeight,
-        found: regions.length > 0,
-        regions,
-        summary: typeof parsed.summary === "string" ? parsed.summary : `${regions.length} text region(s) detected`,
-      };
-    } catch (error) {
-      lastError = error;
-      if (attempt === 2 || isGeminiModelUnavailable(error)) break;
+        const parsed = parseJsonObject(response.text?.trim() ?? "");
+        if (!parsed) throw new Error("Gemini detection returned invalid JSON");
+        const regions = normalizeDetection(parsed.regions, imageWidth, imageHeight);
+        return {
+          imageWidth,
+          imageHeight,
+          found: regions.length > 0,
+          regions,
+          summary: typeof parsed.summary === "string" ? parsed.summary : `${regions.length} text region(s) detected`,
+        };
+      } catch (error) {
+        lastError = error;
+        if (isGeminiModelUnavailable(error)) break;
+        if (attempt === 2) break;
+      }
     }
   }
 

@@ -619,9 +619,11 @@ export async function translateImage(
   if (!response.ok) {
     let detail = `HTTP ${response.status}`;
     try {
-      const errorBody = await response.json() as { error?: string };
+      const errorBody = await response.json() as { error?: string; message?: string };
       if (errorBody.error === "GEMINI_MODEL_UNAVAILABLE") {
         detail = "GEMINI_MODEL_UNAVAILABLE: Gemini model unavailable. Check the configured Gemini model and API project.";
+      } else if (errorBody.message) {
+        detail = `${errorBody.error ? `${errorBody.error}: ` : ""}${errorBody.message}`;
       } else if (errorBody.error) {
         detail = errorBody.error;
       }

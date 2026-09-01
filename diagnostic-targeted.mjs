@@ -134,14 +134,14 @@ async function main() {
   results.push(await testModel(p11url, 'gemini-2.5-flash', PROMPT_FULL, 0));
   await sleep(3000);
 
-  // Test 3: gemini-2.0-flash, no thinking config
-  console.log('\n═══ Test C: gemini-2.0-flash, no thinking, simple prompt ═══');
-  results.push(await testModel(p11url, 'gemini-2.0-flash', PROMPT_SIMPLE, undefined));
+  // Test 3: the supported model without an explicit thinking config
+  console.log('\n═══ Test C: gemini-2.5-flash, no thinking, simple prompt ═══');
+  results.push(await testModel(p11url, 'gemini-2.5-flash', PROMPT_SIMPLE, undefined));
   await sleep(3000);
 
-  // Test 4: gemini-2.0-flash, full prompt on page 15
-  console.log('\n═══ Test D: gemini-2.0-flash, no thinking, full prompt, page 15 ═══');
-  results.push(await testModel(p15url, 'gemini-2.0-flash', PROMPT_FULL, undefined));
+  // Test 4: supported model, full prompt on page 15
+  console.log('\n═══ Test D: gemini-2.5-flash, no thinking, full prompt, page 15 ═══');
+  results.push(await testModel(p15url, 'gemini-2.5-flash', PROMPT_FULL, undefined));
 
   // Summary
   console.log('\n\n═══ RESULTS SUMMARY ═══');

@@ -12,9 +12,16 @@ const configuredModel = process.env.GEMINI_MODEL?.trim().replace(/^models\//, ""
  * environment cannot resurrect the known 404 failure.
  */
 export const GEMINI_MODEL =
-  configuredModel && /^gemini-2\.5-/i.test(configuredModel)
+  configuredModel &&
+  (/^gemini-2\.5-/i.test(configuredModel) || configuredModel === "gemini-flash-lite-latest")
     ? configuredModel
     : DEFAULT_GEMINI_MODEL;
+
+/** Current multimodal fallback for projects where the primary model is unavailable. */
+export const GEMINI_FALLBACK_MODEL = "gemini-flash-lite-latest";
+export const GEMINI_MODEL_CANDIDATES = Array.from(
+  new Set([GEMINI_MODEL, GEMINI_FALLBACK_MODEL]),
+);
 
 export const GEMINI_MODEL_UNAVAILABLE_MESSAGE =
   "Gemini model unavailable. Check the configured Gemini model and API project.";

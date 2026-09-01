@@ -3,7 +3,7 @@ import { Router } from "express";
 import {
   ai,
   createUserGeminiClient,
-  GEMINI_MODEL,
+  GEMINI_MODEL_CANDIDATES,
   GEMINI_MODEL_UNAVAILABLE_MESSAGE,
   isGeminiModelUnavailable,
 } from "@workspace/integrations-gemini-ai";
@@ -287,15 +287,27 @@ router.post("/", async (req, res) => {
       // Stage B: translation references the stable detection IDs only.
       const prompt = buildTranslationPrompt(targetLanguage, detection.regions, options);
       let translations = new Map<string, string>();
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        const response = await client.models.generateContent({
-          model: GEMINI_MODEL,
-          contents: [{ role: "user", parts: [{ inlineData: { mimeType: finalMime as "image/jpeg" | "image/png" | "image/webp", data: finalData } }, { text: prompt }] }],
-          config: { maxOutputTokens: 8192, responseMimeType: "application/json" },
-        });
-        const parsed = parseJsonObject(response.text?.trim() ?? "");
-        if (parsed) translations = parseTranslations(parsed);
-        if (translations.size > 0 || attempt === 3) break;
+      let translationError: unknown = null;
+      for (const model of GEMINI_MODEL_CANDIDATES) {
+        try {
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            const response = await client.models.generateContent({
+              model,
+              contents: [{ role: "user", parts: [{ inlineData: { mimeType: finalMime as "image/jpeg" | "image/png" | "image/webp", data: finalData } }, { text: prompt }] }],
+              config: { maxOutputTokens: 8192, responseMimeType: "application/json" },
+            });
+            const parsed = parseJsonObject(response.text?.trim() ?? "");
+            if (parsed) translations = parseTranslations(parsed);
+            if (translations.size > 0 || attempt === 3) break;
+          }
+          if (translations.size > 0) break;
+        } catch (error) {
+          translationError = error;
+          if (!isGeminiModelUnavailable(error)) throw error;
+        }
+      }
+      if (translations.size === 0 && translationError && isGeminiModelUnavailable(translationError)) {
+        throw translationError;
       }
 
       const outputRegions = detection.regions
@@ -321,7 +333,7 @@ router.post("/", async (req, res) => {
         return;
       }
       if (isGeminiModelUnavailable(error)) {
-        req.log?.error({ model: GEMINI_MODEL, status: anyError.status }, "Configured Gemini model unavailable");
+        req.log?.error({ models: GEMINI_MODEL_CANDIDATES, status: anyError.status }, "Configured Gemini models unavailable");
         res.status(503).json({
           error: "GEMINI_MODEL_UNAVAILABLE",
           message: GEMINI_MODEL_UNAVAILABLE_MESSAGE,
@@ -333,7 +345,10 @@ router.post("/", async (req, res) => {
         return;
       }
       req.log?.error({ err: error }, "Manga localization pipeline failed");
-      res.status(500).json({ error: `Localization pipeline failed: ${anyError.message ?? String(error)}` });
+      res.status(500).json({
+        error: "GEMINI_REQUEST_FAILED",
+        message: "Localization pipeline failed. Please try again.",
+      });
     }
   });
 });

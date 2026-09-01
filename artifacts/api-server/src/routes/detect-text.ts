@@ -2,7 +2,7 @@ import { Router } from "express";
 import {
   ai,
   createUserGeminiClient,
-  GEMINI_MODEL,
+  GEMINI_MODEL_CANDIDATES,
   GEMINI_MODEL_UNAVAILABLE_MESSAGE,
   isGeminiModelUnavailable,
 } from "@workspace/integrations-gemini-ai";
@@ -60,7 +60,7 @@ router.post("/", async (req, res) => {
     res.json(detection);
   } catch (error) {
     if (isGeminiModelUnavailable(error)) {
-      req.log?.error({ model: GEMINI_MODEL }, "Configured Gemini model unavailable");
+      req.log?.error({ models: GEMINI_MODEL_CANDIDATES }, "Configured Gemini models unavailable");
       res.status(503).json({
         error: "GEMINI_MODEL_UNAVAILABLE",
         message: GEMINI_MODEL_UNAVAILABLE_MESSAGE,
@@ -69,7 +69,8 @@ router.post("/", async (req, res) => {
     }
     req.log?.error({ err: error }, "Text detection failed");
     res.status(500).json({
-      error: `Text detection failed: ${error instanceof Error ? error.message : String(error)}`,
+      error: "GEMINI_REQUEST_FAILED",
+      message: "Text detection failed. Please try again.",
     });
   }
 });
