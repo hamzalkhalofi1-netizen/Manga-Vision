@@ -1,0 +1,988 @@
+FULL SETTINGS SYSTEM AUDIT + REAL FUNCTIONAL INTEGRATION
+
+I need you to completely audit and repair the Settings system of my MangaVision / MangaVerse application.
+
+CURRENT PROBLEM:
+
+The Settings screen contains many options that LOOK functional but are actually partially or completely fake.
+
+For example, there are settings for:
+
+- font family
+- font size
+- font color
+- text alignment
+- text stroke/outline
+- text shadow
+- translation language
+- translation style
+- translation behavior
+- text positioning
+- text spacing
+- reading direction
+- image processing
+- text removal / white-out
+- translation quality
+- AI/Gemini configuration
+- reader appearance
+- theme
+- UI options
+- chapter/reader behavior
+- other reader preferences
+
+Many of these controls currently change visually inside the Settings page but do NOT actually affect the corresponding feature in the application.
+
+I want you to turn the Settings system into a REAL, fully connected settings architecture.
+
+IMPORTANT:
+
+DO NOT simply make the switches/inputs visually respond.
+
+Every setting must have a REAL effect on the part of the application it controls.
+
+==================================================
+MAIN OBJECTIVE
+==================================================
+
+Create a single reliable Settings system:
+
+USER CHANGES SETTING
+        ↓
+CENTRAL SETTINGS STATE
+        ↓
+PERSIST SETTINGS
+        ↓
+NOTIFY / REACT TO CHANGE
+        ↓
+ACTUAL FEATURE CONSUMES NEW VALUE
+        ↓
+UI / READER / TRANSLATION / GEMINI / IMAGE PROCESSING
+        ↓
+IMMEDIATE EFFECT
+
+Example:
+
+User changes Font Size from 18 → 28
+
+The setting must:
+
+1. update central settings state
+2. persist the value
+3. notify the reader
+4. cause the reader to re-render
+5. cause translated text to use 28px
+6. remain 28px after navigating between pages
+7. remain 28px after restarting the app
+
+It must NOT merely change the number displayed in Settings.
+
+==================================================
+1. AUDIT THE ENTIRE SETTINGS SYSTEM
+==================================================
+
+Search the entire project for:
+
+settings
+preferences
+preferencesStore
+settingsStore
+useSettings
+SettingsContext
+SettingsProvider
+AsyncStorage
+localStorage
+theme
+font
+fontSize
+fontFamily
+fontColor
+textColor
+translation
+reader
+readerSettings
+translationSettings
+Gemini
+whiteout
+mask
+inpainting
+renderText
+Text
+Canvas
+WebView
+reader
+
+Also search for every Settings UI component.
+
+Create an internal inventory of ALL settings currently exposed by the application.
+
+For each setting identify:
+
+- setting ID/key
+- current default value
+- data type
+- Settings UI control
+- where the value is stored
+- where the value is read
+- which feature it should control
+- whether it currently works
+- what code must be connected
+
+Do not assume a setting works simply because its UI changes.
+
+==================================================
+2. FIND FAKE / DEAD SETTINGS
+==================================================
+
+Identify settings that:
+
+- update only local component state
+- are never saved
+- are saved but never read
+- are read but ignored
+- have hardcoded values elsewhere
+- are overridden by another default
+- are stored under inconsistent keys
+- use different names in different components
+- update localStorage/AsyncStorage but do not trigger re-render
+- update the UI but not the reader
+- update the reader but not translation
+- are defined but unused
+- have placeholder handlers
+- have TODO implementations
+- have no real consumer
+
+Do not delete these settings immediately.
+
+First connect them to the correct functionality.
+
+==================================================
+3. CREATE ONE SOURCE OF TRUTH
+==================================================
+
+Create or repair a centralized settings store/provider.
+
+The exact implementation must follow the existing architecture.
+
+If the project already uses Zustand, Context, Redux, or another state system:
+
+USE THE EXISTING SYSTEM.
+
+Do not introduce a second competing state-management system unnecessarily.
+
+The architecture should conceptually be:
+
+SettingsStore
+    ↓
+Settings UI
+    ↓
+Reader
+    ↓
+Translation Engine
+    ↓
+Image Processing
+    ↓
+Gemini Localization
+    ↓
+Text Rendering
+
+All components must consume settings from the same source of truth.
+
+Avoid duplicated settings state.
+
+Do not have:
+
+Settings UI state
++
+Reader state
++
+Translation state
++
+localStorage state
+
+all independently representing the same setting.
+
+==================================================
+4. SETTINGS STATE VS PERSISTENCE
+==================================================
+
+Separate:
+
+A. CURRENT APPLICATION STATE
+
+from:
+
+B. PERSISTED SETTINGS
+
+The in-memory settings state must be reactive.
+
+Persistence is only responsible for remembering the settings.
+
+Conceptually:
+
+Settings Store
+     ↓
+current reactive value
+     ↓
+application features
+
+and:
+
+Settings Store
+     ↓
+persist
+     ↓
+AsyncStorage/localStorage
+
+When the user changes a setting:
+
+update the reactive state FIRST.
+
+Then persist it.
+
+Do not rely on reading localStorage/AsyncStorage directly inside UI components to make changes happen.
+
+==================================================
+5. DEFINE A REAL SETTINGS SCHEMA
+==================================================
+
+Create a strongly typed settings model.
+
+For example conceptually:
+
+ReaderSettings:
+
+{
+  fontFamily,
+  fontSize,
+  fontColor,
+  textAlign,
+  textStroke,
+  textStrokeWidth,
+  textShadow,
+  textShadowOpacity,
+  lineHeight,
+  letterSpacing,
+  bubblePadding,
+  textPosition,
+  maxTextWidth
+}
+
+TranslationSettings:
+
+{
+  targetLanguage,
+  sourceLanguage,
+  translationModel,
+  translationStyle,
+  preserveNames,
+  preserveTerminology,
+  translationEnabled
+}
+
+ImageProcessingSettings:
+
+{
+  removeOriginalText,
+  textRemovalMode,
+  maskPadding,
+  inpaintingEnabled,
+  preserveBubbleBorders,
+  imageQuality
+}
+
+ReaderBehaviorSettings:
+
+{
+  readingDirection,
+  pageMode,
+  autoAdvance,
+  preloadPages,
+  showPageNumber,
+  keepScreenAwake
+}
+
+Theme/UI settings:
+
+{
+  theme,
+  readerBackground,
+  controlsVisibility,
+  interfaceScale
+}
+
+Use the application's actual settings instead of blindly copying this example.
+
+==================================================
+6. EVERY SETTING MUST HAVE A REAL CONSUMER
+==================================================
+
+For every setting ask:
+
+"Where does this value actually affect the application?"
+
+If there is no consumer:
+
+CREATE THE CONSUMER.
+
+For example:
+
+fontSize
+→ translated text renderer
+
+fontFamily
+→ translated text renderer
+
+fontColor
+→ translated text renderer
+
+textStroke
+→ canvas/SVG/text rendering
+
+lineHeight
+→ text layout calculation
+
+bubblePadding
+→ text placement
+
+removeOriginalText
+→ image cleanup pipeline
+
+maskPadding
+→ mask dilation
+
+targetLanguage
+→ Gemini translation prompt/request
+
+translationStyle
+→ Gemini translation instruction
+
+readingDirection
+→ reader navigation
+
+pageMode
+→ reader layout
+
+theme
+→ application theme
+
+==================================================
+7. FONT SETTINGS
+==================================================
+
+This is extremely important.
+
+If the user changes:
+
+Font Family
+
+the translated text rendered over manga pages must actually use the selected font.
+
+If the user changes:
+
+Font Size
+
+the actual translated text must change size.
+
+If the user changes:
+
+Font Color
+
+the actual translated text must change color.
+
+If the user changes:
+
+Stroke Width
+
+the actual text outline must change.
+
+If the user changes:
+
+Shadow
+
+the actual text shadow must change.
+
+If the user changes:
+
+Line Height
+
+multi-line translated text must change spacing.
+
+If the user changes:
+
+Letter Spacing
+
+the actual rendered letters must change spacing.
+
+Do not hardcode these values in the renderer.
+
+Remove duplicated hardcoded values and replace them with settings.
+
+==================================================
+8. TRANSLATED TEXT RENDERER
+==================================================
+
+Find the actual component/function responsible for rendering translated text.
+
+Make it consume the centralized settings.
+
+Conceptually:
+
+TranslatedTextRenderer({
+    text,
+    region,
+    settings
+})
+
+The renderer must use:
+
+settings.fontFamily
+settings.fontSize
+settings.fontColor
+settings.textStroke
+settings.textShadow
+settings.lineHeight
+settings.letterSpacing
+settings.textAlign
+etc.
+
+If the translated text is rendered using:
+
+Canvas
+SVG
+HTML
+React Native Text
+Skia
+WebView
+Image composition
+
+connect the settings to the ACTUAL rendering implementation.
+
+==================================================
+9. LIVE SETTINGS
+==================================================
+
+Where possible, settings should apply immediately.
+
+Example:
+
+User changes:
+
+Font Size
+18 → 24
+
+The current reader should update without restarting the app.
+
+User changes:
+
+Font Color
+black → red
+
+The translated text should update immediately.
+
+User changes:
+
+Font Family
+
+The current rendered translation should update.
+
+If a setting requires re-processing the manga image:
+
+do NOT pretend it is instant.
+
+Correctly invalidate/reprocess the affected page.
+
+For example:
+
+maskPadding
+textRemovalMode
+inpaintingEnabled
+
+may require rebuilding the cleaned image.
+
+Handle this explicitly.
+
+==================================================
+10. TRANSLATION SETTINGS
+==================================================
+
+Connect all translation-related settings to the actual Gemini pipeline.
+
+Examples:
+
+targetLanguage
+→ Gemini translation target
+
+translationStyle
+→ Gemini translation instructions
+
+preserveNames
+→ translation prompt/configuration
+
+terminology
+→ Gemini request
+
+translationModel
+→ actual selected Gemini model
+
+Do not let Settings display a model name that the backend ignores.
+
+Do not let the UI claim one language while the backend uses another.
+
+==================================================
+11. IMAGE PROCESSING SETTINGS
+==================================================
+
+Connect:
+
+removeOriginalText
+textRemovalMode
+maskPadding
+inpaintingEnabled
+preserveBubbleBorders
+
+to the actual image-processing pipeline.
+
+Example:
+
+removeOriginalText = false
+
+→ skip original text removal.
+
+removeOriginalText = true
+
+→ run:
+
+Gemini text detection
+→ mask
+→ removal
+→ reconstruction
+→ translated rendering
+
+maskPadding = 5
+
+→ actual mask dilation should use 5 pixels or the correct normalized equivalent.
+
+Changing the setting must affect the real pipeline.
+
+==================================================
+12. READER SETTINGS
+==================================================
+
+Connect all reader settings to the actual reader.
+
+Examples:
+
+readingDirection
+pageMode
+autoAdvance
+showPageNumber
+controlsVisibility
+keepScreenAwake
+preloadPages
+background
+
+Do not create settings that only update a Settings screen preview.
+
+==================================================
+13. THEME SETTINGS
+==================================================
+
+If the application has:
+
+Dark
+Light
+System
+
+make these change the actual application theme.
+
+Ensure the theme is consumed by:
+
+- settings screen
+- reader
+- navigation
+- dialogs
+- controls
+- backgrounds
+
+Avoid individual components hardcoding their own unrelated colors if those colors should come from the theme.
+
+==================================================
+14. PERSISTENCE
+==================================================
+
+All user preferences that are intended to survive restarts must persist.
+
+On application startup:
+
+Storage
+   ↓
+load settings
+   ↓
+validate/migrate
+   ↓
+initialize Settings Store
+   ↓
+render application
+
+When changed:
+
+Settings Store
+   ↓
+persist
+
+Use the persistence mechanism already used by the project.
+
+Do not create multiple storage keys for the same setting unless necessary.
+
+==================================================
+15. SETTINGS MIGRATION
+==================================================
+
+If old settings already exist, do not break existing users.
+
+Add:
+
+- defaults
+- validation
+- versioning/migration if needed
+
+Handle:
+
+missing settings
+invalid values
+old setting names
+old formats
+
+Example:
+
+old:
+
+font_size
+
+new:
+
+reader.fontSize
+
+Migrate old values safely.
+
+==================================================
+16. NO MAGIC VALUES
+==================================================
+
+Search the application for hardcoded values such as:
+
+fontSize: 18
+fontSize: 20
+color: "#FFFFFF"
+fontFamily: "..."
+strokeWidth: 2
+
+If these values correspond to configurable settings, replace them with the central settings values.
+
+Keep genuine constants where appropriate.
+
+Do not blindly replace every constant in the application.
+
+==================================================
+17. REACTIVITY
+==================================================
+
+Changing settings must cause the correct components to update.
+
+Avoid situations where:
+
+Settings changes
+    ↓
+storage changes
+    ↓
+UI does not update
+
+The component consuming the setting must subscribe to the reactive store/context.
+
+Avoid duplicated local state derived from settings unless there is a specific reason.
+
+If local derived state exists, ensure it synchronizes correctly.
+
+==================================================
+18. SETTING DEPENDENCIES
+==================================================
+
+Some settings depend on others.
+
+Example:
+
+removeOriginalText = false
+
+Then:
+
+maskPadding
+inpaintingMode
+textRemovalMode
+
+may become irrelevant.
+
+Disable or visually explain irrelevant options.
+
+Do not allow contradictory settings.
+
+==================================================
+19. SETTINGS DEBUG PANEL
+==================================================
+
+Create a development-only Settings Debug screen/panel.
+
+For each setting show:
+
+SETTING NAME
+CURRENT VALUE
+SOURCE
+LAST UPDATED
+ACTIVE CONSUMER
+
+Example:
+
+fontSize
+Current: 24
+Consumer: MangaTextRenderer
+Status: CONNECTED
+
+targetLanguage
+Current: Arabic
+Consumer: GeminiTranslationService
+Status: CONNECTED
+
+removeOriginalText
+Current: true
+Consumer: TextRemovalPipeline
+Status: CONNECTED
+
+This is extremely useful for finding future fake settings.
+
+==================================================
+20. AUTOMATED SETTINGS AUDIT
+==================================================
+
+Create a mechanism or development report that identifies settings that are:
+
+CONNECTED
+PARTIALLY CONNECTED
+UNUSED
+MISSING CONSUMER
+
+Do not allow the application to silently contain dozens of fake settings.
+
+==================================================
+21. TEST EVERY SETTING
+==================================================
+
+Create a test matrix.
+
+For every setting:
+
+1. Change value.
+2. Verify Settings Store changes.
+3. Verify persistence changes.
+4. Verify actual consumer receives new value.
+5. Verify UI/feature changes.
+6. Restart app if persistence applies.
+7. Verify value remains.
+8. Verify the feature still uses it.
+
+Especially test:
+
+FONT:
+- font family
+- font size
+- color
+- stroke
+- stroke width
+- shadow
+- line height
+- letter spacing
+- alignment
+
+TRANSLATION:
+- target language
+- translation style
+- model
+- terminology/options
+
+IMAGE:
+- text removal
+- mask padding
+- inpainting
+- cleanup mode
+
+READER:
+- reading direction
+- page mode
+- controls
+- background
+- auto advance
+- preload
+
+THEME:
+- light
+- dark
+- system
+
+==================================================
+22. DO NOT BREAK EXISTING FEATURES
+==================================================
+
+This is a repair task.
+
+Do not rewrite the application unnecessarily.
+
+Do not remove:
+
+- Gemini translation
+- OCR
+- text detection
+- text removal
+- reader
+- manga loading
+- chapter system
+
+Preserve the existing architecture where possible.
+
+Only refactor code where required to establish a reliable settings flow.
+
+==================================================
+23. IMPORTANT — DO NOT FAKE CONNECTIONS
+==================================================
+
+A setting is NOT considered implemented if:
+
+- its value changes only on the Settings page
+- it is saved but never consumed
+- it updates a preview only
+- it changes a variable that nobody reads
+- it changes localStorage but not application state
+- it is passed to a component but ignored
+- the UI says "enabled" while the underlying feature remains unchanged
+
+Every setting must have a real consumer.
+
+==================================================
+24. SETTINGS DATA FLOW
+==================================================
+
+The final architecture should conceptually be:
+
+                    SETTINGS UI
+                         │
+                         ▼
+                CENTRAL SETTINGS STORE
+                         │
+             ┌───────────┼───────────┐
+             ▼           ▼           ▼
+          READER     TRANSLATION   IMAGE
+             │           │           │
+             ▼           ▼           ▼
+        UI RENDERER     GEMINI     TEXT REMOVAL
+             │           │           │
+             └───────────┼───────────┘
+                         ▼
+                  FINAL MANGA PAGE
+
+Persistence is connected to the central store:
+
+                    SETTINGS STORE
+                         ↕
+                  AsyncStorage/
+                  localStorage/etc.
+
+==================================================
+25. FINAL ACCEPTANCE TEST
+==================================================
+
+After implementation, perform a real end-to-end test.
+
+Test this exact sequence:
+
+1. Open Settings.
+2. Change font family.
+3. Return to reader.
+4. Verify translated text uses the new font.
+
+5. Change font size.
+6. Verify actual translated text changes.
+
+7. Change text color.
+8. Verify actual translated text changes.
+
+9. Change stroke.
+10. Verify actual translated text changes.
+
+11. Change target language.
+12. Translate a page.
+13. Verify Gemini actually uses the selected language.
+
+14. Change text removal setting.
+15. Translate/reprocess a page.
+16. Verify original text removal behavior changes.
+
+17. Change reading mode.
+18. Verify reader behavior changes.
+
+19. Change theme.
+20. Verify the actual application changes theme.
+
+21. Restart the application.
+22. Verify persisted settings remain active.
+
+==================================================
+26. BUILD + VALIDATION
+==================================================
+
+After implementing:
+
+- run TypeScript checks
+- run lint
+- run tests
+- run build
+- fix all errors introduced by the refactor
+
+Then search the codebase again for:
+
+- fake handlers
+- TODO settings
+- hardcoded configurable values
+- unused setting keys
+- duplicated settings state
+- settings that are written but never read
+
+==================================================
+27. FINAL REPORT
+==================================================
+
+When finished, provide:
+
+1. Total number of settings discovered.
+2. Number already working.
+3. Number that were fake/broken.
+4. Number repaired.
+5. Number intentionally disabled/removed and why.
+6. Central settings architecture used.
+7. Persistence mechanism.
+8. Important files modified.
+9. Which settings are now connected to real consumers.
+10. Tests performed.
+11. Build/typecheck result.
+
+MOST IMPORTANT:
+
+DO NOT JUST MODIFY THE SETTINGS SCREEN.
+
+TRACE EVERY SETTING FROM:
+
+SETTINGS UI
+→ STATE
+→ PERSISTENCE
+→ CONSUMER
+→ REAL FEATURE
+
+AND MAKE SURE THE CHANGE ACTUALLY AFFECTS THE APPLICATION.
+
+DO NOT STOP UNTIL THE SETTINGS SYSTEM IS FULLY FUNCTIONAL.
