@@ -17,6 +17,7 @@ import {
   Text,
   View,
 } from "react-native";
+import type { GestureResponderEvent } from "react-native";
 import { PinchGestureHandler, State } from "react-native-gesture-handler";
 
 // ── Diagnostic render counter ──────────────────────────────────────────────────
@@ -94,6 +95,8 @@ interface MangaPageProps {
   fitMode?: "width" | "height" | "screen";
   zoomed?: boolean;
   pinchZoom?: boolean;
+  /** Tap-only callback. Touch movement must remain available to the parent list. */
+  onTap?: () => void;
 }
 
 function MangaPage({
@@ -108,6 +111,7 @@ function MangaPage({
   fitMode = "width",
   zoomed = false,
   pinchZoom = true,
+  onTap,
 }: MangaPageProps) {
   const { imageProcessingSettings } = useSettings();
   // Memoised so the object reference is stable across re-renders — prevents
@@ -127,6 +131,50 @@ function MangaPage({
   );
   const [nativeDims, setNativeDims] = useState({ w: 0, h: 0 });
   const pinchScale = useRef(new Animated.Value(1)).current;
+  const touchStart = useRef<{
+    x: number;
+    y: number;
+    time: number;
+    pointerCount: number;
+  } | null>(null);
+
+  // Do not use Pressable for the page surface: Pressable claims the responder
+  // at touch start, which prevents the reader FlatList from receiving drags
+  // that begin over an image. These raw touch callbacks observe taps without
+  // becoming a competing responder. A movement threshold filters out scrolls.
+  const handleTouchStart = useCallback((event: GestureResponderEvent) => {
+    const firstTouch = event.nativeEvent.touches[0];
+    if (!firstTouch) return;
+    touchStart.current = {
+      x: firstTouch.pageX,
+      y: firstTouch.pageY,
+      time: Date.now(),
+      pointerCount: event.nativeEvent.touches.length,
+    };
+  }, []);
+
+  const handleTouchEnd = useCallback(
+    (event: GestureResponderEvent) => {
+      const start = touchStart.current;
+      touchStart.current = null;
+      if (!start || start.pointerCount !== 1) return;
+
+      const endTouch = event.nativeEvent.changedTouches[0];
+      if (!endTouch || event.nativeEvent.changedTouches.length !== 1) return;
+
+      const movedX = endTouch.pageX - start.x;
+      const movedY = endTouch.pageY - start.y;
+      const movedDistance = Math.sqrt(movedX * movedX + movedY * movedY);
+      const elapsed = Date.now() - start.time;
+
+      if (movedDistance < 10 && elapsed < 500) onTap?.();
+    },
+    [onTap],
+  );
+
+  const handleTouchCancel = useCallback(() => {
+    touchStart.current = null;
+  }, []);
 
   // ── Cache-first page image loading ────────────────────────────────────────
   // Resolves `uri` to a locally-cached file:// path (instant on revisit) or
@@ -437,6 +485,9 @@ function MangaPage({
         overflow: "hidden",
         transform: [{ scale: zoomed ? 2 : 1 }, { scale: pinchScale }],
       }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
     >
       {!imageNotReady && (
         <Image

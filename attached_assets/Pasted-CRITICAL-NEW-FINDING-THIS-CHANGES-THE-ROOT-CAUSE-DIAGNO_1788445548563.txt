@@ -1,0 +1,567 @@
+CRITICAL NEW FINDING — THIS CHANGES THE ROOT-CAUSE DIAGNOSIS
+
+The previous Webtoon scrolling fixes did NOT solve the problem.
+
+I have now identified a very important reproducible behavior:
+
+==================================================
+ACTUAL REPRODUCTION
+==================================================
+
+When reading manga:
+
+CASE A — SWIPE IN EMPTY SPACE BETWEEN IMAGES
+---------------------------------------------
+If I place my finger in the empty gap BETWEEN two manga images and swipe vertically:
+
+→ scrolling WORKS.
+
+CASE B — SWIPE DIRECTLY ON A MANGA IMAGE
+----------------------------------------
+If I place my finger directly ON TOP OF a manga image and swipe vertically:
+
+→ scrolling DOES NOT WORK.
+
+This happens in:
+
+1. Normal Manga/Page reading mode
+2. Webtoon/Vertical reading mode
+
+Therefore, this is NOT primarily a Webtoon-specific scrolling problem.
+
+The scroll container itself CAN scroll.
+
+The critical problem is that something rendered ON TOP OF THE MANGA IMAGE is capturing/intercepting touch/pan gestures.
+
+==================================================
+STOP MODIFYING WEBTOON SCROLL SETTINGS
+==================================================
+
+Do NOT continue blindly changing:
+
+- scrollEnabled
+- pagingEnabled
+- nestedScrollEnabled
+- FlatList
+- ScrollView
+- Webtoon mode
+- pageTransition
+
+Those are not the primary root cause anymore.
+
+The evidence proves that the parent scroll container can receive a vertical gesture when the gesture begins outside the image.
+
+We need to find what captures the gesture when it begins on the image.
+
+==================================================
+PHASE 1 — TRACE EVERYTHING RENDERED OVER THE IMAGE
+==================================================
+
+Find the exact component responsible for rendering a manga page/image.
+
+Then inspect EVERYTHING inside and above that image.
+
+Search for:
+
+- Image
+- Pressable
+- TouchableOpacity
+- TouchableWithoutFeedback
+- Pressable
+- GestureDetector
+- GestureHandler
+- PanGestureHandler
+- PinchGestureHandler
+- NativeViewGestureHandler
+- TapGestureHandler
+- LongPressGestureHandler
+- PanResponder
+- Animated.View
+- absolute positioned Views
+- overlays
+- translation layers
+- OCR layers
+- text detection layers
+- translated text
+- masks
+- selection layers
+- zoom layers
+- image viewer components
+- custom touch handlers
+
+We need to determine:
+
+WHAT RECEIVES THE FIRST TOUCH WHEN THE USER TOUCHES THE IMAGE?
+
+==================================================
+PHASE 2 — CHECK IMAGE TOUCH INTERCEPTION
+==================================================
+
+Inspect the actual component hierarchy.
+
+I specifically want something like:
+
+Reader
+ └── ScrollView / FlatList
+      └── Page container
+           ├── Image
+           ├── Translation overlay
+           ├── Text regions
+           ├── Zoom layer
+           ├── Gesture layer
+           └── Other overlays
+
+Determine which of these is receiving:
+
+onTouchStart
+onTouchMove
+onResponderStart
+onResponderMove
+Pan gesture
+Pinch gesture
+Tap gesture
+
+when the user begins a swipe directly on the image.
+
+==================================================
+PHASE 3 — TEST pointerEvents
+==================================================
+
+This is extremely important.
+
+Inspect every visual-only layer over the manga image.
+
+If an overlay exists only for rendering and does NOT need to receive touch events, it must not intercept scrolling.
+
+For React Native, investigate whether these layers need:
+
+pointerEvents="none"
+
+Examples:
+
+- translated text overlay
+- OCR visualization
+- text bounding boxes
+- localization regions
+- mask visualization
+- decorative layers
+- image-processing overlays
+- transparent containers
+- debug overlays
+
+DO NOT blindly apply pointerEvents="none" to interactive buttons.
+
+Interactive controls must remain interactive.
+
+The goal is:
+
+VISUAL LAYER
+→ does not capture swipe
+
+INTERACTIVE CONTROL
+→ receives its own touch
+
+PARENT SCROLL CONTAINER
+→ receives vertical swipe
+
+==================================================
+PHASE 4 — INVESTIGATE THE IMAGE ITSELF
+==================================================
+
+Determine whether the Image component or its wrapper is intentionally receiving gestures.
+
+Search for things such as:
+
+onTouchStart
+onTouchMove
+onStartShouldSetResponder
+onMoveShouldSetResponder
+onResponderGrant
+onResponderMove
+onResponderRelease
+
+Also search for:
+
+onPress
+onLongPress
+onPressIn
+onPressOut
+
+A component may be preventing the parent ScrollView from becoming the responder.
+
+For every touch handler found, determine WHY it exists.
+
+Do NOT delete functionality blindly.
+
+If a tap handler is needed, it must coexist with vertical scrolling.
+
+==================================================
+PHASE 5 — INVESTIGATE ZOOM/PAN
+==================================================
+
+This is now one of the highest-priority suspects.
+
+The application has image zoom/pinch functionality.
+
+A common failure pattern is:
+
+Image
+  ↓
+PanGestureHandler
+  ↓
+ScrollView
+
+The Pan gesture captures ALL vertical movement, even when the image is not zoomed.
+
+This would perfectly explain:
+
+Swipe outside image → ScrollView receives gesture → WORKS
+
+Swipe on image → Image pan gesture receives gesture → DOES NOT SCROLL
+
+Inspect all zoom/pan gesture logic.
+
+The correct behavior should be:
+
+NORMAL ZOOM LEVEL:
+------------------
+Vertical swipe on image
+→ parent reader scrolls
+
+PINCH:
+------
+Pinch gesture
+→ image zooms
+
+ZOOMED IMAGE:
+-------------
+Pan gesture
+→ image can move inside zoomed state
+
+Therefore:
+
+DO NOT allow a generic image pan gesture to consume every vertical swipe.
+
+The image pan gesture should only become the primary responder when the image is actually zoomed / pannable.
+
+==================================================
+PHASE 6 — CHECK SIMULTANEOUS GESTURES
+==================================================
+
+If React Native Gesture Handler is being used, inspect:
+
+- simultaneousHandlers
+- requireToFail
+- waitFor
+- activeOffsetY
+- failOffsetY
+- activeOffsetX
+- failOffsetX
+- minDist
+- shouldCancelWhenOutside
+- enabled
+
+Pay particular attention to:
+
+PanGestureHandler
+ScrollView
+PinchGestureHandler
+
+The parent vertical ScrollView must be able to recognize a vertical swipe that starts on the image.
+
+If a horizontal/image gesture is present, it must fail when the user's movement is clearly vertical.
+
+For example, investigate whether the image gesture needs directional thresholds such as:
+
+activeOffsetX
+failOffsetY
+
+or equivalent logic.
+
+Do not blindly add values.
+
+Understand the gesture architecture first.
+
+==================================================
+PHASE 7 — CHECK PRESSABLE/TOUCHABLE WRAPPERS
+==================================================
+
+Search for the image being wrapped in:
+
+Pressable
+TouchableOpacity
+TouchableWithoutFeedback
+TouchableHighlight
+
+A wrapper like:
+
+<Pressable>
+    <Image />
+</Pressable>
+
+can participate in responder negotiation.
+
+Determine whether this wrapper is preventing vertical movement from reaching the parent ScrollView.
+
+If the image only needs TAP behavior, implement tap handling without blocking vertical scrolling.
+
+Expected behavior:
+
+Tap image
+→ existing image action works
+
+Vertical swipe on image
+→ reader scrolls
+
+Long press
+→ existing behavior if required
+
+Pinch
+→ zoom
+
+==================================================
+PHASE 8 — CHECK TRANSLATION OVERLAY SPECIFICALLY
+==================================================
+
+MangaVerse has translation functionality.
+
+There may be a translated image/text overlay sitting exactly above the original manga image.
+
+Inspect whether translation rendering creates:
+
+- absolute fill View
+- full-size transparent View
+- SVG
+- Canvas
+- Skia layer
+- WebView
+- Text layer
+- SVG polygons
+- Pressable
+- Animated.View
+
+If the translated layer fills the entire image:
+
+position: absolute
+top: 0
+left: 0
+right: 0
+bottom: 0
+
+then it is a HIGH PRIORITY suspect.
+
+If it is visual-only, it should allow touches to pass through to the reader.
+
+The same applies to OCR/localization debug layers.
+
+==================================================
+PHASE 9 — TEMPORARY RUNTIME TOUCH DIAGNOSTIC
+==================================================
+
+If the exact blocker is still unclear, add a TEMPORARY development-only diagnostic.
+
+When a swipe starts:
+
+Log:
+
+TOUCH START:
+x=
+y=
+target=
+component=
+gesture=
+responder=
+
+When moving:
+
+TOUCH MOVE:
+dx=
+dy=
+currentResponder=
+
+Also log:
+
+- ScrollView onScrollBeginDrag
+- ScrollView onScroll
+- gesture state changes
+
+Then reproduce:
+
+TEST A:
+Swipe in empty space.
+
+TEST B:
+Swipe directly on image.
+
+Compare the logs.
+
+We need to know:
+
+A:
+Which component receives the gesture?
+
+B:
+Which component receives the gesture?
+
+The difference will identify the blocker.
+
+Do not guess.
+
+==================================================
+PHASE 10 — CHECK IMAGE PROCESSING / CANVAS
+==================================================
+
+If the manga image is rendered through:
+
+- Canvas
+- Skia
+- SVG
+- WebView
+- custom native image viewer
+
+inspect whether that rendering surface consumes touch events.
+
+If it is only used to display the image, it must not prevent the parent reader from scrolling.
+
+If it needs gestures for zoom, implement proper gesture arbitration.
+
+==================================================
+PHASE 11 — DO NOT BREAK EXISTING FEATURES
+==================================================
+
+The final solution MUST preserve:
+
+✓ manga images
+✓ Webtoon scrolling
+✓ normal page reading
+✓ image tapping
+✓ zoom
+✓ pinch
+✓ translation
+✓ original text removal
+✓ translated text
+✓ OCR/localization
+✓ reader settings
+✓ font settings
+✓ reader controls
+
+Do not solve this by disabling zoom completely.
+
+Do not solve this by removing translation overlays.
+
+Do not solve this by making the image non-interactive if the application requires image interaction.
+
+The correct solution is gesture coordination.
+
+==================================================
+PHASE 12 — REQUIRED ACCEPTANCE TEST
+==================================================
+
+After implementing the fix, physically/runtime test the following:
+
+TEST 1
+Normal Manga mode.
+
+Start swipe in empty space.
+
+Expected:
+SCROLLS.
+
+TEST 2
+Normal Manga mode.
+
+Start swipe directly on manga image.
+
+Expected:
+SCROLLS.
+
+TEST 3
+Webtoon mode.
+
+Start swipe in empty space.
+
+Expected:
+SCROLLS.
+
+TEST 4
+Webtoon mode.
+
+Start swipe directly on manga image.
+
+Expected:
+SCROLLS.
+
+TEST 5
+Webtoon mode.
+
+Start swipe on translated text overlay.
+
+Expected:
+SCROLLS.
+
+TEST 6
+Pinch image.
+
+Expected:
+ZOOM WORKS.
+
+TEST 7
+Zoom image and pan it.
+
+Expected:
+PAN WORKS ONLY WHEN APPROPRIATE.
+
+TEST 8
+Tap image.
+
+Expected:
+Existing tap behavior still works.
+
+TEST 9
+Return to normal mode.
+
+Expected:
+Normal reader still works.
+
+==================================================
+MOST IMPORTANT DIAGNOSIS
+==================================================
+
+The following observation is now our primary evidence:
+
+"Swipe works when starting in the gap between images, but fails when starting directly on the image."
+
+Therefore:
+
+DO NOT REPORT THIS AS SIMPLY A WEBTOON SCROLLVIEW CONFIGURATION ISSUE.
+
+Treat this as a TOUCH/RESPONDER/GESTURE INTERCEPTION BUG until proven otherwise.
+
+Find the component that receives the gesture when the finger starts on the image.
+
+Fix the gesture arbitration at the correct layer.
+
+==================================================
+FINAL REPORT
+==================================================
+
+After actually modifying and testing the project, report:
+
+1. EXACT ROOT CAUSE
+2. EXACT COMPONENT THAT INTERCEPTED THE TOUCH
+3. EXACT GESTURE/HANDLER/OVERLAY RESPONSIBLE
+4. FILES CHANGED
+5. CODE-LEVEL FIX
+6. WHY SWIPE WORKED IN EMPTY SPACE
+7. WHY SWIPE FAILED ON IMAGE
+8. HOW ZOOM/PINCH WAS PRESERVED
+9. HOW TRANSLATION OVERLAYS WERE HANDLED
+10. RUNTIME TEST RESULTS FOR ALL 9 TESTS
+
+DO NOT SAY "SHOULD BE FIXED".
+
+DO NOT SAY "I RECOMMEND".
+
+DO NOT GIVE ME A HYPOTHESIS AS THE FINAL RESULT.
+
+ACTUALLY TRACE THE TOUCH EVENT, MODIFY THE CODE, RUN THE APP, AND VERIFY THAT A VERTICAL SWIPE STARTING DIRECTLY ON THE MANGA IMAGE NOW SCROLLS.

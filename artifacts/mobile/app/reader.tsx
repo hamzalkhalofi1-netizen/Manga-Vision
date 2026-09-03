@@ -699,7 +699,7 @@ export default function ReaderScreen() {
   // ─── FlatList render item ──────────────────────────────────────────────────
   const renderItem = useCallback(
     ({ item: uri, index }: { item: string; index: number }) => (
-      <Pressable onPress={handleTap} style={{ width: SCREEN_W }}>
+      <View style={{ width: SCREEN_W }}>
         <MangaPage
           uri={uri}
           pageNumber={index + 1}
@@ -713,8 +713,9 @@ export default function ReaderScreen() {
           fitMode={readerSettings.fitMode}
           zoomed={zoomed}
           pinchZoom={readerSettings.pinchZoom}
+          onTap={handleTap}
         />
-      </Pressable>
+      </View>
     ),
     [
       handleTap,

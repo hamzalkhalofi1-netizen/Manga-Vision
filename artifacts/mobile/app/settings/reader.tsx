@@ -97,7 +97,13 @@ export default function ReaderSettingsScreen() {
           <SettingsItem
             icon="swap-horizontal-outline"
             label="Page Transition"
-            description={readerSettings.pageTransition === "scroll" ? "Smooth scrolling" : "Swipe pages"}
+            description={
+              readerSettings.readingMode === "vertical"
+                ? "Webtoon always uses continuous vertical scrolling"
+                : readerSettings.pageTransition === "scroll"
+                  ? "Smooth scrolling"
+                  : "Swipe pages"
+            }
             noChevron
             right={
               <SettingsOptionSelector
