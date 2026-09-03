@@ -34,6 +34,12 @@ export interface CVPipelineResult {
   height: number;
 }
 
+export interface CVPipelineOptions {
+  removalMode?: "inpaint" | "overlay";
+  maskPadding?: number;
+  preserveBubbleBorders?: boolean;
+}
+
 const PIPELINE_TIMEOUT_MS = 45_000;
 
 function sleep(ms: number): Promise<void> {
@@ -50,7 +56,8 @@ function sleep(ms: number): Promise<void> {
 export async function runCVPipeline(
   imageUrl: string,
   regions: CvRegionInput[],
-  apiBase = "/api"
+  apiBase = "/api",
+  options: CVPipelineOptions = {},
 ): Promise<CVPipelineResult> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PIPELINE_TIMEOUT_MS);
@@ -59,7 +66,7 @@ export async function runCVPipeline(
     const res = await fetch(`${apiBase}/cv-pipeline`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ imageUrl, regions }),
+      body: JSON.stringify({ imageUrl, regions, options }),
       signal: controller.signal,
     });
 
@@ -88,11 +95,12 @@ export async function runCVPipelineWithRetry(
   imageUrl: string,
   regions: CvRegionInput[],
   apiBase = "/api",
-  maxAttempts = 2
+  maxAttempts = 2,
+  options: CVPipelineOptions = {},
 ): Promise<CVPipelineResult | null> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await runCVPipeline(imageUrl, regions, apiBase);
+      return await runCVPipeline(imageUrl, regions, apiBase, options);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[CVPipeline] attempt ${attempt} failed: ${msg}`);

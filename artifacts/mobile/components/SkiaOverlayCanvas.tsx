@@ -60,6 +60,7 @@ import type { TextRegion } from "./MangaPage";
 import { scaleFontToFit, scaleSFXFont } from "./DynamicFontScaler";
 import { ARABIC_FONT_FAMILY } from "./ArabicTypesettingEngine";
 import { resolveFromCss } from "./AdaptiveTextColorEngine";
+import { DEFAULT_FONT_SETTINGS, useSettings } from "@/context/SettingsContext";
 
 // ── Debug ─────────────────────────────────────────────────────────────────────
 
@@ -336,6 +337,12 @@ interface Props {
 }
 
 function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
+  const { fontSettings } = useSettings();
+  const fontFamily = fontSettings.fontFamily === "inter"
+    ? "Inter"
+    : fontSettings.fontFamily === "monospace"
+      ? "monospace"
+      : ARABIC_FONT_FAMILY;
   const items = useMemo(() => {
     return regions
       .map((region, idx) => {
@@ -370,7 +377,11 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
         // Dark text (#1A1A1A) for light/white bubbles.
         // Light text (#F8F8F8) for dark panels and narration boxes.
         const colorProfile = resolveFromCss(bgColor);
-        const textColor    = isSFX ? "#FFE566" : colorProfile.color;
+        const textColor    = isSFX
+          ? "#FFE566"
+          : fontSettings.textColor !== DEFAULT_FONT_SETTINGS.textColor
+            ? fontSettings.textColor
+            : colorProfile.color;
         const shadowColor  = isSFX ? "rgba(0,0,0,0.95)" : colorProfile.shadowColor;
         const shadowRadius = isSFX ? 8 : colorProfile.shadowRadius;
 
@@ -414,7 +425,7 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
         };
       })
       .filter(Boolean);
-  }, [regions, displayW, displayH]);
+  }, [regions, displayW, displayH, fontSettings]);
 
   if (!items.length) return null;
 
@@ -564,24 +575,35 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
               style={[
                 styles.label,
                 {
-                  fontSize:   typeset.fontSize,
-                  lineHeight: typeset.lineHeight,
+                   fontSize:   Math.max(
+                     8,
+                     typeset.fontSize *
+                       (fontSettings.fontSize / DEFAULT_FONT_SETTINGS.fontSize),
+                   ),
+                   lineHeight: typeset.lineHeight *
+                     (fontSettings.lineSpacing / DEFAULT_FONT_SETTINGS.lineSpacing),
                   color:      textColor,
-                  fontFamily: ARABIC_FONT_FAMILY,
-                  fontWeight: isSFX ? "900" : "700",
+                   fontFamily,
+                   fontWeight: isSFX ? "900" : fontSettings.fontWeight,
                   fontStyle:  isThought ? "italic" : "normal",
+                   letterSpacing: fontSettings.letterSpacing,
+                   textAlign: fontSettings.textAlign,
                   ...Platform.select({
                     web: {
-                      textShadow: isSFX
-                        ? `0px 0px 4px ${shadowColor}, 0px 0px 10px rgba(0,0,0,0.8)`
-                        : `0px 0px ${shadowRadius}px ${shadowColor}`,
+                       textShadow: !fontSettings.shadow
+                         ? "none"
+                         : isSFX
+                           ? `0px 0px 4px ${shadowColor}, 0px 0px 10px rgba(0,0,0,0.8)`
+                           : `0px 0px ${Math.max(fontSettings.outlineThickness, shadowRadius)}px ${fontSettings.outlineThickness > 0 ? fontSettings.outlineColor : shadowColor}`,
                       WebkitFontSmoothing: "antialiased",
                       textRendering:       "optimizeLegibility",
                     } as object,
                     default: {
-                      textShadowColor:  shadowColor,
+                       textShadowColor: fontSettings.shadow ? fontSettings.outlineColor : "transparent",
                       textShadowOffset: { width: 0, height: 0 },
-                      textShadowRadius: shadowRadius,
+                       textShadowRadius: fontSettings.shadow
+                         ? Math.max(fontSettings.outlineThickness, shadowRadius)
+                         : 0,
                     },
                   }),
                 },

@@ -53,6 +53,7 @@ import {
   type TextClass,
 } from "./cv/TextClassificationEngine";
 import { analyseLayout } from "./cv/LayoutAnalysisEngine";
+import { DEFAULT_FONT_SETTINGS, useSettings } from "@/context/SettingsContext";
 
 interface Props {
   regions: TextRegion[];
@@ -101,6 +102,12 @@ function CVPipelineRenderer({
   displayW,
   displayH,
 }: Props) {
+  const { fontSettings } = useSettings();
+  const fontFamily = fontSettings.fontFamily === "inter"
+    ? "Inter"
+    : fontSettings.fontFamily === "monospace"
+      ? "monospace"
+      : ARABIC_FONT_FAMILY;
   const items = useMemo<RenderedItem[]>(() => {
     // ── Phase 1: Classify and filter regions ─────────────────────────────────
     const renderableIndices: number[] = [];
@@ -154,7 +161,11 @@ function CVPipelineRenderer({
 
       const colorProfile = resolveFromCss(region.bgColor || "#ffffff");
       const isSFX = cls.textClass === "sfx" || region.type === "sfx";
-      const color = isSFX ? "#FFE566" : colorProfile.color;
+      const color = isSFX
+        ? "#FFE566"
+        : fontSettings.textColor !== DEFAULT_FONT_SETTINGS.textColor
+          ? fontSettings.textColor
+          : colorProfile.color;
       const shadowColor = isSFX ? "rgba(0,0,0,0.95)" : colorProfile.shadowColor;
       const shadowRadius = isSFX ? 8 : colorProfile.shadowRadius;
 
@@ -176,7 +187,7 @@ function CVPipelineRenderer({
 
     result.sort((a, b) => a.readingOrder - b.readingOrder);
     return result;
-  }, [regions, refinedRegions, displayW, displayH]);
+  }, [regions, refinedRegions, displayW, displayH, fontSettings]);
 
   if (!items.length) return null;
 
@@ -206,23 +217,41 @@ function CVPipelineRenderer({
               style={[
                 styles.text,
                 {
-                  fontSize: item.layout.fontSize,
-                  lineHeight: item.layout.lineHeight,
+                  fontSize: Math.max(
+                    8,
+                    item.layout.fontSize *
+                      (fontSettings.fontSize / DEFAULT_FONT_SETTINGS.fontSize),
+                  ),
+                  lineHeight:
+                    item.layout.lineHeight *
+                    (fontSettings.lineSpacing / DEFAULT_FONT_SETTINGS.lineSpacing),
                   color: item.color,
-                  fontFamily: ARABIC_FONT_FAMILY,
-                  fontWeight: item.layout.fontWeight,
+                  fontFamily,
+                  fontWeight: item.textClass === "sfx" ? "900" : fontSettings.fontWeight,
                   fontStyle: item.layout.fontStyle,
+                  letterSpacing: fontSettings.letterSpacing,
+                  textAlign: fontSettings.textAlign,
                   writingDirection: item.layout.direction,
                   ...(Platform.OS === "web"
                     ? ({
                         textShadow:
-                          item.textClass === "sfx"
+                          !fontSettings.shadow
+                            ? "none"
+                            : item.textClass === "sfx"
                             ? `0px 0px 4px ${item.shadowColor}, 0px 0px 10px rgba(0,0,0,0.8)`
-                            : `0px 0px ${item.shadowRadius}px ${item.shadowColor}`,
+                            : `0px 0px ${Math.max(fontSettings.outlineThickness, item.shadowRadius)}px ${fontSettings.outlineThickness > 0 ? fontSettings.outlineColor : item.shadowColor}`,
                         WebkitFontSmoothing: "antialiased",
                         direction: item.layout.direction,
                       } as object)
-                    : {}),
+                    : {
+                        textShadowColor: fontSettings.shadow
+                          ? fontSettings.outlineColor
+                          : "transparent",
+                        textShadowOffset: { width: 0, height: 0 },
+                        textShadowRadius: fontSettings.shadow
+                          ? Math.max(fontSettings.outlineThickness, item.shadowRadius)
+                          : 0,
+                      }),
                 },
               ]}
               textBreakStrategy="simple"

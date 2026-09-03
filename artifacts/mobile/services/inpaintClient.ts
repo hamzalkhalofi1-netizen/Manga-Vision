@@ -61,11 +61,17 @@ export interface InpaintResult {
   summary: string;
 }
 
+export interface ImageProcessingOptions {
+  removalMode?: "inpaint" | "overlay";
+  maskPadding?: number;
+  preserveBubbleBorders?: boolean;
+}
+
 export async function callInpaintServer(
   serverUrl: string,
   imageUrl: string,
   textBlocks: HFTextBlock[] = [],
-  timeoutMs = 90_000
+  timeoutMs = 90_000,
 ): Promise<InpaintResult> {
   const image_b64 = await imageUrlToBase64(imageUrl);
 

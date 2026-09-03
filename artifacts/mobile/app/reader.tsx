@@ -98,6 +98,7 @@ export default function ReaderScreen() {
     incrementTranslationCount,
     geminiModel,
     translationSettings,
+    networkSettings,
   } = useSettings();
   const { tokens, activeTokenId, markRateLimited } = useTokens();
   const { serverUrl: inpaintServerUrl } = useInpaintServer();
@@ -109,7 +110,7 @@ export default function ReaderScreen() {
     if (!token || token.isRateLimited) return null;
     return token.key;
   };
-  const { saveProgress } = useLibrary();
+  const { saveProgress, getProgress } = useLibrary();
   const {
     dlState,
     dlProgress,
@@ -134,6 +135,9 @@ export default function ReaderScreen() {
     sourceId: params.sourceId || "mangadex",
     currentPage,
     enabled: Platform.OS !== "web" && pages.length > 0,
+    ahead: readerSettings.preloadPages,
+    behind: Math.min(2, readerSettings.preloadPages),
+    concurrency: Math.min(networkSettings.parallelDownloads, networkSettings.maxConnections),
   });
 
   // ── Translation state ─────────────────────────────────────────────────────
@@ -181,7 +185,7 @@ export default function ReaderScreen() {
   const topPadding = Platform.OS === "web" ? 67 : insets.top;
   const bottomPadding = Platform.OS === "web" ? 34 : insets.bottom;
   const isVertical = readerSettings.readingMode === "vertical";
-  const isRTL = readerSettings.targetLanguage === "ar";
+  const isRTL = readerSettings.readingDirection === "rtl";
   const sourceId = params.sourceId || "mangadex";
 
   // ─── Load pages ────────────────────────────────────────────────────────────
@@ -198,8 +202,8 @@ export default function ReaderScreen() {
     setLoading(true);
     setLoadError(null);
     setPages([]);
-    setCurrentPage(0);
-    currentPageRef.current = 0;
+     setCurrentPage(0);
+     currentPageRef.current = 0;
     setPageTranslations({});
     resolvedPageUrisRef.current.clear();
     setQueueProgress(null);
@@ -215,10 +219,22 @@ export default function ReaderScreen() {
         );
         if (local && local.length > 0) {
           if (controller.signal.aborted) return;
-          setPages(local);
-          setTimeout(() => {
-            flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-          }, 50);
+           setPages(local);
+           const saved = readerSettings.rememberLastPage
+             ? getProgress(params.mangaId)
+             : undefined;
+           const initialPage = saved?.chapterId === activeChapterId
+             ? Math.min(Math.max(0, saved.pageIndex), local.length - 1)
+             : 0;
+           setCurrentPage(initialPage);
+           currentPageRef.current = initialPage;
+           setTimeout(() => {
+             if (isVertical) {
+               flatListRef.current?.scrollToIndex({ index: initialPage, animated: false });
+             } else {
+               flatListRef.current?.scrollToOffset({ offset: SCREEN_W * initialPage, animated: false });
+             }
+           }, 100);
           return;
         }
 
@@ -236,10 +252,22 @@ export default function ReaderScreen() {
         if (valid.length === 0) {
           setLoadError("No pages found for this chapter.");
         } else {
-          setPages(valid);
-          setTimeout(() => {
-            flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
-          }, 50);
+           setPages(valid);
+           const saved = readerSettings.rememberLastPage
+             ? getProgress(params.mangaId)
+             : undefined;
+           const initialPage = saved?.chapterId === activeChapterId
+             ? Math.min(Math.max(0, saved.pageIndex), valid.length - 1)
+             : 0;
+           setCurrentPage(initialPage);
+           currentPageRef.current = initialPage;
+           setTimeout(() => {
+             if (isVertical) {
+               flatListRef.current?.scrollToIndex({ index: initialPage, animated: false });
+             } else {
+               flatListRef.current?.scrollToOffset({ offset: SCREEN_W * initialPage, animated: false });
+             }
+           }, 100);
         }
       } catch (err) {
         // Ignore aborts — they are intentional (chapter changed / unmounted)
@@ -258,13 +286,26 @@ export default function ReaderScreen() {
     })();
 
     return () => controller.abort();
-  }, [activeChapterId, params.sourceId, params.mangaId, retryKey]);
+  }, [
+    activeChapterId,
+    params.sourceId,
+    params.mangaId,
+    retryKey,
+    getProgress,
+    readerSettings.rememberLastPage,
+    isVertical,
+  ]);
 
   // ─── Save reading progress (debounced 500ms) ──────────────────────────────
   // Debounce prevents an AsyncStorage write on every scroll tick; instead we
   // only persist once the reader has settled on a page for half a second.
   useEffect(() => {
-    if (params.mangaId && activeChapterId && activeChapterNum) {
+    if (
+      readerSettings.rememberLastPage &&
+      params.mangaId &&
+      activeChapterId &&
+      activeChapterNum
+    ) {
       if (saveProgressTimer.current) clearTimeout(saveProgressTimer.current);
       saveProgressTimer.current = setTimeout(() => {
         saveProgress({
@@ -285,6 +326,7 @@ export default function ReaderScreen() {
     activeChapterId,
     activeChapterNum,
     saveProgress,
+    readerSettings.rememberLastPage,
   ]);
 
   // ─── Auto-hide controls ────────────────────────────────────────────────────
@@ -620,6 +662,7 @@ export default function ReaderScreen() {
             resolvedPageUrisRef.current.set(index, localUri);
           }}
           sourceId={params.sourceId || "mangadex"}
+            fitMode={readerSettings.fitMode}
         />
       </Pressable>
     ),
@@ -681,7 +724,9 @@ export default function ReaderScreen() {
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         horizontal={!isVertical}
-        pagingEnabled={!isVertical}
+         pagingEnabled={!isVertical || readerSettings.pageTransition === "swipe"}
+         decelerationRate={readerSettings.pageAnimation ? "normal" : "fast"}
+         disableIntervalMomentum={!readerSettings.pageAnimation}
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
         scrollEventThrottle={16}
@@ -690,8 +735,8 @@ export default function ReaderScreen() {
         extraData={pageTranslations}
         removeClippedSubviews={Platform.OS !== "web"}
         maxToRenderPerBatch={3}
-        windowSize={5}
-        initialNumToRender={2}
+         windowSize={Math.max(3, readerSettings.preloadPages * 2 + 1)}
+         initialNumToRender={Math.min(3, readerSettings.preloadPages + 1)}
         getItemLayout={
           !isVertical
             ? (_, i) => ({ length: SCREEN_W, offset: SCREEN_W * i, index: i })
@@ -755,7 +800,8 @@ export default function ReaderScreen() {
 
       {/* ── Top controls ──────────────────────────────────────────────────── */}
       {showControls && (
-        <View
+               {readerSettings.showPageNumber && (
+               <View
           style={[
             styles.topOverlay,
             { paddingTop: topPadding + 8, pointerEvents: "box-none" },
@@ -775,7 +821,8 @@ export default function ReaderScreen() {
                 {params.mangaTitle}
               </Text>
               <Text style={styles.topSub}>Ch. {activeChapterNum}</Text>
-            </View>
+               </View>
+               )}
 
             {/* Translate Chapter button in top-right */}
             <Pressable
@@ -873,7 +920,20 @@ export default function ReaderScreen() {
           </View>
 
           {/* Queue progress bar */}
-          {isQueueRunning && (
+           {readerSettings.showProgressBar && (
+             <View style={styles.readingProgressTrack}>
+               <View
+                 style={[
+                   styles.readingProgressFill,
+                   {
+                     backgroundColor: colors.primary,
+                     width: `${pages.length ? ((currentPage + 1) / pages.length) * 100 : 0}%` as unknown as number,
+                   },
+                 ]}
+               />
+             </View>
+           )}
+           {isQueueRunning && (
             <View style={styles.progressBarTrack}>
               <View
                 style={[

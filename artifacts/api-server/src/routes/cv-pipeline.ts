@@ -74,11 +74,18 @@ interface RegionInput {
   h: number;
 }
 
+interface PipelineOptions {
+  removalMode?: "inpaint" | "overlay";
+  maskPadding?: number;
+  preserveBubbleBorders?: boolean;
+}
+
 router.post("/", async (req, res) => {
-  const { imageUrl, imageData, regions } = req.body as {
+  const { imageUrl, imageData, regions, options } = req.body as {
     imageUrl?: string;
     imageData?: string;
     regions: RegionInput[];
+    options?: PipelineOptions;
   };
 
   if (!imageUrl && !imageData) {
@@ -115,8 +122,16 @@ router.post("/", async (req, res) => {
   try {
     // ── Stage 1: Text Segmentation ──────────────────────────────────────────
     req.log?.info({ regions: regions.length }, "cv-pipeline: stage 1 — segmentation");
+    const safeOptions: Required<PipelineOptions> = {
+      removalMode: options?.removalMode === "overlay" ? "overlay" : "inpaint",
+      maskPadding: Math.min(24, Math.max(0, Number(options?.maskPadding) || 0)),
+      preserveBubbleBorders: options?.preserveBubbleBorders !== false,
+    };
     const { maskData, width, height, maskPixels, regionDiagnostics } =
-      await buildTextMasks(imgBuf, ocrRegions);
+      await buildTextMasks(imgBuf, ocrRegions, {
+        paddingPx: safeOptions.maskPadding,
+        preserveBubbleBorders: safeOptions.preserveBubbleBorders,
+      });
     req.log?.info(
       {
         width,
@@ -135,7 +150,9 @@ router.post("/", async (req, res) => {
 
     // ── Stage 3: Inpainting ─────────────────────────────────────────────────
     req.log?.info("cv-pipeline: stage 3 — inpainting");
-    const { imageBuffer } = await inpaintImage(imgBuf, maskData, width, height);
+    const { imageBuffer } = safeOptions.removalMode === "overlay"
+      ? { imageBuffer: imgBuf }
+      : await inpaintImage(imgBuf, maskData, width, height);
 
     const inpaintedImage = imageBuffer.toString("base64");
 

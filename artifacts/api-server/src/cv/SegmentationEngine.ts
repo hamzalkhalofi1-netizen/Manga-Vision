@@ -57,6 +57,11 @@ export interface SegmentationResult {
   }>;
 }
 
+export interface SegmentationOptions {
+  paddingPx?: number;
+  preserveBubbleBorders?: boolean;
+}
+
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
 }
@@ -88,7 +93,8 @@ function getTightPolygon(region: OcrRegion): [number, number][] {
 
 export async function buildTextMasks(
   imgBuf: Buffer,
-  regions: OcrRegion[]
+  regions: OcrRegion[],
+  options: SegmentationOptions = {},
 ): Promise<SegmentationResult> {
   const cv = getCV();
 
@@ -144,9 +150,17 @@ export async function buildTextMasks(
     // A small margin catches antialiased outlines and glyph pixels just
     // outside Gemini's tight box without touching the bubble border. It is
     // based on the short side so vertical/horizontal text behave equally.
-    const paddingPx = Math.max(
+    const automaticPadding = Math.max(
       2,
       Math.min(10, Math.round(Math.min(boxWidth, boxHeight) * 0.14)),
+    );
+    const configuredPadding = Number.isFinite(options.paddingPx)
+      ? Math.min(24, Math.max(0, options.paddingPx!))
+      : automaticPadding;
+    const paddingPx = Math.round(
+      options.preserveBubbleBorders === false
+        ? configuredPadding
+        : Math.min(configuredPadding, automaticPadding),
     );
     const flat = pxCoords.flatMap(([x, y]) => [x, y]);
 

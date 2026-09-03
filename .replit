@@ -12,42 +12,79 @@ env = { "CI" = "true" }
 runButton = "Project"
 
 [[workflows.workflow]]
-name = "Project"
-mode = "parallel"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "MangaVerse"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "artifacts/api-server: API Server"
-
-
-[[workflows.workflow]]
 name = "MangaVerse"
 author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "DANGEROUSLY_DISABLE_HOST_CHECK=true PORT=5000 EXPO_DEV_PORT=5001 EXPO_API_PORT=8080 EXPO_PUBLIC_REPL_ID=$REPL_ID REACT_NATIVE_PACKAGER_HOSTNAME=$REPLIT_DEV_DOMAIN EXPO_PACKAGER_PROXY_URL=https://$REPLIT_EXPO_DEV_DOMAIN bash artifacts/mobile/server/start.sh"
 waitForPort = 5000
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[workflows.workflow]]
 name = "artifacts/api-server: API Server"
 author = "agent"
+mode = "sequential"
 
 [workflows.workflow.metadata]
-outputType = "console"
+outputType = "webview"
+artifactId = "3B4_FFSkEVBkAeYMFRJ2e"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=8080 pnpm --filter @workspace/api-server run dev"
+args = "pnpm --filter @workspace/api-server run dev"
+cwd = "./artifacts/api-server"
 waitForPort = 8080
+ensurePreviewReachable = "/"
+router = "path"
+
+[workflows.workflow.tasks.env]
+PORT = "8080"
+
+[[workflows.workflow]]
+name = "artifacts/mockup-sandbox: Component Preview Server"
+author = "agent"
+mode = "sequential"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+artifactId = "XegfDyZt7HqfW2Bb8Ghoy"
+isCanvasWorkflow = true
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/mockup-sandbox run dev"
+cwd = "./artifacts/mockup-sandbox"
+waitForPort = 8081
+ensurePreviewReachable = "/"
+router = "path"
+
+[workflows.workflow.tasks.env]
+PORT = "8081"
+BASE_PATH = "/__mockup"
+
+[[workflows.workflow]]
+name = "artifacts/mobile: expo"
+author = "agent"
+mode = "sequential"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+artifactId = "artifacts/mobile"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/mobile run dev"
+cwd = "./artifacts/mobile"
+waitForPort = 18115
+ensurePreviewReachable = "/status"
+router = "expo-domain"
+
+[workflows.workflow.tasks.env]
+PORT = "18115"
+BASE_PATH = "/"
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
@@ -72,14 +109,11 @@ externalPort = 3000
 
 [[ports]]
 localPort = 8080
-externalPort = 8080
 
 [[ports]]
 localPort = 8081
-externalPort = 8081
 
 [[ports]]
 localPort = 18115
-externalPort = 3001
 
 [userenv]

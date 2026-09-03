@@ -34,6 +34,7 @@ import { ImageLoader } from "@/services/engine";
 import { getApiBase } from "@/services/api";
 import { recordCvDebug } from "@/services/cvDebugStore";
 import { useCachedPageImage } from "@/hooks/useCachedPageImage";
+import { useSettings } from "@/context/SettingsContext";
 
 const SCREEN_W = Dimensions.get("window").width;
 const DEFAULT_ASPECT = 1.45;
@@ -88,6 +89,7 @@ interface MangaPageProps {
   /** Reports the exact local file currently used for the visible page image. */
   onImageResolved?: (localUri: string) => void;
   sourceId?: string;
+  fitMode?: "width" | "height" | "screen";
 }
 
 function MangaPage({
@@ -99,7 +101,9 @@ function MangaPage({
   onHeightKnown,
   onImageResolved,
   sourceId,
+  fitMode = "width",
 }: MangaPageProps) {
+  const { imageProcessingSettings } = useSettings();
   // Memoised so the object reference is stable across re-renders — prevents
   // useCachedPageImage's load useCallback from recreating every render.
   const imageHeaders = useMemo(
@@ -148,7 +152,7 @@ function MangaPage({
       return;
     }
 
-    const runKey = `${uri}|${regions.length}`;
+    const runKey = `${uri}|${regions.length}|${imageProcessingSettings.removalMode}|${imageProcessingSettings.maskPadding}|${imageProcessingSettings.preserveBubbleBorders}`;
     if (cvRunRef.current === runKey) return;
     cvRunRef.current = runKey;
 
@@ -226,7 +230,7 @@ function MangaPage({
       page: _page,
     });
 
-    runCVPipelineWithRetry(uri, cvRegions, apiBase)
+    runCVPipelineWithRetry(uri, cvRegions, apiBase, 2, imageProcessingSettings)
       .then((result) => {
         if (!result) {
           setRenderPath("fallback");
@@ -314,7 +318,7 @@ function MangaPage({
       .finally(() => {
         if (cvRunRef.current === runKey) setCvLoading(false);
       });
-  }, [uri, regions, showOverlay]);
+  }, [uri, regions, showOverlay, imageProcessingSettings]);
 
   const handleLoad = useCallback(
     (e: { source: { width: number; height: number } }) => {
@@ -410,7 +414,7 @@ function MangaPage({
         <Image
           source={imageSource}
           style={{ width: SCREEN_W, height: displayH }}
-          contentFit="fill"
+          contentFit={fitMode === "height" ? "cover" : "contain"}
           transition={100}
           recyclingKey={recyclingKey}
           onLoad={handleLoad}
