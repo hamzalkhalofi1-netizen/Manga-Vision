@@ -1,0 +1,514 @@
+URGENT: WEBTOON VERTICAL SCROLL IS STILL BROKEN — DO NOT JUST SUGGEST A FIX
+
+The previous attempt did NOT fix the problem.
+
+In Webtoon mode, the manga reader still cannot vertically scroll/swipe up and down. The user can open the Webtoon reader, but vertical movement through the long manga page/content does not work.
+
+I do NOT want another generic investigation or explanation. You must inspect the actual codebase, identify the exact component/event/prop that prevents scrolling, implement the fix, and verify it.
+
+IMPORTANT:
+Do NOT assume the previous diagnosis was correct.
+Do NOT simply add scrollEnabled={true}.
+Do NOT add another ScrollView around the existing reader.
+Do NOT rewrite the reader architecture unnecessarily.
+Do NOT disable existing zoom, translation, text removal, overlays, settings, or reader controls just to make scrolling work.
+
+==================================================
+PHASE 1 — FIND THE REAL WEBTOON RENDERER
+==================================================
+
+Search the entire project and identify:
+
+1. The exact screen/component used when Reader Mode = Webtoon.
+2. The actual scroll container:
+   - ScrollView
+   - FlatList
+   - FlashList
+   - VirtualizedList
+   - WebView
+   - GestureHandler
+   - custom animated scroll container
+   - or any combination.
+3. The parent hierarchy surrounding that container.
+4. Every wrapper between the screen and the actual scroll container.
+5. Every overlay rendered above the reader.
+6. Every gesture handler attached to the reader or its parents.
+
+Do not stop after finding the first ScrollView.
+
+Create a short internal diagnosis containing:
+
+WEBTOON ROOT
+→ Reader Screen
+→ Reader Container
+→ Image/Page Container
+→ Gesture/Overlay Layers
+→ Scroll Owner
+
+Then determine exactly which element currently owns vertical scrolling.
+
+==================================================
+PHASE 2 — CHECK FOR THE ACTUAL BLOCKER
+==================================================
+
+Inspect the implementation for ALL of these:
+
+A. React Native scrolling:
+
+- scrollEnabled
+- horizontal
+- pagingEnabled
+- showsVerticalScrollIndicator
+- nestedScrollEnabled
+- contentContainerStyle
+- style
+- flex
+- flexGrow
+- height
+- minHeight
+- maxHeight
+
+B. Layout problems:
+
+- fixed height
+- height: "100%"
+- absolute positioning
+- overflow: "hidden"
+- parent without bounded height
+- child taking the entire viewport but content not extending
+- incorrect flex hierarchy
+- contentContainerStyle preventing content expansion
+
+C. Touch interception:
+
+Search for:
+
+- pointerEvents
+- PanResponder
+- GestureDetector
+- GestureHandlerRootView
+- NativeViewGestureHandler
+- ScrollView gesture handlers
+- simultaneousHandlers
+- waitFor
+- onStartShouldSetResponder
+- onMoveShouldSetResponder
+- onResponderMove
+- onTouchStart
+- onTouchMove
+- preventDefault
+- touchAction
+
+Pay special attention to any full-screen transparent/absolute overlay.
+
+A transparent View covering the reader can completely block vertical swipes even though the ScrollView itself is configured correctly.
+
+D. Zoom:
+
+The reader supports image interaction/zoom.
+
+Inspect whether pinch/pan gesture handling is stealing the vertical swipe.
+
+The correct behavior must be:
+
+- pinch → zoom
+- zoomed image → pan
+- normal zoom level → vertical Webtoon scrolling
+- normal vertical swipe must NOT be consumed by a global pan gesture
+
+Do not sacrifice zoom functionality to fix scrolling.
+
+==================================================
+PHASE 3 — CHECK RECENT REGRESSIONS
+==================================================
+
+Inspect recent modifications related to:
+
+- Reader
+- Webtoon
+- ReaderSettings
+- pageTransition
+- gestures
+- zoom
+- translation
+- overlays
+- image rendering
+- settings
+- FlatList
+- ScrollView
+
+Compare the current implementation with the previous working implementation/checkpoint if available.
+
+There is strong evidence that a recent reader/settings change introduced the regression.
+
+Find the exact regression.
+
+For example, investigate logic similar to:
+
+pagingEnabled={!isVertical || readerSettings.pageTransition === "swipe"}
+
+and every other condition controlling Webtoon scrolling.
+
+Do not assume this exact line is the only problem.
+
+==================================================
+PHASE 4 — WEBTOON MUST HAVE ONE PRIMARY VERTICAL SCROLL OWNER
+==================================================
+
+Implement a clean architecture where Webtoon mode has ONE primary vertical scrolling container.
+
+Expected behavior:
+
+WEBTOON MODE
+
+┌─────────────────────────────┐
+│ Reader screen               │
+│                             │
+│  Header / controls          │
+│                             │
+│  ┌───────────────────────┐  │
+│  │                       │  │
+│  │       LONG IMAGE      │  │
+│  │                       │  │
+│  │                       │  │
+│  │                       │  │
+│  │                       │  │
+│  └───────────────────────┘  │
+│                             │
+│         ↓ SWIPE             │
+│                             │
+│         ↓ SWIPE             │
+│                             │
+│         ↓ SWIPE             │
+└─────────────────────────────┘
+
+The entire long Webtoon content must be scrollable vertically.
+
+The content height must be greater than the viewport when the manga page is long.
+
+==================================================
+PHASE 5 — FIX TOUCH EVENT INTERCEPTION
+==================================================
+
+Inspect every absolute-positioned overlay.
+
+Any overlay that is purely visual MUST NOT intercept touches.
+
+Use the appropriate pointer event behavior.
+
+For example, visual-only layers should use the equivalent of:
+
+pointerEvents="none"
+
+while actual interactive controls should remain touchable.
+
+Do NOT set pointerEvents="none" on buttons that need interaction.
+
+Inspect:
+
+- translation overlays
+- text bounding boxes
+- translated text
+- image processing layers
+- reader HUD
+- top controls
+- bottom controls
+- loading layers
+- debug layers
+- zoom layers
+- invisible gesture layers
+
+One invisible full-screen layer must not block the Webtoon ScrollView.
+
+==================================================
+PHASE 6 — FIX PAGING BEHAVIOR
+==================================================
+
+Webtoon mode is CONTINUOUS VERTICAL SCROLLING.
+
+It must NOT behave like paginated pages.
+
+Ensure:
+
+- horizontal = false
+- vertical scrolling = enabled
+- pagingEnabled = false for Webtoon
+- no page snapping in Webtoon
+- no horizontal pager controls the Webtoon content
+- page transition settings must not accidentally convert Webtoon into a paged reader
+
+If pageTransition = "swipe" is intended for normal/page mode, it must NOT disable continuous Webtoon scrolling.
+
+The mode hierarchy must be explicit:
+
+if readerMode === "webtoon":
+    continuous vertical scrolling
+
+else:
+    normal page reader behavior
+
+Do not let a generic page-transition setting override Webtoon mode.
+
+==================================================
+PHASE 7 — CHECK CONTENT HEIGHT
+==================================================
+
+Verify that the actual Webtoon content has real scrollable height.
+
+Do not rely on:
+
+height: "100%"
+
+if that prevents the content from growing.
+
+Verify image dimensions.
+
+Verify:
+
+content height > viewport height
+
+for a long manga page.
+
+If using ScrollView:
+
+- parent must have bounded height
+- ScrollView must fill the available screen
+- contentContainer must allow content to grow
+- images must retain their correct aspect ratio
+- no wrapper should clip the long content
+
+If using FlatList/FlashList:
+
+verify:
+
+- item height
+- getItemLayout
+- estimatedItemSize
+- contentContainerStyle
+- nested scrolling
+- virtualization
+- keyExtractor
+- data actually contains all Webtoon pages
+
+Do not use a virtualized list incorrectly for one enormous image.
+
+==================================================
+PHASE 8 — IF WEBVIEW IS INVOLVED
+==================================================
+
+If the Webtoon reader is rendered through WebView:
+
+inspect:
+
+- injected JavaScript
+- CSS overflow
+- body height
+- html height
+- touch-action
+- overflow-y
+- overflow-x
+- wheel/touch event handlers
+- preventDefault
+- nestedScrollEnabled
+- parent ScrollView
+
+The WebView must actually be vertically scrollable.
+
+Remove any CSS/event rule that prevents touch scrolling.
+
+Do NOT blindly wrap a WebView inside another ScrollView.
+
+==================================================
+PHASE 9 — PRESERVE EXISTING FEATURES
+==================================================
+
+After fixing scrolling, verify that these still work:
+
+1. Manga image rendering
+2. Webtoon continuous mode
+3. Normal/page mode
+4. Translation
+5. Original text removal/inpainting
+6. Translated text overlay
+7. Font settings
+8. Font size
+9. Font color
+10. Reader settings
+11. Zoom
+12. Pinch gesture
+13. Reader controls
+14. Theme
+15. Page navigation
+16. Loading state
+17. Error state
+
+Do NOT fix scrolling by removing any of these features.
+
+==================================================
+PHASE 10 — ADD TEMPORARY DEBUGGING IF NECESSARY
+==================================================
+
+If the root cause is still unclear, temporarily add development-only diagnostics showing:
+
+- active reader mode
+- scroll container type
+- scrollEnabled
+- horizontal
+- pagingEnabled
+- viewport height
+- content height
+- current scroll offset
+- gesture state
+- active pointer/touch responder
+- whether an overlay is receiving the touch
+
+Use this to identify the blocker.
+
+After identifying the cause, remove or gate debugging appropriately.
+
+==================================================
+PHASE 11 — IMPLEMENT THE FIX
+==================================================
+
+Now fix the ROOT CAUSE.
+
+Do not merely silence errors.
+
+Do not add random props until scrolling happens.
+
+The implementation must be minimal and maintainable.
+
+Prefer a clean separation:
+
+Normal Reader:
+existing page-based behavior
+
+Webtoon Reader:
+dedicated continuous vertical scrolling behavior
+
+Settings must not accidentally override Webtoon's fundamental scrolling behavior.
+
+==================================================
+PHASE 12 — TEST THE ACTUAL USER FLOW
+==================================================
+
+Run the application.
+
+Do NOT consider the task complete because TypeScript passes.
+
+Actually test:
+
+TEST 1:
+Open a manga.
+
+TEST 2:
+Switch Reader Mode → Webtoon.
+
+TEST 3:
+Open a sufficiently long manga/page.
+
+TEST 4:
+Swipe upward repeatedly.
+
+EXPECTED:
+The content moves continuously upward.
+
+TEST 5:
+Swipe downward.
+
+EXPECTED:
+The content moves continuously downward.
+
+TEST 6:
+Swipe quickly.
+
+EXPECTED:
+Scrolling still works.
+
+TEST 7:
+Swipe starting over the manga image.
+
+EXPECTED:
+Scrolling works.
+
+TEST 8:
+Swipe starting over translated text/translation overlay.
+
+EXPECTED:
+Scrolling works unless the touch is directly on an intentionally interactive control.
+
+TEST 9:
+Use pinch zoom.
+
+EXPECTED:
+Zoom still works.
+
+TEST 10:
+Return to normal/page mode.
+
+EXPECTED:
+Normal page behavior still works.
+
+TEST 11:
+Change Reader Settings.
+
+EXPECTED:
+Webtoon remains vertically scrollable.
+
+==================================================
+PHASE 13 — BUILD VALIDATION
+==================================================
+
+Run:
+
+- TypeScript/typecheck
+- lint if available
+- relevant tests
+- Android development build/bundle if available
+
+Do not report "fixed" merely because compilation succeeds.
+
+Compilation is NOT proof of scrolling.
+
+The actual runtime behavior must be validated.
+
+==================================================
+FINAL REPORT
+==================================================
+
+When finished, report exactly:
+
+1. ROOT CAUSE:
+   The exact reason vertical scrolling was blocked.
+
+2. FILES CHANGED:
+   List every file modified.
+
+3. FIX:
+   Explain the actual code-level fix.
+
+4. GESTURE CONFLICT:
+   State whether a gesture/overlay was stealing touches.
+
+5. PAGING:
+   State whether pagingEnabled/pageTransition was involved.
+
+6. CONTENT HEIGHT:
+   State whether there was a layout/content-height issue.
+
+7. TEST:
+   State exactly how Webtoon scrolling was tested.
+
+8. REGRESSION:
+   Confirm that normal reader mode, zoom, translation, text removal, and settings were not broken.
+
+IMPORTANT FINAL RULE:
+
+DO NOT TELL ME "the issue should be fixed."
+
+DO NOT GIVE ME INSTRUCTIONS TO FIX IT MYSELF.
+
+YOU ARE THE CODING AGENT.
+YOU MUST MODIFY THE PROJECT AND VERIFY THE RESULT YOURSELF.
+
+If the first attempted fix does not work, continue debugging from the actual runtime behavior until the Webtoon vertical scroll works.
