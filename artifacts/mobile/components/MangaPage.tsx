@@ -429,7 +429,7 @@ function MangaPage({
         }
       }}
     >
-    <Animated.View
+      <Animated.View
       style={{
         width: SCREEN_W,
         height: displayH,
@@ -489,7 +489,7 @@ function MangaPage({
 
       {/* ── Per-page retry (shown only after all auto-retries are exhausted) ─ */}
       {imageFailed && (
-        <View style={styles.pageLoadingContainer}>
+        <View style={styles.pageLoadingContainer} pointerEvents="box-none">
           {pageNumber != null && (
             <Text style={styles.pageLabel}>Page {pageNumber}</Text>
           )}

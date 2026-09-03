@@ -784,9 +784,17 @@ export default function ReaderScreen() {
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         horizontal={!isVertical}
-         pagingEnabled={!isVertical || readerSettings.pageTransition === "swipe"}
+        scrollEnabled
+         // Webtoon mode owns one continuous vertical scroll. Page transition
+         // is only meaningful for horizontal page-by-page reading; allowing
+         // it to enable paging here makes a vertical FlatList snap/claim the
+         // gesture instead of behaving like a long strip.
+         pagingEnabled={!isVertical}
          decelerationRate={readerSettings.pageAnimation ? "normal" : "fast"}
-         disableIntervalMomentum={!readerSettings.pageAnimation}
+         // Interval momentum is a page-mode concern. In Webtoon mode,
+         // one-finger flings must retain native inertial scrolling even when
+         // page animation is disabled.
+         disableIntervalMomentum={!isVertical && !readerSettings.pageAnimation}
         showsVerticalScrollIndicator={false}
         showsHorizontalScrollIndicator={false}
         scrollEventThrottle={16}
@@ -880,6 +888,7 @@ export default function ReaderScreen() {
           <LinearGradient
             colors={["rgba(0,0,0,0.90)", "rgba(0,0,0,0.45)", "transparent"]}
             style={StyleSheet.absoluteFillObject}
+            pointerEvents="none"
           />
           <View style={styles.topBar}>
             <Pressable onPress={() => router.back()} style={styles.iconTouch}>
@@ -1046,6 +1055,7 @@ export default function ReaderScreen() {
           <LinearGradient
             colors={["transparent", "rgba(0,0,0,0.72)", "rgba(0,0,0,0.97)"]}
             style={StyleSheet.absoluteFillObject}
+            pointerEvents="none"
           />
           <View style={styles.bottomBar}>
             {/* Reading mode */}

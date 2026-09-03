@@ -438,7 +438,7 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
   if (!items.length) return null;
 
   return (
-    <View style={[styles.root, { pointerEvents: "none" }]}>
+    <View style={styles.root} pointerEvents="none">
 
       {/*
        * ── SVG Layers ────────────────────────────────────────────────────────

@@ -39,6 +39,7 @@ function PremiumOverlayRenderer({
         styles.overlayRoot,
         { width: displayW, height: displayH },
       ]}
+      pointerEvents="none"
     >
       <SkiaOverlayCanvas
         regions={regions}
@@ -57,7 +58,6 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     backgroundColor: "transparent",
-    pointerEvents:   "none",
   },
 });
 
