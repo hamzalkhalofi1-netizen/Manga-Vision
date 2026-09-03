@@ -107,6 +107,13 @@ export default function SettingsScreen() {
           desc: "Font family, size, bubble style",
           route: "/settings/fonts",
         },
+        {
+          id: "image-processing",
+          icon: "color-wand-outline",
+          label: "Image Processing",
+          desc: "Text removal, mask padding, bubble borders",
+          route: "/settings/image-processing",
+        },
       ],
     },
     {
@@ -183,6 +190,15 @@ export default function SettingsScreen() {
           desc: "Version, licenses, developer",
           route: "/settings/about",
         },
+        ...( __DEV__
+          ? [{
+              id: "debug",
+              icon: "bug-outline",
+              label: "Settings Debug",
+              desc: "Live wiring and persistence audit",
+              route: "/settings/debug",
+            }]
+          : []),
       ],
     },
   ];

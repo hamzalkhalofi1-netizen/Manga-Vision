@@ -106,8 +106,16 @@ function scheduleSave(): void {
   }, 2000);
 }
 
-function cacheKey(url: string, lang: string): string {
-  return `${url}|${lang}`;
+function cacheKey(url: string, lang: string, options: TranslationOptions = {}): string {
+  const optionKey = [
+    options.style ?? "",
+    options.customStyle ?? "",
+    options.translateSFX === false ? "no-sfx" : "sfx",
+    options.translateNarration === false ? "no-narration" : "narration",
+    options.translateCredits === true ? "credits" : "no-credits",
+    options.keepOriginal === true ? "keep-original" : "translated-only",
+  ].join(":");
+  return `${url}|${lang}|${optionKey}`;
 }
 
 export async function clearTranslationCache(): Promise<void> {
@@ -201,7 +209,7 @@ class TranslationQueueManager {
     for (let i = 0; i < pages.length; i++) {
       if (this.abortController.signal.aborted) break;
 
-      const key    = cacheKey(pages[i], targetLanguage);
+      const key = cacheKey(pages[i], targetLanguage, translationOptions);
       const cached = pageCache.get(key);
 
       if (cached) {
@@ -240,7 +248,7 @@ class TranslationQueueManager {
           emit(pageIdx);
 
           const pageUrl = pages[pageIdx];
-          const key     = cacheKey(pageUrl, targetLanguage);
+          const key = cacheKey(pageUrl, targetLanguage, translationOptions);
 
            for (let attempt = 0; attempt < Math.max(1, maxRetries); attempt++) {
             if (this.abortController!.signal.aborted) return;

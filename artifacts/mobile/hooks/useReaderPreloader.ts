@@ -21,6 +21,8 @@ interface UseReaderPreloaderOptions {
   ahead?: number;
   behind?: number;
   concurrency?: number;
+  maxRetries?: number;
+  timeoutMs?: number;
 }
 
 export function useReaderPreloader({
@@ -31,6 +33,8 @@ export function useReaderPreloader({
   ahead = 2,
   behind = 1,
   concurrency = 3,
+  maxRetries = 2,
+  timeoutMs = 20000,
 }: UseReaderPreloaderOptions) {
   const preloaderRef = useRef<ReaderPreloader | null>(null);
 
@@ -39,7 +43,13 @@ export function useReaderPreloader({
     if (!enabled || pages.length === 0) return;
 
     // Create fresh preloader for each chapter
-    const preloader = new ReaderPreloader({ ahead, behind, concurrency });
+    const preloader = new ReaderPreloader({
+      ahead,
+      behind,
+      concurrency,
+      maxRetries,
+      timeoutMs,
+    });
     preloaderRef.current = preloader;
 
     preloader.setPages(pages, sourceId);
@@ -50,7 +60,7 @@ export function useReaderPreloader({
       ReaderCache.clear();
       preloaderRef.current = null;
     };
-  }, [pages, sourceId, enabled, ahead, behind, concurrency]);
+  }, [pages, sourceId, enabled, ahead, behind, concurrency, maxRetries, timeoutMs]);
 
   // Notify preloader when viewport changes
   useEffect(() => {

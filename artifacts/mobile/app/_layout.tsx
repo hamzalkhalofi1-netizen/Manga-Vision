@@ -21,6 +21,7 @@ import { DownloadProvider } from "@/context/DownloadContext";
 import { LibraryProvider } from "@/context/LibraryContext";
 import { SettingsProvider } from "@/context/SettingsContext";
 import { TokenProvider } from "@/context/TokenContext";
+import { useColors } from "@/hooks/useColors";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -29,8 +30,14 @@ const queryClient = new QueryClient();
 SystemUI.setBackgroundColorAsync("#080808");
 
 function RootLayoutNav() {
+  const colors = useColors();
+
+  useEffect(() => {
+    void SystemUI.setBackgroundColorAsync(colors.background);
+  }, [colors.background]);
+
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: "#080808" } }}>
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.background } }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen
         name="manga"

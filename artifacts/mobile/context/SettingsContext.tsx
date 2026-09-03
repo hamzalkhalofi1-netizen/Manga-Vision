@@ -302,6 +302,8 @@ async function persist(key: string, value: string): Promise<void> {
 // ── Context type ─────────────────────────────────────────────────────────────
 
 interface SettingsContextType {
+  settingsReady: boolean;
+  settingsLastUpdated: Record<string, number>;
   // Reader
   readerSettings: ReaderSettings;
   updateReaderSettings: (settings: Partial<ReaderSettings>) => void;
@@ -345,6 +347,8 @@ export const SettingsContext = createContext<SettingsContextType | null>(null);
 // ── Provider ─────────────────────────────────────────────────────────────────
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
+  const [settingsReady, setSettingsReady] = useState(false);
+  const [settingsLastUpdated, setSettingsLastUpdated] = useState<Record<string, number>>({});
   const [readerSettings, setReaderSettings] = useState<ReaderSettings>(DEFAULT_READER);
   const [activeSourceId, setActiveSourceIdState] = useState("mangadex");
   const [translationCount, setTranslationCount] = useState(0);
@@ -385,9 +389,15 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         if (imageRaw) setImageProcessingSettings(normalizeImageProcessing(JSON.parse(imageRaw)));
       } catch (error) {
         console.warn("[settings] Could not load persisted settings; using safe defaults", error);
+      } finally {
+        setSettingsReady(true);
       }
     }
     load();
+  }, []);
+
+  const touch = useCallback((group: string) => {
+    setSettingsLastUpdated((previous) => ({ ...previous, [group]: Date.now() }));
   }, []);
 
   const updateReaderSettings = useCallback((settings: Partial<ReaderSettings>) => {
@@ -396,12 +406,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       void persist(SETTINGS_KEY, JSON.stringify(next));
       return next;
     });
-  }, []);
+    touch("reader");
+  }, [touch]);
 
   const setActiveSourceId = useCallback((id: string) => {
     setActiveSourceIdState(id);
     void persist(SOURCE_KEY, id);
-  }, []);
+    touch("source");
+  }, [touch]);
 
   const incrementTranslationCount = useCallback(() => {
     setTranslationCount((prev) => {
@@ -414,12 +426,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const setThemeMode = useCallback((mode: ThemeMode) => {
     setThemeModeState(mode);
     void persist(THEME_KEY, mode);
-  }, []);
+    touch("theme");
+  }, [touch]);
 
   const setGeminiModel = useCallback((model: GeminiModel) => {
     setGeminiModelState(model);
     void persist(GEMINI_MODEL_KEY, model);
-  }, []);
+    touch("ai");
+  }, [touch]);
 
   const updateFontSettings = useCallback((settings: Partial<FontSettings>) => {
     setFontSettings((prev) => {
@@ -427,12 +441,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       void persist(FONT_KEY, JSON.stringify(next));
       return next;
     });
-  }, []);
+    touch("fonts");
+  }, [touch]);
 
   const resetFontSettings = useCallback(() => {
     setFontSettings(DEFAULT_FONT_SETTINGS);
     void persist(FONT_KEY, JSON.stringify(DEFAULT_FONT_SETTINGS));
-  }, []);
+    touch("fonts");
+  }, [touch]);
 
   const updateNetworkSettings = useCallback((settings: Partial<NetworkSettings>) => {
     setNetworkSettings((prev) => {
@@ -440,7 +456,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       void persist(NETWORK_KEY, JSON.stringify(next));
       return next;
     });
-  }, []);
+    touch("network");
+  }, [touch]);
 
   const updateTranslationSettings = useCallback((settings: Partial<TranslationSettings>) => {
     setTranslationSettings((prev) => {
@@ -448,7 +465,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       void persist(TRANSLATION_CFG_KEY, JSON.stringify(next));
       return next;
     });
-  }, []);
+    touch("translation");
+  }, [touch]);
 
   const updateImageProcessingSettings = useCallback((settings: Partial<ImageProcessingSettings>) => {
     setImageProcessingSettings((prev) => {
@@ -456,13 +474,15 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       void persist(IMAGE_PROCESSING_KEY, JSON.stringify(next));
       return next;
     });
-  }, []);
+    touch("imageProcessing");
+  }, [touch]);
 
   const restoreSettings = useCallback(async (settings: Partial<{
     readerSettings: ReaderSettings;
     fontSettings: FontSettings;
     networkSettings: NetworkSettings;
     translationSettings: TranslationSettings;
+    imageProcessingSettings: ImageProcessingSettings;
     themeMode: ThemeMode;
     geminiModel: GeminiModel;
   }>) => {
@@ -490,6 +510,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   return (
     <SettingsContext.Provider
       value={{
+        settingsReady,
+        settingsLastUpdated,
         readerSettings, updateReaderSettings,
         activeSourceId, setActiveSourceId,
         translationCount, incrementTranslationCount,

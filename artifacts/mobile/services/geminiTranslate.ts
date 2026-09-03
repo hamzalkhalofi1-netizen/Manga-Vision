@@ -391,6 +391,56 @@ export interface TranslationOptions {
   keepOriginal?: boolean;
 }
 
+export interface TranslationRetryOptions {
+  timeoutMs?: number;
+  maxRetries?: number;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Request timed out")), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+export async function translateImageWithRetry(
+  imageUrl: string,
+  targetLanguage: string,
+  userApiKey: string,
+  sourceId = "mangadex",
+  options: TranslationOptions = {},
+  retryOptions: TranslationRetryOptions = {},
+): Promise<TranslateResult> {
+  const timeoutMs = retryOptions.timeoutMs ?? 60_000;
+  const attempts = Math.max(1, Math.round(retryOptions.maxRetries ?? 1));
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await withTimeout(
+        translateImage(imageUrl, targetLanguage, userApiKey, sourceId, options),
+        timeoutMs,
+      );
+    } catch (error) {
+      lastError = error;
+      if (attempt + 1 < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, 750 * (attempt + 1)));
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 function buildPrompt(
   targetLanguage: string,
   options: TranslationOptions = {},

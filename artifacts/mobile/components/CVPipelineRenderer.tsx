@@ -81,6 +81,13 @@ const MIN_BUBBLE_PX = 18;
 const MIN_BUBBLE_PX_H = 14;
 const MIN_AREA_PX = 400;
 
+function colorWithOpacity(color: string, opacity: number): string {
+  const match = color.replace("#", "").match(/^([0-9a-f]{6})$/i);
+  if (!match) return color;
+  const value = match[1];
+  return `rgba(${parseInt(value.slice(0, 2), 16)},${parseInt(value.slice(2, 4), 16)},${parseInt(value.slice(4, 6), 16)},${opacity})`;
+}
+
 /**
  * Map canonical TextClass to ArabicLayoutEngine region type.
  */
@@ -103,11 +110,13 @@ function CVPipelineRenderer({
   displayH,
 }: Props) {
   const { fontSettings } = useSettings();
-  const fontFamily = fontSettings.fontFamily === "inter"
-    ? "Inter"
-    : fontSettings.fontFamily === "monospace"
-      ? "monospace"
-      : ARABIC_FONT_FAMILY;
+  const fontFamily = fontSettings.fontFamily === "system"
+    ? undefined
+    : fontSettings.fontFamily === "inter"
+      ? "Inter"
+      : fontSettings.fontFamily === "monospace"
+        ? "monospace"
+        : ARABIC_FONT_FAMILY;
   const items = useMemo<RenderedItem[]>(() => {
     // ── Phase 1: Classify and filter regions ─────────────────────────────────
     const renderableIndices: number[] = [];
@@ -210,6 +219,13 @@ function CVPipelineRenderer({
                 top: item.y + paddingY,
                 width: item.layout.safeW,
                 height: item.layout.safeH,
+                 borderRadius: fontSettings.bubbleBorderRadius,
+                 padding: fontSettings.bubblePadding,
+                 backgroundColor:
+                   fontSettings.bgColor !== DEFAULT_FONT_SETTINGS.bgColor ||
+                   fontSettings.bgOpacity !== DEFAULT_FONT_SETTINGS.bgOpacity
+                     ? colorWithOpacity(fontSettings.bgColor, fontSettings.bgOpacity / 100)
+                     : "transparent",
               },
             ]}
           >
@@ -254,7 +270,7 @@ function CVPipelineRenderer({
                       }),
                 },
               ]}
-              textBreakStrategy="simple"
+               textBreakStrategy={fontSettings.textQuality === "high" ? "balanced" : "simple"}
               allowFontScaling={false}
             >
               {item.text}

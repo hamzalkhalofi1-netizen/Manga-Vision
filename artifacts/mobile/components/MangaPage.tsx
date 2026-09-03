@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Dimensions,
   Platform,
   Pressable,
@@ -16,6 +17,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { PinchGestureHandler, State } from "react-native-gesture-handler";
 
 // ── Diagnostic render counter ──────────────────────────────────────────────────
 // Logs every time MangaPage renders and whether the Image is visible or hidden.
@@ -90,6 +92,8 @@ interface MangaPageProps {
   onImageResolved?: (localUri: string) => void;
   sourceId?: string;
   fitMode?: "width" | "height" | "screen";
+  zoomed?: boolean;
+  pinchZoom?: boolean;
 }
 
 function MangaPage({
@@ -102,6 +106,8 @@ function MangaPage({
   onImageResolved,
   sourceId,
   fitMode = "width",
+  zoomed = false,
+  pinchZoom = true,
 }: MangaPageProps) {
   const { imageProcessingSettings } = useSettings();
   // Memoised so the object reference is stable across re-renders — prevents
@@ -120,6 +126,7 @@ function MangaPage({
     Math.round(SCREEN_W * DEFAULT_ASPECT),
   );
   const [nativeDims, setNativeDims] = useState({ w: 0, h: 0 });
+  const pinchScale = useRef(new Animated.Value(1)).current;
 
   // ── Cache-first page image loading ────────────────────────────────────────
   // Resolves `uri` to a locally-cached file:// path (instant on revisit) or
@@ -402,12 +409,33 @@ function MangaPage({
   }
 
   return (
-    <View
+    <PinchGestureHandler
+      enabled={pinchZoom}
+      onGestureEvent={Animated.event(
+        [{ nativeEvent: { scale: pinchScale } }],
+        { useNativeDriver: true },
+      )}
+      onHandlerStateChange={(event) => {
+        if (
+          event.nativeEvent.state === State.END ||
+          event.nativeEvent.state === State.CANCELLED ||
+          event.nativeEvent.state === State.FAILED
+        ) {
+          Animated.spring(pinchScale, {
+            toValue: 1,
+            useNativeDriver: true,
+            bounciness: 0,
+          }).start();
+        }
+      }}
+    >
+    <Animated.View
       style={{
         width: SCREEN_W,
         height: displayH,
         backgroundColor: "#000",
         overflow: "hidden",
+        transform: [{ scale: zoomed ? 2 : 1 }, { scale: pinchScale }],
       }}
     >
       {!imageNotReady && (
@@ -521,7 +549,8 @@ function MangaPage({
           </View>
         </View>
       )}
-    </View>
+    </Animated.View>
+    </PinchGestureHandler>
   );
 }
 

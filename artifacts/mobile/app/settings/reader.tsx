@@ -246,6 +246,18 @@ export default function ReaderSettingsScreen() {
         {/* ── Pages ─────────────────────────────────────────────────────── */}
         <SettingsSection title="Pages" icon="images-outline" defaultExpanded>
           <SettingsItem
+            icon="leaf-outline"
+            label="Data Saver"
+            description="Use a smaller preload window and one download at a time"
+            noChevron
+            right={
+              <SettingsToggle
+                value={readerSettings.dataSaver}
+                onValueChange={(v) => updateReaderSettings({ dataSaver: v })}
+              />
+            }
+          />
+          <SettingsItem
             icon="bookmark-outline"
             label="Remember Last Page"
             description="Resume from where you left off"

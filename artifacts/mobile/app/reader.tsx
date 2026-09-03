@@ -2,6 +2,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -35,7 +37,7 @@ import { useTokens } from "@/context/TokenContext";
 import { useInpaintServer } from "@/hooks/useInpaintServer";
 import { callInpaintServer } from "@/services/inpaintClient";
 import { useReaderPreloader } from "@/hooks/useReaderPreloader";
-import { translateImage } from "@/services/geminiTranslate";
+import { translateImageWithRetry } from "@/services/geminiTranslate";
 import { getResolvedPageImageUri } from "@/hooks/useCachedPageImage";
 
 const { width: SCREEN_W } = Dimensions.get("window");
@@ -127,6 +129,8 @@ export default function ReaderScreen() {
   // ── Reader state ──────────────────────────────────────────────────────────
   const [currentPage, setCurrentPage] = useState(0);
   const [showControls, setShowControls] = useState(true);
+  const [zoomed, setZoomed] = useState(false);
+  const lastTapRef = useRef(0);
   const [overlayVisible, setOverlayVisible] = useState(true);
 
   // ── Preloader — warms expo-image cache ahead/behind viewport ─────────────
@@ -134,10 +138,17 @@ export default function ReaderScreen() {
     pages,
     sourceId: params.sourceId || "mangadex",
     currentPage,
-    enabled: Platform.OS !== "web" && pages.length > 0,
-    ahead: readerSettings.preloadPages,
-    behind: Math.min(2, readerSettings.preloadPages),
-    concurrency: Math.min(networkSettings.parallelDownloads, networkSettings.maxConnections),
+    enabled:
+      Platform.OS !== "web" &&
+      networkSettings.prefetchPages &&
+      pages.length > 0,
+    ahead: readerSettings.dataSaver ? 1 : readerSettings.preloadPages,
+    behind: readerSettings.dataSaver ? 0 : Math.min(2, readerSettings.preloadPages),
+    concurrency: readerSettings.dataSaver
+      ? 1
+      : Math.min(networkSettings.parallelDownloads, networkSettings.maxConnections),
+    maxRetries: networkSettings.retryCount,
+    timeoutMs: networkSettings.timeout * 1000,
   });
 
   // ── Translation state ─────────────────────────────────────────────────────
@@ -187,6 +198,15 @@ export default function ReaderScreen() {
   const isVertical = readerSettings.readingMode === "vertical";
   const isRTL = readerSettings.readingDirection === "rtl";
   const sourceId = params.sourceId || "mangadex";
+
+  useEffect(() => {
+    if (Platform.OS === "web" || !readerSettings.keepScreenAwake) return;
+
+    void activateKeepAwakeAsync("mangaverse-reader");
+    return () => {
+      void deactivateKeepAwake("mangaverse-reader");
+    };
+  }, [readerSettings.keepScreenAwake]);
 
   // ─── Load pages ────────────────────────────────────────────────────────────
   // Depends on activeChapterId (state), not params.chapterId, so next/prev
@@ -343,12 +363,22 @@ export default function ReaderScreen() {
   }, [resetControlsTimer]);
 
   const handleTap = useCallback(() => {
+    const now = Date.now();
+    const isDoubleTap =
+      readerSettings.doubleTapZoom && now - lastTapRef.current < 300;
+    lastTapRef.current = now;
+
+    if (isDoubleTap) {
+      setZoomed((previous) => !previous);
+      return;
+    }
+
     setShowControls((prev) => {
       if (!prev) resetControlsTimer();
       return !prev;
     });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [resetControlsTimer]);
+  }, [readerSettings.doubleTapZoom, resetControlsTimer]);
 
   // ─── Viewability tracking — the ACCURATE active page tracker ──────────────
   // Uses itemVisiblePercentThreshold: 60 so the active page is always the
@@ -431,7 +461,7 @@ export default function ReaderScreen() {
           `[reader] Starting single-page translate — page=${idx} lang=${readerSettings.targetLanguage}`,
         );
 
-        const result = await translateImage(
+        const result = await translateImageWithRetry(
           pageUrl,
           readerSettings.targetLanguage,
           userKey,
@@ -448,6 +478,12 @@ export default function ReaderScreen() {
             translateNarration: translationSettings.translateNarration,
             translateCredits: translationSettings.translateCredits,
             keepOriginal: translationSettings.keepOriginal,
+          },
+          {
+            timeoutMs: translationSettings.timeoutSeconds * 1000,
+            maxRetries: translationSettings.autoRetry
+              ? translationSettings.maxRetries
+              : 1,
           },
         );
 
@@ -534,6 +570,17 @@ export default function ReaderScreen() {
         translateCredits: translationSettings.translateCredits,
         keepOriginal: translationSettings.keepOriginal,
       },
+        parallelBatchSize: Math.max(
+          1,
+          Math.min(
+            networkSettings.parallelDownloads,
+            networkSettings.maxConnections,
+          ),
+        ),
+        timeoutMs: translationSettings.timeoutSeconds * 1000,
+        maxRetries: translationSettings.autoRetry
+          ? translationSettings.maxRetries
+          : 1,
       onPageTranslated,
       onProgress: (progress) => {
         setQueueProgress(progress);
@@ -561,6 +608,7 @@ export default function ReaderScreen() {
     readerSettings.targetLanguage,
     geminiModel,
     translationSettings,
+    networkSettings,
     incrementTranslationCount,
     showBanner,
     showErrorModal,
@@ -662,11 +710,22 @@ export default function ReaderScreen() {
             resolvedPageUrisRef.current.set(index, localUri);
           }}
           sourceId={params.sourceId || "mangadex"}
-            fitMode={readerSettings.fitMode}
+          fitMode={readerSettings.fitMode}
+          zoomed={zoomed}
+          pinchZoom={readerSettings.pinchZoom}
         />
       </Pressable>
     ),
-    [handleTap, pageTranslations, overlayVisible, isRTL],
+    [
+      handleTap,
+      pageTranslations,
+      overlayVisible,
+      isRTL,
+      params.sourceId,
+      readerSettings.fitMode,
+      readerSettings.pinchZoom,
+      zoomed,
+    ],
   );
 
   const keyExtractor = useCallback(
@@ -684,7 +743,7 @@ export default function ReaderScreen() {
   // ─── Loading / Error ───────────────────────────────────────────────────────
   if (loading) {
     return (
-      <View style={[styles.centered, { backgroundColor: "#000" }]}>
+      <View style={[styles.centered, { backgroundColor: colors.background }]}>
         <ActivityIndicator color={colors.primary} size="large" />
         <Text style={[styles.centeredText, { color: colors.mutedForeground }]}>
           Loading chapter...
@@ -697,7 +756,7 @@ export default function ReaderScreen() {
     const sid = params.sourceId || "mangadex";
     const src = getSource(sid);
     return (
-      <View style={[styles.root, { justifyContent: "center" }]}>
+      <View style={[styles.root, { backgroundColor: colors.background, justifyContent: "center" }]}>
         <SourceStatusBanner sourceId={sid} sourceName={src.name} />
         <SourceErrorView
           message={loadError ?? "No pages found for this chapter."}
@@ -713,7 +772,8 @@ export default function ReaderScreen() {
   const readerSrc = getSource(sid);
 
   return (
-    <View style={styles.root}>
+      <View style={[styles.root, { backgroundColor: colors.background }]}>
+      <StatusBar hidden={readerSettings.hideSystemBars} style="light" />
       {/* CF verification banner — slides in if bridge detects a challenge mid-read */}
       <SourceStatusBanner sourceId={sid} sourceName={readerSrc.name} />
 
@@ -795,13 +855,23 @@ export default function ReaderScreen() {
             </View>
           ) : null
         }
-        style={styles.list}
+        style={[styles.list, { backgroundColor: colors.background }]}
       />
+
+      {readerSettings.brightness >= 0 && readerSettings.brightness < 1 && (
+        <View
+          pointerEvents="none"
+          style={[
+            StyleSheet.absoluteFillObject,
+            styles.brightnessOverlay,
+            { opacity: 1 - readerSettings.brightness },
+          ]}
+        />
+      )}
 
       {/* ── Top controls ──────────────────────────────────────────────────── */}
       {showControls && (
-               {readerSettings.showPageNumber && (
-               <View
+        <View
           style={[
             styles.topOverlay,
             { paddingTop: topPadding + 8, pointerEvents: "box-none" },
@@ -821,8 +891,7 @@ export default function ReaderScreen() {
                 {params.mangaTitle}
               </Text>
               <Text style={styles.topSub}>Ch. {activeChapterNum}</Text>
-               </View>
-               )}
+            </View>
 
             {/* Translate Chapter button in top-right */}
             <Pressable
@@ -907,7 +976,8 @@ export default function ReaderScreen() {
               )}
             </Pressable>
 
-            <View
+            {readerSettings.showPageNumber && (
+              <View
               style={[
                 styles.pageBadge,
                 { backgroundColor: "rgba(255,255,255,0.16)" },
@@ -916,7 +986,8 @@ export default function ReaderScreen() {
               <Text style={styles.pageBadgeTxt}>
                 {currentPage + 1}/{pages.length}
               </Text>
-            </View>
+              </View>
+            )}
           </View>
 
           {/* Queue progress bar */}
@@ -1110,6 +1181,7 @@ export default function ReaderScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
+  brightnessOverlay: { backgroundColor: "#000" },
   list: { flex: 1, backgroundColor: "#000" },
   centered: {
     flex: 1,
@@ -1189,6 +1261,17 @@ const styles = StyleSheet.create({
   },
   progressBarFill: {
     height: 3,
+    borderRadius: 2,
+  },
+  readingProgressTrack: {
+    height: 2,
+    marginHorizontal: 14,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  readingProgressFill: {
+    height: 2,
     borderRadius: 2,
   },
   banner: {

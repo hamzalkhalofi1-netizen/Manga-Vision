@@ -2,5 +2,6 @@
 - [manganelo-mangagg](manganelo-mangagg.md) — manganelo adapter targets mangagg.com (WP-Manga/Madara), NOT the dead readmanganelo.com
 - [gemini-model-availability](gemini-model-availability.md) — Gemini model listings can include IDs that return 404; verify generateContent availability before making a model the app default
 - [Imported workflow ownership](imported-workspace-workflows.md) — install the locked workspace first, then ensure each service port has one workflow owner
+- [Expo build port collision](expo-build-port-collision.md) — static Expo bundle builds need port 8081 free from the mockup sandbox
 - [Translation image source](translation-image-source.md) — pass the reader-resolved URI directly into native/web image-byte acquisition
 - [Expo preview startup](expo-preview-startup.md) — transient Metro startup failures must retry in the preview instead of leaving a one-shot blank 502 page

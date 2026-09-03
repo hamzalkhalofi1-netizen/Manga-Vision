@@ -338,11 +338,13 @@ interface Props {
 
 function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
   const { fontSettings } = useSettings();
-  const fontFamily = fontSettings.fontFamily === "inter"
-    ? "Inter"
-    : fontSettings.fontFamily === "monospace"
-      ? "monospace"
-      : ARABIC_FONT_FAMILY;
+  const fontFamily = fontSettings.fontFamily === "system"
+    ? undefined
+    : fontSettings.fontFamily === "inter"
+      ? "Inter"
+      : fontSettings.fontFamily === "monospace"
+        ? "monospace"
+        : ARABIC_FONT_FAMILY;
   const items = useMemo(() => {
     return regions
       .map((region, idx) => {
@@ -370,7 +372,13 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
           : scaleFontToFit(text, aabbW, aabbH);
         if (typeset.lines.length === 0) return null;
 
-        const bgColor = region.bgColor || "#ffffff";
+        const customBubbleStyle =
+          fontSettings.bgColor !== DEFAULT_FONT_SETTINGS.bgColor ||
+          fontSettings.bgOpacity !== DEFAULT_FONT_SETTINGS.bgOpacity;
+        const bgColor = customBubbleStyle
+          ? fontSettings.bgColor
+          : region.bgColor || "#ffffff";
+        const bgOpacity = customBubbleStyle ? fontSettings.bgOpacity / 100 : 1;
 
         // ── Adaptive text colour from bubble background ──────────────────────
         // Resolves WCAG-compliant contrast colour based on bgColor luminance.
@@ -414,7 +422,7 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
           key: idx,
           erasePath, textBedPath,
           ocrPath, bubblePath,
-          bgColor, colorProfile,
+           bgColor, bgOpacity, colorProfile,
           borderStroke, borderDashArray,
           textColor, shadowColor, shadowRadius,
           aabbX, aabbY, aabbW, aabbH,
@@ -451,7 +459,7 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
             key={`erase-${item.key}`}
             d={item.erasePath}
             fill={item.bgColor}
-            fillOpacity={1}
+           fillOpacity={item.bgOpacity}
           />
         ))}
 
@@ -467,7 +475,7 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
             key={`bed-${item.key}`}
             d={item.textBedPath}
             fill={item.bgColor}
-            fillOpacity={1}
+             fillOpacity={item.bgOpacity}
           />
         ))}
 
@@ -567,6 +575,8 @@ function SkiaOverlayCanvas({ regions, displayW, displayH }: Props) {
                 top:       containerY,
                 width:     containerW,
                 height:    containerH,
+                 borderRadius: fontSettings.bubbleBorderRadius,
+                 padding: fontSettings.bubblePadding,
                 transform: rotDeg !== 0 ? [{ rotate: `${rotDeg}deg` }] : undefined,
               },
             ]}
