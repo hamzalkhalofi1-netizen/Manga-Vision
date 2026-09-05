@@ -785,7 +785,7 @@ export default function ReaderScreen() {
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         horizontal={!isVertical}
-        scrollEnabled
+        scrollEnabled={readerSettings.scrollingEnabled}
          // Webtoon mode owns one continuous vertical scroll. Page transition
          // is only meaningful for horizontal page-by-page reading; allowing
          // it to enable paging here makes a vertical FlatList snap/claim the

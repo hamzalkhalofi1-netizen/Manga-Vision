@@ -24,6 +24,7 @@ export type FitMode = "width" | "height" | "screen";
 export interface ReaderSettings {
   // existing
   readingMode: ReadingMode;
+  scrollingEnabled: boolean;
   targetLanguage: TargetLanguage;
   dataSaver: boolean;
   showPageNumber: boolean;
@@ -108,6 +109,7 @@ export interface ImageProcessingSettings {
 
 const DEFAULT_READER: ReaderSettings = {
   readingMode: "vertical",
+  scrollingEnabled: true,
   targetLanguage: "en",
   dataSaver: false,
   showPageNumber: true,
@@ -206,6 +208,9 @@ function normalizeReader(raw: unknown): ReaderSettings {
   return {
     ...DEFAULT_READER,
     readingMode: pick(value.readingMode, ["vertical", "horizontal"] as const, DEFAULT_READER.readingMode),
+    scrollingEnabled: typeof value.scrollingEnabled === "boolean"
+      ? value.scrollingEnabled
+      : DEFAULT_READER.scrollingEnabled,
     targetLanguage: pick(value.targetLanguage, TARGET_LANGUAGES, DEFAULT_READER.targetLanguage),
     dataSaver: typeof value.dataSaver === "boolean" ? value.dataSaver : DEFAULT_READER.dataSaver,
     showPageNumber: typeof value.showPageNumber === "boolean" ? value.showPageNumber : DEFAULT_READER.showPageNumber,

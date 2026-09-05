@@ -81,6 +81,24 @@ export default function ReaderSettingsScreen() {
             }
           />
           <SettingsItem
+            icon="swap-vertical-outline"
+            label="Scrolling"
+            description={
+              readerSettings.scrollingEnabled
+                ? "Vertical reader scrolling enabled"
+                : "Vertical reader scrolling disabled"
+            }
+            noChevron
+            right={
+              <SettingsToggle
+                value={readerSettings.scrollingEnabled}
+                onValueChange={(v) =>
+                  updateReaderSettings({ scrollingEnabled: v })
+                }
+              />
+            }
+          />
+          <SettingsItem
             icon="arrow-forward-outline"
             label="Reading Direction"
             description={readerSettings.readingDirection === "ltr" ? "Left to right" : "Right to left (manga)"}

@@ -1,0 +1,551 @@
+IMPLEMENT A REAL "SCROLLING" TOGGLE IN READER SETTINGS — NOT A FAKE BUTTON
+
+The previous attempts to fix the reader scrolling failed.
+
+I want to introduce a temporary but REAL diagnostic/control setting called:
+
+"Scrolling"
+
+This setting must be fully functional and connected to the actual reader scrolling behavior.
+
+IMPORTANT:
+This is NOT a visual-only toggle.
+It must control the REAL scrolling state of the reader.
+
+==================================================
+GOAL
+==================================================
+
+Add a setting/toggle:
+
+Scrolling
+ON  → vertical reader scrolling is enabled
+OFF → vertical reader scrolling is disabled
+
+The setting must affect BOTH:
+
+1. Normal Manga/Page Reader
+2. Webtoon/Vertical Reader
+
+When Scrolling = ON:
+
+The reader must behave exactly like it did BEFORE the recent Settings/Reader changes broke scrolling.
+
+When Scrolling = OFF:
+
+Vertical scrolling must actually be disabled.
+
+==================================================
+MOST IMPORTANT REQUIREMENT
+==================================================
+
+DO NOT create a fake UI toggle.
+
+The complete chain must be:
+
+Settings UI
+    ↓
+Settings state
+    ↓
+Persistent settings store
+    ↓
+Reader consumes setting
+    ↓
+Actual ScrollView / FlatList / WebView / reader scroll owner
+    ↓
+Real scrolling behavior
+
+The toggle must control the actual scrolling implementation.
+
+Changing the toggle must immediately affect the currently open reader if possible, without requiring an app restart.
+
+==================================================
+STEP 1 — FIND THE EXISTING SETTINGS ARCHITECTURE
+==================================================
+
+Before changing anything, inspect the existing settings system.
+
+Find:
+
+- Reader settings screen
+- settings state/store
+- settings context/provider if present
+- persistence layer
+- AsyncStorage/local storage/database if used
+- existing reader settings types/interfaces
+- reader component consuming settings
+
+Do NOT create a second settings system.
+
+Use the existing architecture.
+
+If there is already a setting related to:
+
+- scrolling
+- vertical scrolling
+- reader navigation
+- page transition
+- Webtoon
+- continuous reading
+
+DO NOT create a duplicate.
+
+Determine whether an existing setting was accidentally disconnected.
+
+==================================================
+STEP 2 — ADD THE REAL SETTING
+==================================================
+
+If no suitable setting exists, add:
+
+readerSettings.scrollingEnabled
+
+Type:
+
+boolean
+
+Default:
+
+true
+
+The default MUST preserve the previous behavior.
+
+Example conceptual behavior:
+
+scrollingEnabled = true
+→ reader can scroll
+
+scrollingEnabled = false
+→ reader cannot vertically scroll
+
+Do not hardcode the value directly inside the Reader component.
+
+==================================================
+STEP 3 — PERSIST THE SETTING
+==================================================
+
+The setting must persist.
+
+If the user does:
+
+Scrolling = OFF
+
+then closes the reader/app and returns:
+
+Scrolling must remain OFF.
+
+If the user does:
+
+Scrolling = ON
+
+it must remain ON.
+
+Use the existing settings persistence architecture.
+
+Do NOT create a separate storage mechanism unless the current architecture absolutely requires it.
+
+==================================================
+STEP 4 — CONNECT IT TO THE REAL SCROLL OWNER
+==================================================
+
+This is the most important part.
+
+Find the REAL component that performs scrolling.
+
+It may be:
+
+- ScrollView
+- FlatList
+- FlashList
+- VirtualizedList
+- WebView
+- custom reader component
+- another scrolling implementation
+
+Connect:
+
+scrollingEnabled
+
+directly to that component's actual scrolling behavior.
+
+For example, conceptually:
+
+scrollEnabled={readerSettings.scrollingEnabled}
+
+But DO NOT assume ScrollView is the correct implementation.
+
+Use the actual scroll owner found in the project.
+
+If multiple reader implementations exist, connect the setting correctly to each one.
+
+==================================================
+STEP 5 — NORMAL MANGA MODE
+==================================================
+
+Normal Manga/Page mode must respect:
+
+scrollingEnabled
+
+When ON:
+
+Vertical scrolling works exactly as it did before the regression.
+
+When OFF:
+
+Vertical scrolling is disabled.
+
+Do not break:
+
+- page rendering
+- page navigation
+- tap
+- zoom
+- translation
+- reader controls
+
+==================================================
+STEP 6 — WEBTOON MODE
+==================================================
+
+Webtoon mode must also respect:
+
+scrollingEnabled
+
+When ON:
+
+Continuous vertical scrolling must work.
+
+When OFF:
+
+Vertical scrolling must stop.
+
+Do NOT implement this by changing Webtoon into page mode.
+
+Webtoon must remain continuous vertical reading.
+
+==================================================
+STEP 7 — IMPORTANT TOUCH TEST
+==================================================
+
+Remember the newly discovered behavior:
+
+CURRENT BUG:
+
+Swipe between images:
+→ scrolling works
+
+Swipe directly on manga image:
+→ scrolling does NOT work
+
+This setting must allow us to diagnose that behavior.
+
+When:
+
+Scrolling = ON
+
+the user must be able to start the vertical swipe:
+
+- in empty space
+- directly on the manga image
+- on translated text
+- on image overlays
+
+and the reader should scroll.
+
+When:
+
+Scrolling = OFF
+
+none of those areas should vertically scroll.
+
+==================================================
+STEP 8 — DO NOT DISABLE IMAGE INTERACTION
+==================================================
+
+Do NOT solve this by making the manga image completely non-interactive.
+
+Existing functionality must remain:
+
+- tap
+- pinch
+- zoom
+- pan while zoomed
+- translation interaction if applicable
+
+The goal is to make normal vertical scrolling work while preserving image gestures.
+
+==================================================
+STEP 9 — GESTURE PRIORITY
+==================================================
+
+Because we already know that scrolling works outside the image but fails on the image, inspect the gesture hierarchy.
+
+When:
+
+scrollingEnabled = true
+
+and the image is NOT zoomed:
+
+Vertical swipe
+→ parent reader scrolling should win.
+
+When the image is zoomed:
+
+Image pan/zoom behavior may take priority where appropriate.
+
+Pinch:
+→ zoom
+
+Vertical swipe at normal zoom:
+→ reader scroll
+
+Do not let an image PanGestureHandler consume every vertical swipe.
+
+==================================================
+STEP 10 — LIVE TOGGLE TEST
+==================================================
+
+The toggle must be tested LIVE.
+
+Open the reader.
+
+Set:
+
+Scrolling = OFF
+
+Immediately try to swipe.
+
+EXPECTED:
+No vertical reader scrolling.
+
+Then set:
+
+Scrolling = ON
+
+WITHOUT restarting the application.
+
+Immediately try to swipe.
+
+EXPECTED:
+Vertical scrolling works.
+
+Then test:
+
+1. Swipe in empty space.
+2. Swipe directly on image.
+3. Swipe on translated text.
+4. Swipe on image overlay.
+5. Webtoon mode.
+6. Normal Manga mode.
+
+==================================================
+STEP 11 — IF ON STILL DOES NOT SCROLL ON IMAGE
+==================================================
+
+If:
+
+Scrolling = ON
+
+but:
+
+swipe outside image = works
+swipe on image = doesn't work
+
+then the setting has successfully proven that the ScrollView itself is not the problem.
+
+At that point, DO NOT modify the setting again.
+
+Instead, use the ON state as the diagnostic baseline and trace the gesture interception specifically on the image.
+
+Inspect:
+
+- PanGestureHandler
+- GestureDetector
+- PinchGestureHandler
+- Pressable
+- Touchable
+- Animated.View
+- Canvas
+- SVG
+- Skia
+- WebView
+- translation overlay
+- OCR overlay
+- absolute-positioned transparent layers
+- pointerEvents
+
+The goal is to identify which element consumes the gesture.
+
+==================================================
+STEP 12 — ADD DEVELOPMENT DIAGNOSTIC
+==================================================
+
+For development only, display:
+
+SCROLLING: ON/OFF
+
+and optionally:
+
+Scroll enabled: true/false
+Reader mode: Manga/Webtoon
+
+This diagnostic must reflect the REAL runtime state.
+
+Do NOT simply display the setting value.
+
+Verify that the actual scroll container receives the same value.
+
+==================================================
+STEP 13 — SETTINGS REACTIVITY
+==================================================
+
+Changing:
+
+Scrolling ON/OFF
+
+must update the reader immediately.
+
+Do not require:
+
+- closing reader
+- reopening reader
+- restarting app
+- reinstalling app
+
+If the current settings architecture uses Context/store subscriptions, ensure the Reader is subscribed correctly.
+
+If the settings screen updates but the Reader does not, that means the settings connection is broken and must be fixed.
+
+==================================================
+STEP 14 — IMPORTANT: RESTORE PRE-SETTINGS BEHAVIOR
+==================================================
+
+The ON state must restore the behavior that existed BEFORE the recent Settings integration broke the reader.
+
+Do not invent a new scrolling architecture.
+
+Inspect git history/checkpoints/recent changes if available.
+
+Find how scrolling worked before the settings integration.
+
+Compare:
+
+BEFORE SETTINGS INTEGRATION
+vs
+CURRENT IMPLEMENTATION
+
+Identify what changed.
+
+If a previous working implementation exists, restore the relevant behavior while keeping the new settings architecture.
+
+==================================================
+STEP 15 — ACCEPTANCE TESTS
+==================================================
+
+The implementation is NOT complete until all of these pass:
+
+TEST A:
+Scrolling ON
+Normal Manga mode
+Swipe between images
+→ WORKS
+
+TEST B:
+Scrolling ON
+Normal Manga mode
+Swipe directly on image
+→ WORKS
+
+TEST C:
+Scrolling ON
+Webtoon mode
+Swipe between content
+→ WORKS
+
+TEST D:
+Scrolling ON
+Webtoon mode
+Swipe directly on image
+→ WORKS
+
+TEST E:
+Scrolling OFF
+Normal Manga mode
+Swipe
+→ DOES NOT SCROLL
+
+TEST F:
+Scrolling OFF
+Webtoon mode
+Swipe
+→ DOES NOT SCROLL
+
+TEST G:
+Scrolling OFF → ON while reader is open
+→ scrolling immediately becomes available
+
+TEST H:
+Scrolling ON → OFF while reader is open
+→ scrolling immediately stops
+
+TEST I:
+Restart application
+→ selected Scrolling value persists
+
+TEST J:
+Pinch/zoom
+→ still works
+
+TEST K:
+Translation
+→ still works
+
+TEST L:
+Original text removal
+→ still works
+
+==================================================
+FINAL REQUIREMENT
+==================================================
+
+Do not tell me:
+
+"the toggle was added."
+
+That is NOT enough.
+
+You must verify the complete chain:
+
+UI toggle
+→ settings state
+→ persistence
+→ reader state
+→ actual scroll component
+→ physical/runtime scrolling
+
+If Scrolling = ON and the reader still cannot scroll over images, report that separately as a gesture interception bug and identify the exact component intercepting the touch.
+
+The purpose of this toggle is also to give us a definitive diagnostic control.
+
+==================================================
+FINAL REPORT
+==================================================
+
+Report:
+
+1. Setting name and location
+2. State/store used
+3. Persistence mechanism
+4. Exact reader component connected
+5. Exact prop/state controlling real scrolling
+6. Normal Manga behavior
+7. Webtoon behavior
+8. Whether ON restores previous behavior
+9. Whether OFF actually disables scrolling
+10. Whether changing ON/OFF works live
+11. Whether image gestures interfere with scrolling
+12. Exact remaining blocker, if any
+13. Files changed
+14. Tests performed and results
+
+DO NOT CLAIM SUCCESS WITHOUT RUNTIME TESTING.
